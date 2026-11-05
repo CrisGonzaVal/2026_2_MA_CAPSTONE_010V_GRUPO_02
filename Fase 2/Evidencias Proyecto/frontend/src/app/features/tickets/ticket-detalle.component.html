@@ -73,6 +73,18 @@
       </dl>
     </div>
 
+    <!-- Feature 020 (AC-11): aviso de reabastecimiento. El ticket está cubierto por
+         el saldo de su sede según la simulación greedy del servidor. -->
+    @if (ticket.stock_disponible) {
+      <p
+        role="status"
+        class="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium px-4 py-3 rounded-lg"
+      >
+        <span aria-hidden="true">✅</span>
+        Stock disponible — Listo para despacho
+      </p>
+    }
+
     <!-- Avisos de operación: éxito (status) y error accesible (alert) -->
     @if (mensajeExito(); as exito) {
       <p

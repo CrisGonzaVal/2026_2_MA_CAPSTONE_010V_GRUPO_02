@@ -172,6 +172,15 @@ class TicketDetalleRespuesta(TicketRespuesta):
             "ticket legado sin instantanea."
         ),
     )
+    # Feature 020 (AC-10/AC-11): propiedad calculada con la misma simulacion
+    # greedy que usa la recepcion de compras. No es columna ni cambia el estado.
+    stock_disponible: bool = Field(
+        default=False,
+        description=(
+            "True si el saldo de la sede cubre todos los detalles del ticket "
+            "segun prioridad y FIFO; no reserva stock ni muta el ticket."
+        ),
+    )
 
 
 class HistorialTransicionRespuesta(BaseModel):

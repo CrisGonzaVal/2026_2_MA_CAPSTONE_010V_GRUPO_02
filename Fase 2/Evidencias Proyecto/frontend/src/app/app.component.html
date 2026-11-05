@@ -55,6 +55,43 @@
           }
         </a>
       }
+      @if (puedeVerCompras()) {
+        <a
+          routerLink="/compras"
+          routerLinkActive="bg-blue-600 text-white"
+          [routerLinkActiveOptions]="{ exact: true }"
+          class="flex items-center px-3 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <span class="text-xl" aria-hidden="true">🧾</span>
+          @if (sidebarAbierto()) {
+            <span class="ml-3 font-medium">Órdenes de Compra</span>
+          }
+        </a>
+        <a
+          routerLink="/compras/necesidades"
+          routerLinkActive="bg-blue-600 text-white"
+          [routerLinkActiveOptions]="{ exact: true }"
+          class="flex items-center px-3 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <span class="text-xl" aria-hidden="true">📋</span>
+          @if (sidebarAbierto()) {
+            <span class="ml-3 font-medium">Necesidades</span>
+          }
+        </a>
+      }
+      @if (puedeVerRecepcion()) {
+        <a
+          routerLink="/compras/recepcion"
+          routerLinkActive="bg-blue-600 text-white"
+          [routerLinkActiveOptions]="{ exact: true }"
+          class="flex items-center px-3 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <span class="text-xl" aria-hidden="true">📥</span>
+          @if (sidebarAbierto()) {
+            <span class="ml-3 font-medium">Recepción de Compras</span>
+          }
+        </a>
+      }
       @if (puedeVerTickets()) {
         <a
           routerLink="/tickets"

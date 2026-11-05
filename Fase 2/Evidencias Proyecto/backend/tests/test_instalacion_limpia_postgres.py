@@ -6,19 +6,21 @@ una base vacia, tal como lo hace el volumen de `docker compose`
 ni el DDL por esquema, asi que lo que la instalacion limpia exige solo se
 acredita contra PostgreSQL 16 real:
 
-  * `control` con las 22 tablas globales (Feature 017 anade
+  * `control` con las 26 tablas globales (Feature 017 anade
     `registro_motivo_constancia`; la 014, los dos historiales de transicion del
-    catalogo) y **un esquema tenant por institucion** con las 19 tablas de
-    negocio replicadas;
+    catalogo; la 020, el catalogo de proveedores y las tres tablas de compras) y
+    **un esquema tenant por institucion** con las 23 tablas de negocio
+    replicadas;
   * reparto deterministico de sedes (2/3/4/2 para INST-001..004) y de
     departamentos por round-robin sobre `departamento_id` ascendente;
   * cuadre por producto dentro de cada tenant: la suma departamental de
     `inventario` es igual a la suma por sede de `stock_sede`;
   * `control` queda como contexto global (sin filas de negocio), con la
-    topologia (4 instituciones + 24 capacidades), el catalogo de roles y el
-    estado `Anulado`, y el mapa `correo -> esquema` con las 12 identidades;
-  * version objetivo `014.1` en `control` y en cada tenant (expectativa
-    planificada de la Feature 014: se fija como literal, no se sigue del token),
+    topologia (4 instituciones + 28 capacidades), el catalogo de roles, el
+    estado `Anulado` y los 3 proveedores del catalogo global, y el mapa
+    `correo -> esquema` con las 12 identidades;
+  * version objetivo `020.1` en `control` y en cada tenant (expectativa
+    planificada de la Feature 020: se fija como literal, no se sigue del token),
     con el catalogo sembrado activo por tenant y el routing exigiendo esa misma
     version (una version menor no se enruta);
   * guardia fail-closed: una segunda ejecucion de `02_` aborta sin cambios.
@@ -72,12 +74,12 @@ SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 #: Reparto fijo de sedes por institucion (Feature 011, D-7).
 SEDES_ESPERADAS = {"INST-001": 2, "INST-002": 3, "INST-003": 4, "INST-004": 2}
 
-#: Version objetivo planificada de la Feature 014 (AC-14). Se fija como literal
-#: para que la expectativa no siga automaticamente al token del codigo: T4 crea
-#: el DDL y T5 sube `VERSION_ESQUEMA_OBJETIVO` a este mismo valor.
-VERSION_OBJETIVO_014 = "014.1"
+#: Version objetivo vigente (Feature 020). Se fija como literal para que la
+#: expectativa no siga automaticamente al token del codigo: T1 crea el DDL y sube
+#: `VERSION_ESQUEMA_OBJETIVO` a este mismo valor.
+VERSION_OBJETIVO_VIGENTE = "020.1"
 
-#: Las 22 tablas globales de `control`.
+#: Las 26 tablas globales de `control`.
 TABLAS_CONTROL = {
     "institucion",
     "sede",
@@ -95,7 +97,7 @@ TABLAS_CONTROL = {
     "ticket",
     "detalle_ticket",
     "historial_transicion_ticket",
-    # Feature 014 (stack §2): los dos historiales del ciclo de vida del catalogo
+    # Feature 014 (stack Â§2): los dos historiales del ciclo de vida del catalogo
     # son entidades de dominio y se crean en control y en cada tenant.
     "historial_transicion_producto",
     "historial_transicion_categoria",
@@ -103,9 +105,14 @@ TABLAS_CONTROL = {
     "mapa_usuario_esquema",
     "version_esquema",
     "registro_motivo_constancia",
+    # Feature 020: catalogo global y tablas de compras (paridad de DDL).
+    "proveedor",
+    "orden_compra",
+    "detalle_orden_compra",
+    "factura_compra",
 }
 
-#: Las 19 tablas de negocio que cada tenant replica. Las tres auxiliares de
+#: Las 23 tablas de negocio que cada tenant replica. Las tres auxiliares de
 #: control (capacidades, mapa y motivos/constancias) nunca viajan al tenant.
 TABLAS_TENANT = TABLAS_CONTROL - {
     "funcion_institucion",
@@ -116,12 +123,14 @@ TABLAS_TENANT = TABLAS_CONTROL - {
 #: Conteos de `control` tras la semilla (topologia y contexto global).
 CONTROL_ESPERADO = {
     "institucion": 4,
-    "funcion_institucion": 24,
+    "funcion_institucion": 28,
     "rol": 4,
     "estado_ticket": 1,
     "mapa_usuario_esquema": 12,
     "version_esquema": 1,
     "registro_motivo_constancia": 0,
+    # Feature 020: catalogo global compartido; sobrevive a la Fase 3.
+    "proveedor": 3,
 }
 
 #: Tablas de negocio que `control` debe dejar vacias (su lugar es cada tenant) y
@@ -142,6 +151,10 @@ CONTROL_VACIAS = (
     "historial_transicion_ticket",
     "historial_transicion_producto",
     "historial_transicion_categoria",
+    # Feature 020: las compras no se siembran (solo el catalogo de proveedores).
+    "orden_compra",
+    "detalle_orden_compra",
+    "factura_compra",
 )
 
 #: Catalogo sembrado por tenant (Feature 014): la semilla solo puebla INST-001 e
@@ -171,6 +184,11 @@ TOTALES_TENANT = {
     # Feature 014: la semilla no inventa transiciones de catalogo.
     "historial_transicion_producto": 0,
     "historial_transicion_categoria": 0,
+    # Feature 020: 3 proveedores por tenant (12 en total) y compras vacias.
+    "proveedor": 12,
+    "orden_compra": 0,
+    "detalle_orden_compra": 0,
+    "factura_compra": 0,
 }
 
 
@@ -281,8 +299,8 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
     with _base_temporal() as conexion:
         _instalar(conexion)
 
-        assert len(TABLAS_CONTROL) == 22, len(TABLAS_CONTROL)
-        assert len(TABLAS_TENANT) == 19, len(TABLAS_TENANT)
+        assert len(TABLAS_CONTROL) == 26, len(TABLAS_CONTROL)
+        assert len(TABLAS_TENANT) == 23, len(TABLAS_TENANT)
         assert _tablas_del_esquema(conexion, "control") == TABLAS_CONTROL
         instituciones = _instituciones(conexion)
         assert instituciones == list(SEDES_ESPERADAS)
@@ -290,15 +308,15 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
         for institucion_id in instituciones:
             esquema = _esquema_de_institucion(institucion_id)
             assert _tablas_del_esquema(conexion, esquema) == TABLAS_TENANT, institucion_id
-            assert _version_de(conexion, esquema) == VERSION_OBJETIVO_014, institucion_id
+            assert _version_de(conexion, esquema) == VERSION_OBJETIVO_VIGENTE, institucion_id
 
-        assert _version_de(conexion, "control") == VERSION_OBJETIVO_014
+        assert _version_de(conexion, "control") == VERSION_OBJETIVO_VIGENTE
         assert _conteo_tabla(conexion, "control", "version_esquema") == 1
 
 
 def test_el_token_de_codigo_apunta_a_la_version_014_1():
-    """AC-14: el objetivo del despliegue es `014.1` (lo sube T5 con el DDL de T4)."""
-    assert VERSION_ESQUEMA_OBJETIVO == VERSION_OBJETIVO_014, VERSION_ESQUEMA_OBJETIVO
+    """AC-14: el objetivo del despliegue es `020.1` (lo sube T1 con el DDL)."""
+    assert VERSION_ESQUEMA_OBJETIVO == VERSION_OBJETIVO_VIGENTE, VERSION_ESQUEMA_OBJETIVO
 
 
 def test_estructura_de_invitacion_y_motivos_vive_solo_en_control():
@@ -582,7 +600,7 @@ def test_instalacion_limpia_enruta_en_014_1_y_deniega_una_version_menor():
     """AC-14: la version instalada es la unica, compatible y exigida por routing.
 
     Con la instalacion limpia (`01_` + `02_`) el token del codigo y el de los
-    esquemas coinciden (`014.1`) y la identidad mapeada se enruta; bajada la
+    esquemas coinciden (`020.1`) y la identidad mapeada se enruta; bajada la
     version del tenant a una menor, el routing la deniega en cerrado (mismo
     patron que la regresion de cadena de la Feature 013).
     """
@@ -593,7 +611,7 @@ def test_instalacion_limpia_enruta_en_014_1_y_deniega_una_version_menor():
         _instalar(conexion)
 
         # Una sola version, la del codigo, en control y en cada tenant.
-        assert VERSION_ESQUEMA_OBJETIVO == VERSION_OBJETIVO_014
+        assert VERSION_ESQUEMA_OBJETIVO == VERSION_OBJETIVO_VIGENTE
         assert _version_de(conexion, "control") == VERSION_ESQUEMA_OBJETIVO
         for institucion_id in _instituciones(conexion):
             esquema = _esquema_de_institucion(institucion_id)

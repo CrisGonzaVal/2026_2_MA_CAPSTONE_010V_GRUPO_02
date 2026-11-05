@@ -16,6 +16,10 @@
 --   Los dos historiales del catalogo (Feature 014) tambien quedan VACIOS en
 --   control y en cada tenant: registrar una transicion ficticia inventaria
 --   trazabilidad. La semilla solo siembra producto/categoria en estado activo.
+--   La Feature 020 siembra TRES PROVEEDORES en el catalogo global
+--   `control.proveedor` y los replica en cada tenant con el mismo id; las
+--   ordenes, detalles y facturas de compra quedan VACIAS en control y en los
+--   tenants (son datos operativos, no semilla).
 --
 -- ORDEN DE EJECUCION (no lo cambies sin leer esto)
 --   PostgreSQL ejecuta los .sql de esta carpeta solo al crear el volumen, en
@@ -59,7 +63,7 @@
 --   secuencia lineal y solo se alcanza por anulacion o rechazo con motivo.
 --
 -- VERSION OBJETIVO DEL DDL
---   014.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
+--   020.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
 -- =====================================================
 
 BEGIN;
@@ -124,6 +128,7 @@ BEGIN
         'stock_sede', 'movimiento_inventario', 'prioridad', 'estado_ticket',
         'ticket', 'detalle_ticket', 'historial_transicion_ticket',
         'historial_transicion_producto', 'historial_transicion_categoria',
+        'proveedor', 'orden_compra', 'detalle_orden_compra', 'factura_compra',
         'mapa_usuario_esquema', 'version_esquema', 'registro_motivo_constancia'
     ] LOOP
         EXECUTE format('SELECT count(*) FROM control.%I', v_tabla) INTO v_conteo;
@@ -142,6 +147,7 @@ BEGIN
             'stock_sede', 'movimiento_inventario', 'prioridad', 'estado_ticket',
             'ticket', 'detalle_ticket', 'historial_transicion_ticket',
             'historial_transicion_producto', 'historial_transicion_categoria',
+            'proveedor', 'orden_compra', 'detalle_orden_compra', 'factura_compra',
             'version_esquema'
         ] LOOP
             IF to_regclass(format('%I.%I', v_esquema, v_tabla)) IS NULL THEN
@@ -163,20 +169,34 @@ END;
 $guardia$;
 
 -- =====================================================
--- 1a. FUNCION_INSTITUCION  (24 filas = 4 x 6)  [Feature 012, auxiliar]
+-- 1a. FUNCION_INSTITUCION  (28 filas = 4 x 7)  [Feature 012, auxiliar]
 -- =====================================================
--- Cada institucion nace con sus seis capacidades funcionales habilitadas
--- (conjunto cerrado, AC-5). `activo` de `institucion` toma su DEFAULT TRUE (la
--- semilla no nombra la columna). `funcion_institucion` es SOLO de control: el
--- constructor no la copia a ningun tenant.
+-- Cada institucion nace con sus siete capacidades funcionales habilitadas
+-- (conjunto cerrado ampliado por la Feature 020 con `compras`). `activo` de
+-- `institucion` toma su DEFAULT TRUE (la semilla no nombra la columna).
+-- `funcion_institucion` es SOLO de control: el constructor no la copia a ningun
+-- tenant.
 
 INSERT INTO funcion_institucion (institucion_id, funcion, habilitada)
 SELECT i.institucion_id, f.funcion, TRUE
 FROM institucion i
 CROSS JOIN (
     VALUES ('catalogo'), ('inventario'), ('tickets'),
-           ('kanban'), ('dashboard'), ('gestion_organizacional')
+           ('kanban'), ('dashboard'), ('gestion_organizacional'),
+           ('compras')
 ) AS f(funcion);
+
+-- =====================================================
+-- 1a-bis. PROVEEDOR  (3 filas)  [Feature 020, catalogo global]
+-- =====================================================
+-- Catalogo global compartido: `control.proveedor` es la fuente de verdad y cada
+-- tenant recibe una replica con el MISMO `proveedor_id` (sin identidad propia).
+-- Las filas nacen activas; la Feature 020 no expone baja/reactivacion.
+
+INSERT INTO proveedor (proveedor_id, rut, razon_social, nombre_fantasia, giro, correo, telefono) OVERRIDING SYSTEM VALUE VALUES
+(1, '76.543.210-8', 'Papelera del Pacifico SpA',            'Papelera Pacifico',  'Venta de articulos de oficina',            'ventas@papelerapacifico.cl',     '+56 2 2345 6789'),
+(2, '77.654.321-K', 'Suministros Corporativos Andinos Ltda.', 'Suministros Andinos', 'Distribucion de insumos de oficina',       'contacto@suministrosandinos.cl', '+56 2 2987 6543'),
+(3, '78.765.432-1', 'Tecnologia y Toner Express S.A.',       'Toner Express',      'Comercializacion de insumos de impresion', 'pedidos@tonerexpress.cl',        '+56 2 2555 1212');
 
 -- =====================================================
 -- 1b. SEDE  (11 filas)  [Feature 011]
@@ -522,6 +542,10 @@ SELECT setval(pg_get_serial_sequence('prioridad',              'prioridad_id'), 
 SELECT setval(pg_get_serial_sequence('estado_ticket',          'estado_id'),                 COALESCE((SELECT MAX(estado_id)                 FROM estado_ticket),          1));
 SELECT setval(pg_get_serial_sequence('ticket',                 'ticket_id'),                 COALESCE((SELECT MAX(ticket_id)                 FROM ticket),                 1));
 SELECT setval(pg_get_serial_sequence('detalle_ticket',         'detalle_ticket_id'),         COALESCE((SELECT MAX(detalle_ticket_id)         FROM detalle_ticket),         1));
+SELECT setval(pg_get_serial_sequence('proveedor',              'proveedor_id'),              COALESCE((SELECT MAX(proveedor_id)              FROM proveedor),              1));
+SELECT setval(pg_get_serial_sequence('orden_compra',           'orden_compra_id'),           COALESCE((SELECT MAX(orden_compra_id)           FROM orden_compra),           1));
+SELECT setval(pg_get_serial_sequence('detalle_orden_compra',   'detalle_orden_compra_id'),   COALESCE((SELECT MAX(detalle_orden_compra_id)   FROM detalle_orden_compra),   1));
+SELECT setval(pg_get_serial_sequence('factura_compra',         'factura_compra_id'),         COALESCE((SELECT MAX(factura_compra_id)         FROM factura_compra),         1));
 
 -- =====================================================
 -- REPARTO A TENANTS
@@ -553,7 +577,10 @@ DECLARE
         'detalle_ticket:detalle_ticket_id',
         'historial_transicion_ticket:historial_transicion_id',
         'historial_transicion_producto:historial_producto_id',
-        'historial_transicion_categoria:historial_categoria_id'
+        'historial_transicion_categoria:historial_categoria_id',
+        'orden_compra:orden_compra_id',
+        'detalle_orden_compra:detalle_orden_compra_id',
+        'factura_compra:factura_compra_id'
     ];
     par text;
     v_tabla text;
@@ -578,7 +605,7 @@ $reset$;
 
 DO $construccion$
 DECLARE
-    v_version_objetivo constant text := '014.1';
+    v_version_objetivo constant text := '020.1';
     v_institucion_id text;
     v_esquema text;
     v_plantilla text;
@@ -618,6 +645,9 @@ BEGIN
         );
         EXECUTE format('INSERT INTO %1$I.prioridad OVERRIDING SYSTEM VALUE SELECT * FROM control.prioridad', v_esquema);
         EXECUTE format('INSERT INTO %1$I.estado_ticket OVERRIDING SYSTEM VALUE SELECT * FROM control.estado_ticket', v_esquema);
+        -- Feature 020: replica local del catalogo global con el MISMO id. El
+        -- `proveedor_id` del tenant NO es identity, asi que no lleva OVERRIDING.
+        EXECUTE format('INSERT INTO %1$I.proveedor SELECT * FROM control.proveedor', v_esquema);
 
         -- (1.3) Datos organizacionales: sede, departamento y usuario.
         EXECUTE format(
@@ -704,6 +734,21 @@ BEGIN
         IF v_esperado <> v_obtenido THEN
             RAISE EXCEPTION '02: % sede(s) esperadas en %, obtenidas %.', v_esperado, v_esquema, v_obtenido;
         END IF;
+        --       (1.8.3b) Replica exacta del catalogo global de proveedores: mismo
+        --       numero de filas y los MISMOS `proveedor_id` que control.
+        SELECT count(*) INTO v_esperado FROM control.proveedor;
+        EXECUTE format('SELECT count(*) FROM %I.proveedor', v_esquema) INTO v_obtenido;
+        IF v_esperado <> v_obtenido THEN
+            RAISE EXCEPTION '02: % proveedor(es) esperados en %, obtenidos %.', v_esperado, v_esquema, v_obtenido;
+        END IF;
+        EXECUTE format(
+            'SELECT count(*) FROM %1$I.proveedor t '
+            'LEFT JOIN control.proveedor c ON c.proveedor_id = t.proveedor_id '
+            'WHERE c.proveedor_id IS NULL', v_esquema
+        ) INTO v_obtenido;
+        IF v_obtenido <> 0 THEN
+            RAISE EXCEPTION '02: % proveedor(es) con id distinto al catalogo global en %.', v_obtenido, v_esquema;
+        END IF;
         --       (1.8.4) Ningun usuario huerfano (todo usuario tiene departamento).
         EXECUTE format(
             'SELECT count(*) FROM %I.usuario u '
@@ -763,6 +808,11 @@ BEGIN
     -- (presencia obligatoria en toda instalacion; stack.md Feature 013); es el espejo
     -- exacto del estado que el backend espera encontrar en `control` de una
     -- instalacion limpia. El resto del catalogo (y `prioridad`) se vacia como antes.
+    -- Feature 020: las compras no se siembran; el catalogo de proveedores SI se
+    -- conserva (es global y lo usan todas las instituciones).
+    DELETE FROM control.factura_compra;
+    DELETE FROM control.detalle_orden_compra;
+    DELETE FROM control.orden_compra;
     DELETE FROM control.detalle_ticket;
     DELETE FROM control.movimiento_inventario;
     DELETE FROM control.stock_sede;
@@ -831,6 +881,16 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM control.registro_motivo_constancia) <> 0 THEN
         RAISE EXCEPTION '02: control.registro_motivo_constancia debe quedar vacia.';
+    END IF;
+    -- Feature 020: control.proveedor SOBREVIVE a la Fase 3 (catalogo global) y
+    -- las tres tablas de compras deben quedar vacias en control.
+    IF (SELECT count(*) FROM control.proveedor) <> 3 THEN
+        RAISE EXCEPTION '02: control.proveedor debe conservar los 3 proveedores sembrados.';
+    END IF;
+    IF (SELECT count(*) FROM control.orden_compra) <> 0
+       OR (SELECT count(*) FROM control.detalle_orden_compra) <> 0
+       OR (SELECT count(*) FROM control.factura_compra) <> 0 THEN
+        RAISE EXCEPTION '02: las compras no deben quedar sembradas en control.';
     END IF;
     -- Feature 014: la semilla no fabrica transiciones de catalogo.
     IF (SELECT count(*) FROM control.historial_transicion_producto) <> 0

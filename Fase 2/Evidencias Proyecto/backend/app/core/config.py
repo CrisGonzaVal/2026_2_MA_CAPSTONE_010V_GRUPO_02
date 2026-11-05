@@ -14,8 +14,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #: `producto.activo`/`categoria.activo` y los dos historiales de transicion del
 #: catalogo (`historial_transicion_producto`/`historial_transicion_categoria`)
 #: en control y en cada tenant, de modo que el objetivo sube de `013.1` a
-#: `014.1` (spec 014, AC-13/AC-14).
-VERSION_ESQUEMA_OBJETIVO = "014.1"
+#: `014.1` (spec 014, AC-13/AC-14). La Feature 020 agrega el catalogo global de
+#: proveedores y las tablas de orden, detalle y factura de compra en control y en
+#: cada tenant, ademas de la septima capacidad `compras`, de modo que el objetivo
+#: sube de `014.1` a `020.1` (spec 020, AC-2/AC-14).
+VERSION_ESQUEMA_OBJETIVO = "020.1"
 
 
 class Settings(BaseSettings):

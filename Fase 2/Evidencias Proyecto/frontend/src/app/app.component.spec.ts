@@ -260,10 +260,55 @@ describe('AppComponent', () => {
       });
       const compilado = crearYRenderizar();
 
-      for (const retirada of ['/dashboard', '/inventario', '/tickets', '/administracion']) {
+      for (const retirada of [
+        '/dashboard',
+        '/inventario',
+        '/tickets',
+        '/administracion',
+        '/compras',
+        '/compras/necesidades',
+        '/compras/recepcion',
+      ]) {
         expect(destinos(compilado)).withContext(retirada).not.toContain(retirada);
       }
       expect(destinos(compilado)).toContain('/control');
+    });
+
+    /**
+     * Feature 020, AC-13: la administración de compras es del Administrador. El
+     * Bodeguero tiene su propia entrada de recepción (T9), no estas; el
+     * Superadmin solo opera proveedores por API.
+     */
+    it('ofrece las entradas de compras solo al Administrador', () => {
+      autenticacionFalsa.identidad.set({ ...IDENTIDAD_RESUELTA, rol: 'Administrador' });
+      const admin = destinos(crearYRenderizar());
+      expect(admin).toContain('/compras');
+      expect(admin).toContain('/compras/necesidades');
+
+      for (const rol of ['Bodeguero', 'Solicitante', 'Superadmin']) {
+        autenticacionFalsa.identidad.set({ ...IDENTIDAD_RESUELTA, rol });
+        const destinosRol = destinos(crearYRenderizar());
+        expect(destinosRol).withContext(rol).not.toContain('/compras');
+        expect(destinosRol).withContext(rol).not.toContain('/compras/necesidades');
+      }
+    });
+
+    /**
+     * Feature 020, AC-6 (T9): la recepción de compras es del Bodeguero. El
+     * Administrador no la ve; el Solicitante tampoco.
+     */
+    it('ofrece la recepción de compras solo al Bodeguero', () => {
+      autenticacionFalsa.identidad.set({ ...IDENTIDAD_RESUELTA, rol: 'Bodeguero' });
+      const bodega = destinos(crearYRenderizar());
+      expect(bodega).toContain('/compras/recepcion');
+      expect(bodega).not.toContain('/compras');
+
+      for (const rol of ['Administrador', 'Solicitante', 'Superadmin']) {
+        autenticacionFalsa.identidad.set({ ...IDENTIDAD_RESUELTA, rol });
+        expect(destinos(crearYRenderizar()))
+          .withContext(rol)
+          .not.toContain('/compras/recepcion');
+      }
     });
 
     it('mantiene el enlace de tickets a los roles de negocio', () => {

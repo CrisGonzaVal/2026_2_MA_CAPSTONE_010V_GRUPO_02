@@ -411,6 +411,14 @@ export interface TicketDetalle {
   solicitante_correo?: string | null;
   departamento_nombre?: string | null;
   sede_nombre?: string | null;
+  /**
+   * Feature 020 (AC-10/AC-11): propiedad calculada por el servidor con la misma
+   * simulación greedy que usa la recepción de compras. `true` si el saldo de la
+   * sede cubre todos los ítems del ticket; no reserva stock ni cambia el estado.
+   * Opcional porque los fixtures anteriores a la 020 no lo declaran; el backend
+   * siempre lo envía.
+   */
+  stock_disponible?: boolean | null;
 }
 
 /**
@@ -957,3 +965,8 @@ export interface UsuarioEstadoRespuesta {
   usuario_id: number;
   activo: boolean;
 }
+
+// --- Compras (Feature 020) -------------------------------------------------
+// Los tipos del reabastecimiento externo viven en su propio archivo (plan §3) y
+// se reexportan aqui para conservar el unico punto de importacion del repo.
+export * from './compra.interface';

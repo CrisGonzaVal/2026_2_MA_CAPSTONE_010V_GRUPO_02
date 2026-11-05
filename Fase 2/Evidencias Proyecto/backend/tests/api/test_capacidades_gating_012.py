@@ -114,6 +114,8 @@ def test_conjunto_cerrado_de_capacidades():
         "kanban",
         "dashboard",
         "gestion_organizacional",
+        # Feature 020: septima capacidad del conjunto cerrado.
+        "compras",
     }
 
 

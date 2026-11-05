@@ -27,6 +27,8 @@ CAPACIDADES = {
     "kanban",
     "dashboard",
     "gestion_organizacional",
+    # Feature 020.
+    "compras",
 }
 
 
@@ -100,8 +102,11 @@ def test_canonico_control_declara_funcion_institucion():
     assert pk == {"institucion_id", "funcion"}, pk
 
 
-def test_canonico_control_expone_los_seis_identificadores():
-    """D-6/AC-5: el conjunto cerrado de capacidades vive en la capa central."""
+def test_canonico_control_expone_los_siete_identificadores():
+    """D-6/AC-5: el conjunto cerrado de capacidades vive en la capa central.
+
+    La Feature 020 amplia el conjunto con la septima capacidad `compras`.
+    """
     capacidades = _modelo(
         "app.models.control_canonico", "CAPACIDADES", "conjunto cerrado de capacidades (T3)"
     )

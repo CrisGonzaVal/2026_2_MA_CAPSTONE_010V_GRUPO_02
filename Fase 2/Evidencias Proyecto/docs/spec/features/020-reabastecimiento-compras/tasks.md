@@ -1,6 +1,6 @@
 # Feature 020: Lista de Tareas (tasks.md)
 
-**Estado:** pendiente  
+**Estado:** cerrada (04/Nov/2026)  
 **Spec:** `spec.md` (aprobada, revisión 2 sincronizada con §9)  
 **Plan:** `plan.md`
 
@@ -209,15 +209,17 @@
 ### T10 — Checks de Cierre
 **AC cubre:** todos  
 
-- [ ] `pytest` SQLite: 0 failed, suite completa en verde.
-- [ ] `pytest` gated PostgreSQL (`$env:POSTGRES_TEST_URL = "postgresql://postgres:postgres@localhost:5433/postgres"`): 0 failed.
-- [ ] `ng test --watch=false --browsers=ChromeHeadless`: 0 failed.
-- [ ] `ng build`: sin errores de compilación ni advertencias de presupuesto críticas.
-- [ ] Recorrido funcional en 4200: crear/editar OC, emitir, registrar factura, recepcionar en bodega, verificar `stock_sede`, badge en ticket e historial de desbloqueo.
-- [ ] Reconstruir imagen: `docker compose -f docker-compose.yml build frontend` y `up -d frontend`.
-- [ ] Recorrido de humo en 8080: vistas de compras presentes y flujo básico funcional.
-- [ ] `grep` de coherencia sobre `AGENTS.md`, `MEMORY.md`, `.agents/skills/` y `stack.md`: sin rutas ni conteos obsoletos.
-- [ ] Actualizar `MEMORY.md` y marcar la Feature 020 `[x]` en `roadmap.md` solo después de (a)…(d).
-- [ ] Verificar que `stack.md` ya contiene la sección 020 de T0 (no volver a agregarla).
+- [x] `pytest` SQLite: 0 failed, suite completa en verde.
+- [x] `pytest` gated PostgreSQL (`$env:POSTGRES_TEST_URL = "postgresql://postgres:postgres@localhost:5433/postgres"`): 0 failed.
+- [x] `ng test --watch=false --browsers=ChromeHeadless`: 0 failed.
+- [x] `ng build`: sin errores de compilación ni advertencias de presupuesto críticas.
+- [x] Recorrido funcional en 4200: crear/editar OC, emitir, registrar factura, recepcionar en bodega, verificar `stock_sede`, badge en ticket e historial de desbloqueo.
+- [x] Reconstruir imagen: `docker compose -f docker-compose.yml build frontend` y `up -d frontend`.
+- [x] Recorrido de humo en 8080: vistas de compras presentes y flujo básico funcional.
+- [x] `grep` de coherencia sobre `AGENTS.md`, `MEMORY.md`, `.agents/skills/` y `stack.md`: sin rutas ni conteos obsoletos.
+- [x] Actualizar `MEMORY.md` y marcar la Feature 020 `[x]` en `roadmap.md` solo después de (a)…(d).
+- [x] Verificar que `stack.md` ya contiene la sección 020 de T0 (no volver a agregarla).
 
 **Hecho cuando:** los dos puertos responden, las suites están en verde, `stack.md`/`MEMORY.md`/`roadmap.md` están sincronizados y el grep de coherencia no encuentra afirmaciones obsoletas.
+
+**Evidencia (04–05/Nov/2026):** `pytest` completa con gated PostgreSQL 16 **1533 passed / 18 warnings / 0 failed** (624,36 s); `ng test` **518/518 SUCCESS**; `ng build` limpio (`main-DYJHWLAX.js`, idéntico al de T9) y `/openapi.json` con las **10** operaciones de compras sobre 72 protegidas. Recorrido 4200 con escritura real: necesidades → OC `OC-2026-000001` (borrador editado 6→8, emitido, factura `F-2026-020`) → cancelación de `Borrador #2` con motivo obligatorio → recepción del Bodeguero con `stock_sede` 6→14 → ticket #10 sin badge, OC `OC-2026-000003` con factura `F-2026-021`, recepción con «Se desbloquearon 1 ticket(s)» y `stock_sede` sin fila→3, historial `EnCurso → EnCurso` con motivo OC/Factura y badge «Stock disponible — Listo para despacho». Humo 8080 tras reconstruir la imagen: menú del Administrador, listado con las tres OC y sus estados/facturas, y deep link a `/compras/necesidades` servido por nginx. Grep de coherencia: se corrigieron `MEMORY.md` (7 capacidades, 020 cerrada), `AGENTS.md` §4/§7 (26/23 tablas, `020.1`, 21 entidades, `compras`) y las skills `fastapi-pydantic-v2` y `sdd-workflow` (17→21 entidades); `stack.md` conserva la sección 020 de T0. Detalle y capturas en `evidencia/README.md`.

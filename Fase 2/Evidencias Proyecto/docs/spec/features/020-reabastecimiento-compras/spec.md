@@ -1,6 +1,6 @@
 # Feature 020: Reabastecimiento externo y compras de insumos
 
-**Estado:** aprobado (revisión 2, sincronizada con §9)  
+**Estado:** aprobado (revisión 2, sincronizada con §9); **cerrada el 04/Nov/2026** (ver §10)  
 **Release:** 2.0  
 **Tipo:** Flujo operativo de reabastecimiento (Procure-to-Stock-to-Desk) y control de existencias
 
@@ -371,5 +371,28 @@ Las siguientes resoluciones responden a las observaciones del agente QA y a las 
 15. **Contrato de la feature:** 10 operaciones nuevas en la matriz (62 → **72**), 4 entidades de dominio nuevas (17 → **21**), 26 tablas en control, 23 por tenant, versión **`020.1`** y séptima capacidad **`compras`** (28 filas de capacidad en la semilla: 4 instituciones × 7).
 
 16. **Interfaz del Superadmin:** La API de proveedores queda disponible para el Superadmin, pero la vista dedicada del panel SaaS no forma parte de las tareas de esta feature. El Administrador crea proveedores desde el formulario de OC y los consulta en el selector.
+
+---
+
+## 10. Estado de Verificación por AC
+
+Verificado el **04–05/Nov/2026**. Suites: `pytest` completa con gated PostgreSQL 16 **1533 passed / 0 failed**; `ng test` **518/518**; `ng build` limpio (`main-DYJHWLAX.js`); `/openapi.json` con 10 operaciones de compras y 72 protegidas por matriz. El recorrido funcional en 4200 y el humo en 8080 están en [evidencia/README.md](evidencia/README.md).
+
+| AC | Estado | Evidencia |
+|---|---|---|
+| AC-1 | Verificado | `test_administrador_consulta_necesidades_y_proveedores`; vista `necesidades` en 4200 (§3.1) con sugerencia Sede Maipú / Rotulador. |
+| AC-2 | Verificado | `test_administrador_crea_proveedor_y_rut_duplicado_responde_409`, `test_superadmin_lista_y_crea_proveedores_sin_replica`; alta inline de proveedor en `nueva-orden`. |
+| AC-3 | Verificado | `test_flujo_administrador_crear_editar_emitir_facturar_y_cancelar`; borrador #1 creado y editado (6 → 8) en 4200 (§3.2). |
+| AC-4 | Verificado | Mismo test; «Emitir orden 1» asignó `OC-2026-000001` (§3.3). |
+| AC-5 | Verificado | Mismo test; `PUT` idempotente registrar/editar factura; `F-2026-020` y `F-2026-021` (§3.4, §3.7). |
+| AC-6 | Verificado | `test_bodeguero_solo_ve_facturadas_de_su_sede`, `test_bodeguero_sin_sede_recibe_409_en_el_listado`, `test_bodeguero_sin_ordenes_en_su_sede_recibe_lista_vacia`; vista `recepcion-bodega` (§3.6). |
+| AC-7 | Verificado | `test_bodeguero_no_recepciona_orden_de_otra_sede` y validación de estado en servicio; el panel solo ofrece `Facturada`. |
+| AC-8 | Verificado | `test_bodeguero_recepciona_la_facturada_de_su_sede`; stock 6 → 14 y sin fila → 3 (§3.6, §3.7). |
+| AC-9 | Verificado | Movimiento `ENTRADA` por recepción, cubierto por el servicio y el gated; contraste en BD (§3.6). |
+| AC-10 | Verificado | Cobertura greedy en `test_compras_postgres_020.py`; «Se desbloquearon 1 ticket(s)» e historial `EnCurso → EnCurso` con motivo OC/Factura (§3.7). |
+| AC-11 | Verificado | Badge «Stock disponible — Listo para despacho» en el detalle del ticket, ausente antes de la recepción y presente después (§3.7); `ticket-detalle.component.spec.ts`. |
+| AC-12 | Verificado | `test_flujo_administrador_crear_editar_emitir_facturar_y_cancelar`; cancelación con motivo obligatorio y estado `Cancelada` (§3.5). |
+| AC-13 | Verificado | `test_roles_no_autorizados_reciben_403`, `test_superadmin_no_recepciona_ni_factura`, `test_capacidad_compras_apagada_deniega_403`; menús por rol en 4200 y 8080 (§3.8). |
+| AC-14 | Verificado | `test_orden_ajena_responde_404_y_no_aparece_en_el_listado`, gated de aislamiento y réplica de proveedor por `proveedor_id`; 26 tablas de control / 23 por tenant. |
 
 

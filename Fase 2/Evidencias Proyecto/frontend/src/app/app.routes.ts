@@ -2,6 +2,7 @@ import { Route, Routes } from '@angular/router';
 
 import {
   ROLES_ADMINISTRATIVOS,
+  ROLES_COMPRAS,
   ROLES_DASHBOARD,
   ROLES_INVENTARIO,
   ROLES_TICKETS,
@@ -75,6 +76,17 @@ export const routes: Routes = [
       import('./features/administracion/administracion.routes').then(
         (m) => m.administracionRoutes,
       ),
+  },
+  {
+    // Feature 020, AC-13: el segmento `/compras` acoge al Administrador
+    // (necesidades, OC y facturación) y al Bodeguero (recepción de bodega). Cada
+    // vista hija exige su rol con su propio `RolGuard`; el Superadmin no navega
+    // aquí (opera proveedores por API). La frontera real sigue en la matriz del
+    // backend.
+    path: 'compras',
+    ...seccionProtegida(ROLES_COMPRAS),
+    loadChildren: () =>
+      import('./features/compras/compras.routes').then((m) => m.comprasRoutes),
   },
   {
     // Portal de control (Feature 010, AC-15): segmento lazy con su propio login

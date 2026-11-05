@@ -90,6 +90,17 @@ _CICLO_VIDA_CATALOGO: frozenset[str] = frozenset({_ADMINISTRADOR})
 # tenant desde la 017.
 _AMBITO_INVENTARIO: frozenset[str] = frozenset({_ADMINISTRADOR, _BODEGUERO})
 
+# --- Feature 020 (spec D-7, AC-13, plan §4) --------------------------------
+# Compras es administracion institucional: el Administrador crea/edita/emite,
+# factura, cancela y consulta necesidades; el Bodeguero solo ve el panel de
+# recepciones (OC `Facturada` de su sede) y confirma la recepcion fisica. El
+# Superadmin solo opera el catalogo global de proveedores en `control`.
+_COMPRAS_ADMINISTRACION: frozenset[str] = frozenset({_ADMINISTRADOR})
+_COMPRAS_PROVEEDORES: frozenset[str] = frozenset(
+    {_ADMINISTRADOR, _SUPERADMIN}
+)
+_COMPRAS_ORDENES: frozenset[str] = frozenset({_ADMINISTRADOR, _BODEGUERO})
+
 
 #: Matriz explicita operacion -> roles permitidos (D-3, AC-9).
 #:
@@ -283,6 +294,28 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
     # queda fuera (403 por matriz) y el gating de la capacidad `inventario` se
     # evalua despues de esta matriz.
     ("GET", "/api/v1/inventario/existencias/{producto_id}"): _LECTURA_NEGOCIO,
+    # Feature 020 (spec D-7/AC-13, plan §4): reabastecimiento externo y compras.
+    # Diez operaciones **aditivas** (matriz 62 -> 72); ninguna entrada previa
+    # cambia de roles ni se retira. El catalogo global de proveedores queda en
+    # manos del Administrador y del Superadmin (control); el resto es
+    # administracion institucional y el panel/recepcion del Bodeguero. El gating
+    # de la capacidad `compras` se evalua despues de esta matriz.
+    ("GET", "/api/v1/compras/necesidades"): _COMPRAS_ADMINISTRACION,
+    ("GET", "/api/v1/compras/proveedores"): _COMPRAS_PROVEEDORES,
+    ("POST", "/api/v1/compras/proveedores"): _COMPRAS_PROVEEDORES,
+    ("POST", "/api/v1/compras/ordenes"): _COMPRAS_ADMINISTRACION,
+    ("GET", "/api/v1/compras/ordenes"): _COMPRAS_ORDENES,
+    ("PUT", "/api/v1/compras/ordenes/{orden_id}"): _COMPRAS_ADMINISTRACION,
+    ("POST", "/api/v1/compras/ordenes/{orden_id}/emitir"): _COMPRAS_ADMINISTRACION,
+    ("PUT", "/api/v1/compras/ordenes/{orden_id}/factura"): _COMPRAS_ADMINISTRACION,
+    (
+        "POST",
+        "/api/v1/compras/ordenes/{orden_id}/recepcion",
+    ): frozenset({_BODEGUERO}),
+    (
+        "POST",
+        "/api/v1/compras/ordenes/{orden_id}/cancelar",
+    ): _COMPRAS_ADMINISTRACION,
 }
 
 

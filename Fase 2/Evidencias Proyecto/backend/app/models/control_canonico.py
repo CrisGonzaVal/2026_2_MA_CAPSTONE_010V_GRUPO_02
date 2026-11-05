@@ -20,7 +20,14 @@ romperia la suite SQLite, donde el esquema `control` no existe). Ademas,
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, String, true
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Identity,
+    String,
+    true,
+)
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column
 
 #: Conjunto cerrado de capacidades funcionales por institucion (D-6/AC-5). Es una
@@ -34,6 +41,9 @@ CAPACIDADES: frozenset[str] = frozenset(
         "kanban",
         "dashboard",
         "gestion_organizacional",
+        # Feature 020: septima capacidad, ampliacion explicita del conjunto
+        # cerrado de la 012 para el flujo de reabastecimiento y compras.
+        "compras",
     }
 )
 
@@ -93,3 +103,30 @@ class FuncionInstitucion(BaseControl):
     )
     funcion: Mapped[str] = mapped_column(String(50), primary_key=True)
     habilitada: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class ProveedorControl(BaseControl):
+    """Catalogo global de proveedores (solo `control`, Feature 020).
+
+    Es la **unica estructura compartida** entre control y los tenants: la replica
+    tenant (`app.models.compra.Proveedor`) conserva el mismo `proveedor_id` como
+    PK simple (sin identidad), de modo que la correspondencia es determinista y
+    no hay FK cross-schema. Justificacion aprobada en `docs/spec/stack.md`,
+    seccion "Reabastecimiento externo y compras (Feature 020)".
+    """
+
+    __tablename__ = "proveedor"
+
+    proveedor_id: Mapped[int] = mapped_column(
+        Identity(always=True), primary_key=True
+    )
+    rut: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    razon_social: Mapped[str] = mapped_column(String(150), nullable=False)
+    nombre_fantasia: Mapped[str | None] = mapped_column(String(100))
+    giro: Mapped[str | None] = mapped_column(String(100))
+    correo: Mapped[str | None] = mapped_column(String(100))
+    telefono: Mapped[str | None] = mapped_column(String(20))
+    #: Sin operacion de baja/reactivacion en la 020: nace activo.
+    activo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )

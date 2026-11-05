@@ -115,15 +115,17 @@ def test_matriz_tiene_exactamente_60_operaciones_tras_014():
     El nombre conserva el baseline historico de la 014, pero el total absoluto se
     amplia **explicitamente** por las features posteriores que solo agregan
     filas: la Feature 018 (spec D-6/AC-8, plan §1.4) suma
-    `GET /api/v1/inventario/ambito` (60 -> 61) y la Feature 019 (spec D-6/AC-11,
+    `GET /api/v1/inventario/ambito` (60 -> 61), la Feature 019 (spec D-6/AC-11,
     plan §1.1.4) suma `GET /api/v1/inventario/existencias/{producto_id}`
-    (61 -> 62). Ninguna de las dos cambia una fila de la 014. No es una
-    reescritura silenciosa del contrato, es una ampliacion documentada.
+    (61 -> 62) y la Feature 020 (spec D-7/AC-13, plan §4) suma las diez rutas de
+    compras (62 -> 72). Ninguna cambia una fila de la 014. No es una reescritura
+    silenciosa del contrato, es una ampliacion documentada.
     """
     total = len(permisos.MATRIZ_PERMISOS)
-    assert total == 62, (
-        "la matriz debe tener 62 operaciones (55 previas + 5 de la 014 + la de "
-        f"ambito de la 018 + el detalle de producto de la 019); tiene {total}"
+    assert total == 72, (
+        "la matriz debe tener 72 operaciones (55 previas + 5 de la 014 + la de "
+        f"ambito de la 018 + el detalle de producto de la 019 + las 10 de compras "
+        f"de la 020); tiene {total}"
     )
 
 
@@ -157,9 +159,10 @@ def test_openapi_tiene_60_operaciones_tras_014(cliente):
     El nombre conserva el baseline historico de la 014; el total absoluto se
     amplia **explicitamente** por las features posteriores, que solo agregan
     rutas: la Feature 018 (spec D-6/AC-8, plan §1.4) publica
-    `GET /api/v1/inventario/ambito` (60 -> 61) y la Feature 019 (spec D-6/AC-11,
+    `GET /api/v1/inventario/ambito` (60 -> 61), la Feature 019 (spec D-6/AC-11,
     plan §1.1.4) publica `GET /api/v1/inventario/existencias/{producto_id}`
-    (61 -> 62), sin alterar las cinco rutas de la 014. Ampliacion documentada, no
+    (61 -> 62) y la Feature 020 (spec D-7/AC-13) publica las diez rutas de compras
+    (62 -> 72), sin alterar las cinco rutas de la 014. Ampliacion documentada, no
     reescritura silenciosa.
     """
     contrato = cliente.get("/openapi.json").json()
@@ -170,7 +173,7 @@ def test_openapi_tiene_60_operaciones_tras_014(cliente):
         for metodo in operaciones
         if metodo in _METODOS_OPENAPI
     )
-    assert total == 62, f"/openapi.json debe publicar 62 operaciones v1; publica {total}"
+    assert total == 72, f"/openapi.json debe publicar 72 operaciones v1; publica {total}"
 
 
 @pytest.mark.parametrize(

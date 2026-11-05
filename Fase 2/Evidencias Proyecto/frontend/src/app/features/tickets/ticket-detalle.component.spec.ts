@@ -316,6 +316,20 @@ describe('TicketDetalleComponent', () => {
       expect(texto).toContain('1');
     });
 
+    it('AC-11: muestra el aviso de stock disponible cuando el backend lo marca', () => {
+      const conStock = crearDetalle();
+      conStock.stock_disponible = true;
+      responderCarga(conStock);
+
+      expect(textoRaiz()).toContain('Stock disponible — Listo para despacho');
+    });
+
+    it('AC-11: sin stock disponible no muestra el aviso', () => {
+      responderCarga(crearDetalle());
+
+      expect(textoRaiz()).not.toContain('Stock disponible');
+    });
+
     it('muestra el historial completo con actor, de→a, instante y motivo', () => {
       responderCarga();
 

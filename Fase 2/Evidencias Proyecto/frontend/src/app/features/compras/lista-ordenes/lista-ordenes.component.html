@@ -1,0 +1,402 @@
+<section class="space-y-6">
+  <header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-slate-800">Órdenes de compra</h2>
+      <p class="text-sm text-slate-500">
+        Ciclo de vida de la OC: borrador, emisión formal, factura del proveedor y cancelación.
+        La recepción física la confirma el Bodeguero de la sede destino.
+      </p>
+    </div>
+    <a
+      routerLink="/compras/nueva"
+      class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+    >
+      Nueva orden de compra
+    </a>
+  </header>
+
+  @if (mensajeExito(); as exito) {
+    <p
+      role="status"
+      aria-live="polite"
+      class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+    >
+      {{ exito }}
+    </p>
+  }
+
+  @if (errorAccion(); as error) {
+    <p
+      role="alert"
+      class="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+    >
+      {{ error }}
+    </p>
+  }
+
+  <div
+    class="flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+  >
+    <div class="flex flex-col gap-1">
+      <label for="lista-estado" class="text-sm font-medium text-slate-700">Estado</label>
+      <select
+        id="lista-estado"
+        [value]="filtroEstado() ?? ''"
+        (change)="cambiarFiltroEstado($any($event.target).value)"
+        class="min-w-44 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      >
+        <option value="">Todos los estados</option>
+        @for (estado of estados; track estado) {
+          <option [value]="estado">{{ estado }}</option>
+        }
+      </select>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="lista-sede" class="text-sm font-medium text-slate-700">Sede</label>
+      <select
+        id="lista-sede"
+        [value]="filtroSede() ?? ''"
+        (change)="cambiarFiltroSede($any($event.target).value)"
+        class="min-w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      >
+        <option value="">Todas las sedes</option>
+        @for (sede of sedes(); track sede.sede_id) {
+          <option [value]="sede.sede_id">{{ sede.nombre }}</option>
+        }
+      </select>
+    </div>
+    <button
+      type="button"
+      class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+      (click)="limpiarFiltros()"
+    >
+      Limpiar filtros
+    </button>
+  </div>
+
+  @if (cargando()) {
+    <p
+      role="status"
+      aria-live="polite"
+      class="rounded-xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-500"
+    >
+      Cargando órdenes de compra...
+    </p>
+  } @else if (mensajeError()) {
+    <div
+      role="alert"
+      class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+    >
+      <span>{{ mensajeError() }}</span>
+      <button
+        type="button"
+        class="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+        (click)="reintentar()"
+      >
+        Reintentar
+      </button>
+    </div>
+  } @else if (ordenes().length) {
+    <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Órdenes de compra de la institución</caption>
+        <thead class="bg-slate-50">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-semibold text-slate-600">
+              Orden
+            </th>
+            <th scope="col" class="px-4 py-3 text-left font-semibold text-slate-600">
+              Proveedor
+            </th>
+            <th scope="col" class="px-4 py-3 text-left font-semibold text-slate-600">Sede</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Ítems
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Total
+            </th>
+            <th scope="col" class="px-4 py-3 text-left font-semibold text-slate-600">
+              Estado
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Acciones
+            </th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          @for (orden of ordenes(); track orden.orden_compra_id) {
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3">
+                <p class="font-medium text-slate-800">
+                  {{ orden.numero_oc ?? 'Borrador #' + orden.orden_compra_id }}
+                </p>
+                <p class="text-xs text-slate-500">
+                  Creada el {{ orden.fecha_creacion | date: 'dd/MM/yyyy HH:mm' }}
+                </p>
+              </td>
+              <td class="px-4 py-3 text-slate-700">
+                {{ orden.proveedor?.razon_social ?? 'Proveedor #' + orden.proveedor_id }}
+              </td>
+              <td class="px-4 py-3 text-slate-700">
+                {{ orden.sede?.nombre ?? 'Sede #' + orden.sede_id }}
+              </td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ orden.detalles.length }}</td>
+              <td class="px-4 py-3 text-right font-medium text-slate-800">
+                {{ orden.total }}
+              </td>
+              <td class="px-4 py-3">
+                <span [class]="claseEstado(orden.estado)">{{ orden.estado }}</span>
+                @if (orden.factura; as factura) {
+                  <p class="mt-1 text-xs text-slate-500">
+                    Factura {{ factura.numero_factura }} ·
+                    {{ factura.fecha_factura | date: 'dd/MM/yyyy' }}
+                  </p>
+                }
+                @if (orden.fecha_recepcion; as recepcion) {
+                  <p class="mt-1 text-xs text-slate-500">
+                    Recibida el {{ recepcion | date: 'dd/MM/yyyy HH:mm' }}
+                  </p>
+                }
+              </td>
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap justify-end gap-2">
+                  @if (puedeEditar(orden)) {
+                    <a
+                      [routerLink]="['/compras', orden.orden_compra_id, 'editar']"
+                      [attr.aria-label]="'Editar orden ' + (orden.numero_oc ?? orden.orden_compra_id)"
+                      class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    >
+                      Editar
+                    </a>
+                  }
+                  @if (puedeEmitir(orden)) {
+                    <button
+                      type="button"
+                      [disabled]="procesando() === orden.orden_compra_id"
+                      [attr.aria-label]="'Emitir orden ' + orden.orden_compra_id"
+                      class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      (click)="emitir(orden)"
+                    >
+                      Emitir
+                    </button>
+                  }
+                  @if (puedeFacturar(orden)) {
+                    <button
+                      type="button"
+                      [attr.aria-label]="
+                        (orden.factura ? 'Editar factura de la orden ' : 'Registrar factura de la orden ') +
+                        orden.orden_compra_id
+                      "
+                      class="rounded-lg border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800 transition hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                      (click)="abrirFactura(orden)"
+                    >
+                      {{ orden.factura ? 'Editar factura' : 'Facturar' }}
+                    </button>
+                  }
+                  @if (puedeCancelar(orden)) {
+                    <button
+                      type="button"
+                      [attr.aria-label]="'Cancelar orden ' + orden.orden_compra_id"
+                      class="rounded-lg border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                      (click)="abrirCancelacion(orden)"
+                    >
+                      Cancelar
+                    </button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <p
+      class="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500"
+    >
+      No hay órdenes con los filtros actuales. Crea la primera con «Nueva orden de compra».
+    </p>
+  }
+
+  @if (facturando(); as orden) {
+    <div
+      class="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4"
+      role="presentation"
+      (click)="cerrarFactura()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="factura-titulo"
+        class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <h3 id="factura-titulo" class="text-lg font-bold text-slate-800">
+          {{ orden.factura ? 'Editar factura' : 'Registrar factura' }} ·
+          {{ orden.numero_oc ?? 'Borrador #' + orden.orden_compra_id }}
+        </h3>
+        <p class="mt-1 text-sm text-slate-500">
+          La factura es la llave que habilita la recepción física en bodega.
+        </p>
+
+        <form
+          [formGroup]="formularioFactura"
+          (ngSubmit)="guardarFactura()"
+          novalidate
+          class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
+        >
+          <div class="flex flex-col gap-1 sm:col-span-2">
+            <label for="factura-numero" class="text-sm font-medium text-slate-700">
+              Número de factura <span aria-hidden="true" class="text-rose-600">*</span>
+            </label>
+            <input
+              id="factura-numero"
+              type="text"
+              formControlName="numero_factura"
+              maxlength="50"
+              class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            />
+            @if (
+              formularioFactura.controls.numero_factura.invalid &&
+              formularioFactura.controls.numero_factura.touched
+            ) {
+              <p class="text-xs text-rose-600">El número de factura es obligatorio.</p>
+            }
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label for="factura-fecha" class="text-sm font-medium text-slate-700">
+              Fecha de emisión <span aria-hidden="true" class="text-rose-600">*</span>
+            </label>
+            <input
+              id="factura-fecha"
+              type="date"
+              formControlName="fecha_factura"
+              class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            />
+            @if (
+              formularioFactura.controls.fecha_factura.invalid &&
+              formularioFactura.controls.fecha_factura.touched
+            ) {
+              <p class="text-xs text-rose-600">La fecha de la factura es obligatoria.</p>
+            }
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label for="factura-monto" class="text-sm font-medium text-slate-700">
+              Monto total <span aria-hidden="true" class="text-rose-600">*</span>
+            </label>
+            <input
+              id="factura-monto"
+              type="number"
+              step="0.01"
+              min="0.01"
+              formControlName="monto_total"
+              class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            />
+            @if (
+              formularioFactura.controls.monto_total.invalid &&
+              formularioFactura.controls.monto_total.touched
+            ) {
+              <p class="text-xs text-rose-600">El monto debe ser mayor que cero.</p>
+            }
+          </div>
+
+          <div class="flex flex-col gap-1 sm:col-span-2">
+            <label for="factura-observaciones" class="text-sm font-medium text-slate-700">
+              Observaciones
+            </label>
+            <textarea
+              id="factura-observaciones"
+              rows="2"
+              maxlength="500"
+              formControlName="observaciones"
+              class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            ></textarea>
+          </div>
+
+          <div class="flex flex-wrap gap-2 sm:col-span-2">
+            <button
+              type="submit"
+              [disabled]="guardandoFactura()"
+              class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {{ orden.factura ? 'Guardar factura' : 'Registrar factura' }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              (click)="cerrarFactura()"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  @if (cancelando(); as orden) {
+    <div
+      class="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4"
+      role="presentation"
+      (click)="cerrarCancelacion()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cancelacion-titulo"
+        class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <h3 id="cancelacion-titulo" class="text-lg font-bold text-slate-800">
+          Cancelar orden {{ orden.numero_oc ?? '#' + orden.orden_compra_id }}
+        </h3>
+        <p class="mt-1 text-sm text-slate-500">
+          La cancelación es definitiva para esta orden y queda auditada con tu usuario y la
+          fecha. No revierte stock ni facturas.
+        </p>
+
+        <form
+          [formGroup]="formularioCancelacion"
+          (ngSubmit)="confirmarCancelacion()"
+          novalidate
+          class="mt-4 space-y-4"
+        >
+          <div class="flex flex-col gap-1">
+            <label for="cancelacion-motivo" class="text-sm font-medium text-slate-700">
+              Motivo <span aria-hidden="true" class="text-rose-600">*</span>
+            </label>
+            <textarea
+              id="cancelacion-motivo"
+              rows="3"
+              maxlength="500"
+              formControlName="motivo_cancelacion"
+              class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            ></textarea>
+            <p class="text-right text-xs text-slate-500">
+              {{ formularioCancelacion.controls.motivo_cancelacion.value.length }}/500
+            </p>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              [disabled]="guardandoCancelacion()"
+              class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              Confirmar cancelación
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              (click)="cerrarCancelacion()"
+            >
+              Volver
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</section>

@@ -5,8 +5,8 @@ instalación vigentes: no hay migraciones ni cadena incremental.
 
 | Script | Qué hace |
 |---|---|
-| `01_esquema.sql` | Crea `control` (22 tablas) y un esquema `tenant_<slug>_<hash>` por institución (19 tablas de negocio cada uno). Siembra la topología: las 4 instituciones de QA (las capacidades funcionales las llena `02_`). |
-| `02_datos_semilla.sql` | Llena la semilla QA, la reparte a los tenants, replica catálogos, consolida `stock_sede`, puebla el mapa `correo -> esquema`, fija la versión `014.1` y deja `control` como contexto global. Corre en una transacción con guardia fail-closed. |
+| `01_esquema.sql` | Crea `control` (26 tablas) y un esquema `tenant_<slug>_<hash>` por institución (23 tablas de negocio cada uno). Siembra la topología: las 4 instituciones de QA (las capacidades funcionales las llena `02_`). |
+| `02_datos_semilla.sql` | Llena la semilla QA, la reparte a los tenants, replica catálogos (incluido el global de proveedores), consolida `stock_sede`, puebla el mapa `correo -> esquema`, fija la versión `020.1` y deja `control` como contexto global. Corre en una transacción con guardia fail-closed. |
 
 Estructura de la Feature 014: `producto.activo` y `categoria.activo` (booleanas,
 `NOT NULL DEFAULT TRUE`) y las dos tablas de historial de transición del catálogo
@@ -14,6 +14,16 @@ Estructura de la Feature 014: `producto.activo` y `categoria.activo` (booleanas,
 dominio 16.ª y 17.ª—, creadas tanto en `control` como en la plantilla tenant. La
 semilla siembra todo el catálogo activo y **no** inventa transiciones: los dos
 historiales quedan vacíos.
+
+Estructura de la Feature 020: cuatro tablas nuevas —`proveedor`,
+`orden_compra`, `detalle_orden_compra` y `factura_compra`— creadas en `control` y
+en la plantilla tenant. `proveedor` es el **catálogo global compartido**: en
+`control` tiene identity y datos; en cada tenant se replica con el **mismo**
+`proveedor_id` como PK simple. Las otras tres tablas existen en `control` por
+paridad de DDL pero quedan vacías (las compras son datos de negocio por tenant).
+La semilla siembra **3 proveedores** en `control` y los replica en los cuatro
+tenants; no siembra órdenes ni facturas. Además se agrega la séptima capacidad
+`compras`, así que `funcion_institucion` tiene **28 filas** (4 × 7).
 
 El prefijo numérico es funcional: `docker-compose.yml` monta esta carpeta en
 `/docker-entrypoint-initdb.d` y PostgreSQL ejecuta los `.sql` en orden
@@ -53,17 +63,22 @@ esquema hardcodeados.
 ```sql
 SELECT count(*) FROM control.institucion;              -- 4
 SELECT count(*) FROM control.mapa_usuario_esquema;     -- 12
-SELECT version FROM control.version_esquema;           -- 014.1
+SELECT count(*) FROM control.funcion_institucion;      -- 28 (4 × 7)
+SELECT version FROM control.version_esquema;           -- 020.1
 SELECT count(*) FROM control.historial_transicion_producto;   -- 0
 SELECT count(*) FROM control.historial_transicion_categoria;  -- 0
+SELECT count(*) FROM control.proveedor;                -- 3 (catálogo global)
+SELECT count(*) FROM control.orden_compra;             -- 0
+SELECT count(*) FROM control.detalle_orden_compra;     -- 0
+SELECT count(*) FROM control.factura_compra;           -- 0
 SELECT table_schema, count(*) FROM information_schema.tables
 WHERE table_schema = 'control' AND table_type = 'BASE TABLE'
-GROUP BY table_schema;                                 -- control: 22
+GROUP BY table_schema;                                 -- control: 26
 SELECT table_schema, count(*) FROM information_schema.tables
 WHERE table_schema LIKE 'tenant_%' AND table_type = 'BASE TABLE'
-GROUP BY table_schema;                                 -- 19 por tenant
+GROUP BY table_schema;                                 -- 23 por tenant
 ```
 
-Cada tenant debe declarar la versión `014.1` en su `version_esquema`: el routing
+Cada tenant debe declarar la versión `020.1` en su `version_esquema`: el routing
 exige igualdad exacta con `VERSION_ESQUEMA_OBJETIVO` (`backend/app/core/config.py`)
 y una versión menor no se enruta.

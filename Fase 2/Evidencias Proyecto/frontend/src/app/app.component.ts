@@ -3,8 +3,10 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
 
 import {
   puedeAdministrar as rolPuedeAdministrar,
+  puedeVerComprasAdministracion as rolPuedeVerComprasAdministracion,
   puedeVerDashboard as rolPuedeVerDashboard,
   puedeVerInventario as rolPuedeVerInventario,
+  puedeVerRecepcionCompras as rolPuedeVerRecepcionCompras,
   puedeVerTickets as rolPuedeVerTickets,
 } from './core/auth/roles';
 import { AutenticacionService } from './core/services/auth.service';
@@ -88,6 +90,27 @@ export class AppComponent {
   /** `true` si el rol puede navegar a `/tickets` (Feature 012, AC-3; 017, AC-15). */
   readonly puedeVerTickets = computed(() =>
     rolPuedeVerTickets(this.autenticacion.identidad()?.rol ?? null),
+  );
+
+  /**
+   * `true` si el rol navega a la administración de compras (Feature 020, AC-13).
+   *
+   * Solo oculta enlaces de la navegación: la ruta sigue protegida por el guard
+   * de rol y la API por la matriz central. El Bodeguero tiene su propia entrada
+   * de recepción (T9), no esta.
+   */
+  readonly puedeVerCompras = computed(() =>
+    rolPuedeVerComprasAdministracion(this.autenticacion.identidad()?.rol ?? null),
+  );
+
+  /**
+   * `true` si el rol navega al panel de recepción de compras (Feature 020, AC-6).
+   *
+   * Solo el Bodeguero. Como el resto de la navegación, es comodidad de interfaz:
+   * la ruta hija exige su rol y la API sigue siendo la frontera.
+   */
+  readonly puedeVerRecepcion = computed(() =>
+    rolPuedeVerRecepcionCompras(this.autenticacion.identidad()?.rol ?? null),
   );
 
   /**

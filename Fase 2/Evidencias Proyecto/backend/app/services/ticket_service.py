@@ -31,7 +31,7 @@ from app.schemas.ticket_schema import (
     TicketDespacho,
     TicketEditar,
 )
-from app.services import ambito_service
+from app.services import ambito_service, compra_service
 from app.services.auth_service import IdentidadAutenticada
 from app.services.inventario_service import TIPO_SALIDA, es_stock_critico
 
@@ -1394,6 +1394,12 @@ def obtener_ticket_detalle(
     `solicitante_*`, `departamento_nombre`, `sede_nombre`) se resuelven aqui,
     en la capa de servicios, para que el DTO no dependa de la vista ni de la
     capa HTTP (AGENTS §6).
+
+    Feature 020 (AC-10/AC-11): `stock_disponible` se calcula con la misma
+    simulacion greedy que usa la recepcion de compras
+    (`compra_service.calcular_cobertura_tickets`). Es una propiedad derivada:
+    no reserva stock, no cambia el estado del ticket y un ticket sin sede
+    instantanea queda en `False`.
     """
     ticket = _cargar_ticket_para_detalle(db, ticket_id)
     _verificar_alcance_de_ticket(db, ticket, identidad)
@@ -1415,6 +1421,11 @@ def obtener_ticket_detalle(
         departamento.nombre_dep if departamento else None
     )
     respuesta.sede_nombre = ticket.sede.nombre if ticket.sede else None
+    if ticket.sede_id is not None:
+        cobertura = compra_service.calcular_cobertura_tickets(
+            db, ticket.sede_id
+        )
+        respuesta.stock_disponible = cobertura.get(ticket.ticket_id, False)
     return respuesta
 
 

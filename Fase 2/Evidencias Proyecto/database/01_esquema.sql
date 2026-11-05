@@ -6,8 +6,8 @@
 --
 -- PROPOSITO
 --   Crear TODA la estructura de una instalacion limpia:
---     * el esquema global `control` (22 tablas);
---     * un esquema `tenant_<slug>_<hash>` por institucion, con las 19 tablas
+--     * el esquema global `control` (26 tablas);
+--     * un esquema `tenant_<slug>_<hash>` por institucion, con las 23 tablas
 --       de negocio replicadas.
 --   Los datos de negocio los siembra `02_datos_semilla.sql`, que corre despues.
 --
@@ -24,18 +24,19 @@
 --   en `02_datos_semilla.sql`.
 --
 -- MODELO
---   Es el modelo canonico de 17 entidades de dominio (institucion, sede,
+--   Es el modelo canonico de 21 entidades de dominio (institucion, sede,
 --   departamento, rol, usuario, categoria, producto, inventario, stock_sede,
 --   movimiento_inventario, prioridad, estado_ticket, ticket, detalle_ticket,
 --   historial_transicion_ticket, historial_transicion_producto,
---   historial_transicion_categoria) + `departamento_encargado` auxiliar, mas las
---   tablas de control (`funcion_institucion`, `mapa_usuario_esquema`,
+--   historial_transicion_categoria, proveedor, orden_compra,
+--   detalle_orden_compra, factura_compra) + `departamento_encargado` auxiliar,
+--   mas las tablas de control (`funcion_institucion`, `mapa_usuario_esquema`,
 --   `registro_motivo_constancia`, `version_esquema`). Las justificaciones de las
---   Features 008/010/011/012/013/014/017 viven en docs/spec/stack.md; aqui solo
---   esta el DDL vigente.
+--   Features 008/010/011/012/013/014/017/020 viven en docs/spec/stack.md; aqui
+--   solo esta el DDL vigente.
 --
 -- VERSION OBJETIVO DEL DDL
---   014.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
+--   020.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
 -- =====================================================
 
 -- =====================================================
@@ -90,8 +91,8 @@ CREATE TABLE control.institucion (
 -- `(institucion_id, funcion)` con estado `habilitada` explicito. No es entidad de
 -- dominio ni catalogo configurable: el conjunto de funciones es una lista cerrada
 -- del codigo (`catalogo`, `inventario`, `tickets`, `kanban`, `dashboard`,
--- `gestion_organizacional`). FK **local** a `institucion` del mismo esquema. Nunca
--- se copia a un tenant.
+-- `gestion_organizacional`, `compras`). FK **local** a `institucion` del mismo
+-- esquema. Nunca se copia a un tenant.
 
 CREATE TABLE control.funcion_institucion (
     institucion_id VARCHAR(20) NOT NULL,
@@ -106,7 +107,7 @@ CREATE TABLE control.funcion_institucion (
         REFERENCES institucion(institucion_id),
 
     CONSTRAINT funcion_institucion_funcion_ck
-        CHECK (funcion IN ('catalogo', 'inventario', 'tickets', 'kanban', 'dashboard', 'gestion_organizacional'))
+        CHECK (funcion IN ('catalogo', 'inventario', 'tickets', 'kanban', 'dashboard', 'gestion_organizacional', 'compras'))
 );
 
 -- =====================================================
@@ -704,6 +705,140 @@ CREATE TABLE control.version_esquema (
 );
 
 -- =====================================================
+-- FEATURE 020: REABASTECIMIENTO EXTERNO Y COMPRAS
+-- =====================================================
+-- Cuatro entidades de dominio nuevas. Justificacion aprobada en
+-- docs/spec/stack.md, seccion "Reabastecimiento externo y compras (Feature 020)".
+--
+-- `proveedor` es el **catalogo global compartido**: vive con datos en `control` y
+-- se replica en cada tenant con el MISMO `proveedor_id`, sin identidad propia en
+-- el tenant y sin FK cross-schema. Las otras tres tablas existen en `control` por
+-- paridad estructural del DDL canonico, pero permanecen vacias: las ordenes,
+-- sus lineas y las facturas son datos de negocio de cada tenant.
+
+CREATE TABLE control.proveedor (
+    -- Identidad global del catalogo. La replica tenant usa el mismo valor como
+    -- PK simple (sin identidad), por eso `orden_compra.proveedor_id` es local.
+    proveedor_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    rut VARCHAR(20) NOT NULL,
+    razon_social VARCHAR(150) NOT NULL,
+    nombre_fantasia VARCHAR(100),
+    giro VARCHAR(100),
+    correo VARCHAR(100),
+    telefono VARCHAR(20),
+    -- Sin operacion de baja/reactivacion en la Feature 020: nace activo.
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+
+    CONSTRAINT proveedor_rut_uk
+        UNIQUE (rut)
+);
+
+CREATE TABLE control.orden_compra (
+    orden_compra_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    -- Nulo mientras la orden esta en `Borrador`; se asigna al emitir como
+    -- OC-{ANIO}-{orden_compra_id:06d}. El UNIQUE es defensa, no el generador.
+    numero_oc VARCHAR(30),
+    institucion_id VARCHAR(20) NOT NULL,
+    sede_id INTEGER NOT NULL,
+    proveedor_id INTEGER NOT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'Borrador',
+    total NUMERIC(12,2) NOT NULL DEFAULT 0,
+    -- Cancelacion (AC-12): actor, instante y motivo obligatorio del servicio.
+    motivo_cancelacion VARCHAR(500),
+    cancelado_por_usuario_id INTEGER,
+    fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_emision TIMESTAMP,
+    fecha_recepcion TIMESTAMP,
+    fecha_cancelacion TIMESTAMP,
+
+    CONSTRAINT orden_compra_institucion_fk
+        FOREIGN KEY (institucion_id)
+        REFERENCES institucion(institucion_id),
+
+    CONSTRAINT orden_compra_sede_institucion_fk
+        FOREIGN KEY (institucion_id, sede_id)
+        REFERENCES sede(institucion_id, sede_id),
+
+    CONSTRAINT orden_compra_proveedor_fk
+        FOREIGN KEY (proveedor_id)
+        REFERENCES proveedor(proveedor_id),
+
+    CONSTRAINT orden_compra_cancelado_por_fk
+        FOREIGN KEY (cancelado_por_usuario_id)
+        REFERENCES usuario(usuario_id),
+
+    CONSTRAINT orden_compra_numero_uk
+        UNIQUE (numero_oc),
+
+    -- Destino de la FK compuesta de `detalle_orden_compra`.
+    CONSTRAINT orden_compra_institucion_uk
+        UNIQUE (institucion_id, orden_compra_id),
+
+    -- Destino de la FK compuesta de `factura_compra`.
+    CONSTRAINT orden_compra_proveedor_uk
+        UNIQUE (orden_compra_id, proveedor_id),
+
+    CONSTRAINT orden_compra_estado_ck
+        CHECK (estado IN ('Borrador', 'Emitida', 'Facturada', 'Recibida', 'Cancelada')),
+
+    CONSTRAINT orden_compra_total_ck
+        CHECK (total >= 0)
+);
+
+CREATE TABLE control.detalle_orden_compra (
+    detalle_orden_compra_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    orden_compra_id INTEGER NOT NULL,
+    institucion_id VARCHAR(20) NOT NULL,
+    producto_id INTEGER NOT NULL,
+    cantidad_solicitada INTEGER NOT NULL,
+    precio_unitario NUMERIC(10,2) NOT NULL DEFAULT 0,
+
+    CONSTRAINT detalle_orden_compra_orden_fk
+        FOREIGN KEY (institucion_id, orden_compra_id)
+        REFERENCES orden_compra(institucion_id, orden_compra_id),
+
+    CONSTRAINT detalle_orden_compra_producto_fk
+        FOREIGN KEY (institucion_id, producto_id)
+        REFERENCES producto(institucion_id, producto_id),
+
+    CONSTRAINT detalle_orden_compra_producto_uk
+        UNIQUE (orden_compra_id, producto_id),
+
+    CONSTRAINT detalle_orden_compra_cantidad_ck
+        CHECK (cantidad_solicitada > 0),
+
+    CONSTRAINT detalle_orden_compra_precio_ck
+        CHECK (precio_unitario >= 0)
+);
+
+CREATE TABLE control.factura_compra (
+    factura_compra_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    -- Una sola factura por orden (recepcion unitaria y total).
+    orden_compra_id INTEGER NOT NULL,
+    -- Se porta explicitamente para declarar UNIQUE (proveedor_id, numero_factura)
+    -- y para que la FK compuesta impida facturar una OC de otro proveedor.
+    proveedor_id INTEGER NOT NULL,
+    numero_factura VARCHAR(50) NOT NULL,
+    fecha_factura DATE NOT NULL,
+    monto_total NUMERIC(12,2) NOT NULL,
+    observaciones VARCHAR(500),
+    fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT factura_compra_orden_uk
+        UNIQUE (orden_compra_id),
+
+    CONSTRAINT factura_compra_numero_proveedor_uk
+        UNIQUE (proveedor_id, numero_factura),
+
+    CONSTRAINT factura_compra_orden_proveedor_fk
+        FOREIGN KEY (orden_compra_id, proveedor_id)
+        REFERENCES orden_compra(orden_compra_id, proveedor_id),
+
+    CONSTRAINT factura_compra_monto_ck
+        CHECK (monto_total > 0)
+);
+
+-- =====================================================
 -- TOPOLOGIA DE TENANTS  (un esquema por institucion)
 -- =====================================================
 -- Las cuatro instituciones de la instalacion de QA. Esta lista es la
@@ -755,7 +890,7 @@ AS $nombre$
 $nombre$;
 
 -- Crea un esquema tenant por cada institucion de la topologia. Las plantillas
--- son identicas al DDL de `control` de las 19 tablas de negocio, con las FKs
+-- son identicas al DDL de `control` de las 23 tablas de negocio, con las FKs
 -- calificadas al mismo esquema (sin referencias cross-schema). El espejo
 -- `institucion` se limita a dos columnas (`institucion_id`, `nombre`): `rut`,
 -- `direccion`, `activo` y `funcion_institucion` viven SOLO en control.
@@ -982,6 +1117,79 @@ BEGIN
         'CONSTRAINT historial_transicion_categoria_usuario_fk '
         'FOREIGN KEY (usuario_id) REFERENCES %1$I.usuario(usuario_id))',
 
+        -- Feature 020: replica local del catalogo global. El PK NO es identity:
+        -- conserva exactamente el `proveedor_id` de `control.proveedor`.
+        'CREATE TABLE %1$I.proveedor ('
+        'proveedor_id INTEGER PRIMARY KEY, '
+        'rut VARCHAR(20) NOT NULL, '
+        'razon_social VARCHAR(150) NOT NULL, '
+        'nombre_fantasia VARCHAR(100), '
+        'giro VARCHAR(100), '
+        'correo VARCHAR(100), '
+        'telefono VARCHAR(20), '
+        'activo BOOLEAN NOT NULL DEFAULT TRUE, '
+        'CONSTRAINT proveedor_rut_uk UNIQUE (rut))',
+
+        'CREATE TABLE %1$I.orden_compra ('
+        'orden_compra_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
+        'numero_oc VARCHAR(30), '
+        'institucion_id VARCHAR(20) NOT NULL, '
+        'sede_id INTEGER NOT NULL, '
+        'proveedor_id INTEGER NOT NULL, '
+        'estado VARCHAR(20) NOT NULL DEFAULT ''Borrador'', '
+        'total NUMERIC(12,2) NOT NULL DEFAULT 0, '
+        'motivo_cancelacion VARCHAR(500), '
+        'cancelado_por_usuario_id INTEGER, '
+        'fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, '
+        'fecha_emision TIMESTAMP, '
+        'fecha_recepcion TIMESTAMP, '
+        'fecha_cancelacion TIMESTAMP, '
+        'CONSTRAINT orden_compra_institucion_fk FOREIGN KEY (institucion_id) '
+        'REFERENCES %1$I.institucion(institucion_id), '
+        'CONSTRAINT orden_compra_sede_institucion_fk FOREIGN KEY (institucion_id, sede_id) '
+        'REFERENCES %1$I.sede(institucion_id, sede_id), '
+        'CONSTRAINT orden_compra_proveedor_fk FOREIGN KEY (proveedor_id) '
+        'REFERENCES %1$I.proveedor(proveedor_id), '
+        'CONSTRAINT orden_compra_cancelado_por_fk FOREIGN KEY (cancelado_por_usuario_id) '
+        'REFERENCES %1$I.usuario(usuario_id), '
+        'CONSTRAINT orden_compra_numero_uk UNIQUE (numero_oc), '
+        'CONSTRAINT orden_compra_institucion_uk UNIQUE (institucion_id, orden_compra_id), '
+        'CONSTRAINT orden_compra_proveedor_uk UNIQUE (orden_compra_id, proveedor_id), '
+        'CONSTRAINT orden_compra_estado_ck '
+        'CHECK (estado IN (''Borrador'', ''Emitida'', ''Facturada'', ''Recibida'', ''Cancelada'')), '
+        'CONSTRAINT orden_compra_total_ck CHECK (total >= 0))',
+
+        'CREATE TABLE %1$I.detalle_orden_compra ('
+        'detalle_orden_compra_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
+        'orden_compra_id INTEGER NOT NULL, '
+        'institucion_id VARCHAR(20) NOT NULL, '
+        'producto_id INTEGER NOT NULL, '
+        'cantidad_solicitada INTEGER NOT NULL, '
+        'precio_unitario NUMERIC(10,2) NOT NULL DEFAULT 0, '
+        'CONSTRAINT detalle_orden_compra_orden_fk FOREIGN KEY (institucion_id, orden_compra_id) '
+        'REFERENCES %1$I.orden_compra(institucion_id, orden_compra_id), '
+        'CONSTRAINT detalle_orden_compra_producto_fk FOREIGN KEY (institucion_id, producto_id) '
+        'REFERENCES %1$I.producto(institucion_id, producto_id), '
+        'CONSTRAINT detalle_orden_compra_producto_uk UNIQUE (orden_compra_id, producto_id), '
+        'CONSTRAINT detalle_orden_compra_cantidad_ck CHECK (cantidad_solicitada > 0), '
+        'CONSTRAINT detalle_orden_compra_precio_ck CHECK (precio_unitario >= 0))',
+
+        'CREATE TABLE %1$I.factura_compra ('
+        'factura_compra_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
+        'orden_compra_id INTEGER NOT NULL, '
+        'proveedor_id INTEGER NOT NULL, '
+        'numero_factura VARCHAR(50) NOT NULL, '
+        'fecha_factura DATE NOT NULL, '
+        'monto_total NUMERIC(12,2) NOT NULL, '
+        'observaciones VARCHAR(500), '
+        'fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, '
+        'CONSTRAINT factura_compra_orden_uk UNIQUE (orden_compra_id), '
+        'CONSTRAINT factura_compra_numero_proveedor_uk UNIQUE (proveedor_id, numero_factura), '
+        'CONSTRAINT factura_compra_orden_proveedor_fk '
+        'FOREIGN KEY (orden_compra_id, proveedor_id) '
+        'REFERENCES %1$I.orden_compra(orden_compra_id, proveedor_id), '
+        'CONSTRAINT factura_compra_monto_ck CHECK (monto_total > 0))',
+
         'CREATE TABLE %1$I.version_esquema ('
         'version_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
         'version VARCHAR(20) NOT NULL, '
@@ -996,17 +1204,17 @@ BEGIN
             EXECUTE format(v_plantilla, v_esquema);
         END LOOP;
 
-        -- Fail-closed: el tenant debe tener exactamente las 19 tablas de negocio.
+        -- Fail-closed: el tenant debe tener exactamente las 23 tablas de negocio.
         SELECT count(*) INTO v_conteo
         FROM information_schema.tables
         WHERE table_schema = v_esquema
           AND table_type = 'BASE TABLE';
-        IF v_conteo <> 19 THEN
+        IF v_conteo <> 23 THEN
             RAISE EXCEPTION
-                '01: el tenant % tiene % tabla(s) (esperadas 19).',
+                '01: el tenant % tiene % tabla(s) (esperadas 23).',
                 v_esquema, v_conteo;
         END IF;
-        RAISE NOTICE '01: tenant % creado con 19 tablas.', v_esquema;
+        RAISE NOTICE '01: tenant % creado con 23 tablas.', v_esquema;
     END LOOP;
 END;
 $tenants$;

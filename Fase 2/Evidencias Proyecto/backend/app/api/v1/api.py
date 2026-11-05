@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends
 from app.api import dependencies
 from app.api.v1.endpoints import (
     auth,
+    compras,
     control,
     dashboard,
     inventario,
@@ -33,3 +34,5 @@ api_router.include_router(dashboard.router)
 api_router.include_router(control.router)
 # Feature 011: asignaciones organizacionales minimas (sede y encargados).
 api_router.include_router(organizacion.router)
+# Feature 020: reabastecimiento externo y compras (proveedores, OC y recepcion).
+api_router.include_router(compras.router)

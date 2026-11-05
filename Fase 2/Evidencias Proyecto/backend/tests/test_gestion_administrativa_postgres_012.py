@@ -64,6 +64,8 @@ CAPACIDADES = {
     "kanban",
     "dashboard",
     "gestion_organizacional",
+    # Feature 020.
+    "compras",
 }
 COLUMNAS_ESPEJO = {"institucion_id", "nombre"}
 

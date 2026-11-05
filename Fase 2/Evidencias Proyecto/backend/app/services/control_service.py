@@ -449,11 +449,12 @@ def _crear_sede_inicial(sesion: Session, institucion_id: str) -> Sede:
 
 
 def _inicializar_capacidades(db: Session, institucion_id: str) -> None:
-    """Crea las seis capacidades habilitadas de una institucion (AC-5).
+    """Crea las siete capacidades habilitadas de una institucion (AC-5).
 
     El catalogo de capacidades es de control (Feature 012): cada institucion
-    nace con sus seis filas `funcion_institucion(habilitada=True)`. Los tenants
-    nunca reciben esta estructura.
+    nace con sus siete filas `funcion_institucion(habilitada=True)` (la septima,
+    `compras`, la agrega la Feature 020). Los tenants nunca reciben esta
+    estructura.
     """
     for funcion in sorted(CAPACIDADES):
         db.add(
@@ -477,7 +478,7 @@ def _provisionar_tenant_logico(
 
     Control y tenant comparten tablas, asi que el mismo `db` recibe la
     institucion canonica (con `rut`, `direccion` y `activo`), el
-    departamento/rol/usuario Administrador, las seis capacidades, el mapa y la
+    departamento/rol/usuario Administrador, las siete capacidades, el mapa y la
     version. No se crean namespaces: SQLite no los simula (D-10).
     """
     db.add(
@@ -518,7 +519,7 @@ def _provisionar_tenant_postgres(
 ) -> None:
     """Aprovisiona el esquema tenant real (PostgreSQL) y el registro de control.
 
-    Crea el esquema, su DDL canonical (las 17 tablas del tenant, incluida
+    Crea el esquema, su DDL canonical (las 23 tablas del tenant, incluida
     `version_esquema`; el mapa y el registro de motivos/constancias son solo de
     control), la institucion espejo, los catalogos replicados y el usuario
     Administrador inicial, y deja el tenant en la version objetivo al final. El
@@ -1065,7 +1066,7 @@ def cambiar_estado_institucion(
 
 
 def listar_capacidades(db: Session, institucion_id: str) -> list[CapacidadRespuesta]:
-    """Devuelve las seis capacidades de la institucion con su estado persistido.
+    """Devuelve las siete capacidades de la institucion con su estado persistido.
 
     Una capacidad sin fila explicita se publica **habilitada** (diseno-tecnico
     §2: la ausencia no es una desactivacion). Institucion inexistente -> 404.

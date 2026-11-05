@@ -125,6 +125,36 @@ export const ROLES_GESTION_CATALOGO = ['Administrador'] as const;
  */
 export const ROLES_FILTROS_INVENTARIO = ['Administrador', 'Bodeguero'] as const;
 
+/**
+ * Roles que navegan la administración de compras (Feature 020, AC-13).
+ *
+ * Solo el Administrador Institucional ve necesidades, órdenes y el alta/edición
+ * de OC. Es **presentación**: la matriz del backend concede esas operaciones al
+ * Administrador y responde 403 al resto; el Bodeguero tiene su propia superficie
+ * de recepción (`ROLES_COMPRAS_BODEGA`, T9) y el Superadmin solo opera el
+ * catálogo global de proveedores.
+ */
+export const ROLES_COMPRAS_ADMIN = ['Administrador'] as const;
+
+/**
+ * Roles que confirman la recepción física en bodega (Feature 020, AC-6/AC-7).
+ *
+ * Solo el Bodeguero de la sede destino. Su panel no elige filtros: el servidor
+ * lo fuerza a las OC `Facturada` de su propia sede (AC-6) y responde 409 si no
+ * tiene sede asignada. Es **presentación**; la frontera sigue en la API.
+ */
+export const ROLES_COMPRAS_BODEGA = ['Bodeguero'] as const;
+
+/**
+ * Roles con alguna superficie bajo `/compras` (Feature 020, AC-13).
+ *
+ * El segmento raíz admite a ambos y cada vista hija exige el suyo con su propio
+ * `RolGuard` (`ROLES_COMPRAS_ADMIN` para necesidades/OC, `ROLES_COMPRAS_BODEGA`
+ * para la recepción). Con un solo rol en el segmento, el Bodeguero no podría
+ * alcanzar `compras/recepcion`.
+ */
+export const ROLES_COMPRAS = ['Administrador', 'Bodeguero'] as const;
+
 function contiene(roles: readonly string[], rol: string | null): boolean {
   return rol !== null && roles.includes(rol);
 }
@@ -226,4 +256,24 @@ export function puedeGestionarCatalogo(rol: string | null): boolean {
  */
 export function puedeVerFiltrosInventario(rol: string | null): boolean {
   return contiene(ROLES_FILTROS_INVENTARIO, rol);
+}
+
+/**
+ * `true` si el rol navega a la administración de compras (Feature 020, AC-13).
+ *
+ * Espejo de la matriz: solo Administrador. Presentación pura; la API sigue
+ * siendo la frontera y responde 403 al resto.
+ */
+export function puedeVerComprasAdministracion(rol: string | null): boolean {
+  return contiene(ROLES_COMPRAS_ADMIN, rol);
+}
+
+/**
+ * `true` si el rol navega al panel de recepción de compras (Feature 020, AC-6).
+ *
+ * Espejo de la matriz: solo Bodeguero. Presentación pura; la API autoriza la
+ * recepción y responde 403/404/409 según el ámbito.
+ */
+export function puedeVerRecepcionCompras(rol: string | null): boolean {
+  return contiene(ROLES_COMPRAS_BODEGA, rol);
 }

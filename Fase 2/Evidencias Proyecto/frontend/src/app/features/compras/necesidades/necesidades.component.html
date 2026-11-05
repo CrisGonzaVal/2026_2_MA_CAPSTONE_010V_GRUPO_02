@@ -1,0 +1,141 @@
+<section class="space-y-6">
+  <header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-slate-800">Necesidades de reabastecimiento</h2>
+      <p class="text-sm text-slate-500">
+        Productos en nivel crítico o cuya demanda en curso supera el stock de la sede. El
+        sugerido combina el mínimo, la demanda y el saldo actual.
+      </p>
+    </div>
+    <a
+      routerLink="/compras"
+      class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+    >
+      Ver órdenes de compra
+    </a>
+  </header>
+
+  <div
+    class="flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+  >
+    <div class="flex flex-col gap-1">
+      <label for="necesidades-sede" class="text-sm font-medium text-slate-700">Sede</label>
+      <select
+        id="necesidades-sede"
+        [value]="sedeSeleccionada() ?? ''"
+        (change)="filtrarPorSede($any($event.target).value)"
+        class="min-w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      >
+        <option value="">Todas las sedes</option>
+        @for (sede of sedes(); track sede.sede_id) {
+          <option [value]="sede.sede_id">{{ sede.nombre }}</option>
+        }
+      </select>
+    </div>
+    @if (!cargando() && !mensajeError()) {
+      <p class="text-sm text-slate-500" role="status" aria-live="polite">
+        {{ necesidades().length }} fila(s) · {{ totalSugerido() }} unidad(es) sugeridas
+      </p>
+    }
+  </div>
+
+  @if (cargando()) {
+    <p
+      role="status"
+      aria-live="polite"
+      class="rounded-xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-500"
+    >
+      Cargando necesidades...
+    </p>
+  } @else if (mensajeError()) {
+    <div
+      role="alert"
+      class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+    >
+      <span>{{ mensajeError() }}</span>
+      <button
+        type="button"
+        class="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+        (click)="reintentar()"
+      >
+        Reintentar
+      </button>
+    </div>
+  } @else if (necesidades().length) {
+    <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">
+          Necesidades de reabastecimiento por sede y producto
+        </caption>
+        <thead class="bg-slate-50">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-semibold text-slate-600">Sede</th>
+            <th scope="col" class="px-4 py-3 text-left font-semibold text-slate-600">
+              Producto
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Stock actual
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Stock mínimo
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Demanda en curso
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Sugerido
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Acción
+            </th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          @for (fila of necesidades(); track fila.sede_id + '-' + fila.producto_id) {
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 text-slate-700">{{ fila.sede_nombre }}</td>
+              <td class="px-4 py-3 font-medium text-slate-800">{{ fila.nombre }}</td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ fila.stock_actual }}</td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ fila.stock_minimo }}</td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ fila.demanda_tickets }}</td>
+              <td class="px-4 py-3 text-right">
+                <span
+                  class="inline-flex min-w-10 justify-center rounded-full px-2.5 py-1 text-xs font-semibold"
+                  [class.bg-amber-100]="fila.sugerido > 0"
+                  [class.text-amber-800]="fila.sugerido > 0"
+                  [class.bg-slate-100]="fila.sugerido === 0"
+                  [class.text-slate-600]="fila.sugerido === 0"
+                >
+                  {{ fila.sugerido }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-right">
+                @if (fila.sugerido > 0) {
+                  <a
+                    [routerLink]="['/compras/nueva']"
+                    [queryParams]="{
+                      sede_id: fila.sede_id,
+                      producto_id: fila.producto_id,
+                      cantidad: fila.sugerido
+                    }"
+                    class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  >
+                    Crear OC
+                  </a>
+                } @else {
+                  <span class="text-xs text-slate-400">Cubierto</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <p
+      class="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500"
+    >
+      No hay necesidades con el filtro actual: el stock cubre la demanda en curso.
+    </p>
+  }
+</section>

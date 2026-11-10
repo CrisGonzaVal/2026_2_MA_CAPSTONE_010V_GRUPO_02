@@ -1,7 +1,8 @@
-"""Endpoints del reabastecimiento externo y compras (Feature 020).
+"""Endpoints del reabastecimiento externo y compras (Features 020 y 021).
 
-Diez operaciones aditivas de la matriz central (62 -> 72), todas gateadas por la
-septima capacidad institucional `compras` (plan §4):
+Diez operaciones aditivas de la matriz central (62 -> 72) de la Feature 020 y
+una mas de la 021 (`POST /compras/cobertura/preview`, 72 -> 73), todas gateadas
+por la septima capacidad institucional `compras` (plan §4):
 
 * Administrador Institucional: necesidades, alta de OC, edicion, emision,
   factura, cancelacion y listado institucional.
@@ -24,6 +25,8 @@ from sqlalchemy.orm import Session
 from app.api import dependencies
 from app.schemas.compra_schema import (
     CancelacionOrdenCompra,
+    CoberturaPreviewRespuesta,
+    CoberturaPreviewSolicitud,
     FacturaCompraRegistrar,
     FacturaCompraRespuesta,
     NecesidadReabastecimiento,
@@ -79,6 +82,56 @@ def listar_necesidades_reabastecimiento(
     return compra_service.listar_necesidades_reabastecimiento(
         db, institucion_id, sede_id
     )
+
+
+# ---------------------------------------------------------------------------
+# AC-2: preview de cobertura automatica
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/cobertura/preview",
+    response_model=CoberturaPreviewRespuesta,
+    status_code=status.HTTP_200_OK,
+    summary="Simular la cobertura automatica de una compra",
+    description=(
+        "Simula el plan de cobertura de una compra hipotetica para una sede: "
+        "reparte la cantidad por producto entre los pedidos `EnCurso` por "
+        "prioridad y FIFO, despues del stock parcial y de los planes pendientes "
+        "(`Emitida` + `Facturada`). No persiste filas, no reserva stock y no "
+        "cambia el estado de ningun pedido; con el mismo estado devuelve el "
+        "mismo resultado.\n\n"
+        "La sede es concreta: inexistente o ajena responde `404`. Un producto "
+        "ajeno o inexistente responde `404`; inactivo o repetido, `409`. Solo "
+        "el Administrador Institucional puede simular.\n\n"
+        "**Feature 021 (AC-2).**"
+    ),
+    responses={
+        **dependencies.respuestas_de_autorizacion(),
+        **dependencies.respuesta_recurso_oculto(),
+        **dependencies.respuesta_conflicto(),
+    },
+    dependencies=[
+        Depends(
+            dependencies.requiere_operacion(
+                "POST", "/api/v1/compras/cobertura/preview"
+            )
+        ),
+        Depends(
+            dependencies.requiere_capacidad(
+                "POST", "/api/v1/compras/cobertura/preview"
+            )
+        ),
+    ],
+)
+def previsualizar_cobertura(
+    datos: CoberturaPreviewSolicitud,
+    identidad: IdentidadAutenticada = Depends(
+        dependencies.requiere_operacion("POST", "/api/v1/compras/cobertura/preview")
+    ),
+    db: Session = Depends(dependencies.get_db_negocio),
+) -> CoberturaPreviewRespuesta:
+    return compra_service.previsualizar_cobertura(db, datos, identidad)
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +248,7 @@ def crear_orden_compra(
     db_control: Session = Depends(dependencies.get_db),
     db_negocio: Session = Depends(dependencies.get_db_negocio),
 ) -> OrdenCompraRespuesta:
-    return OrdenCompraRespuesta.model_validate(
+    return compra_service.orden_a_respuesta(
         compra_service.crear_orden_compra(
             db_negocio, db_control, datos, identidad
         )
@@ -248,7 +301,7 @@ def listar_ordenes_compra(
     ordenes = compra_service.listar_ordenes_compra(
         db, identidad, estado=estado, sede_id=sede_id
     )
-    return [OrdenCompraRespuesta.model_validate(orden) for orden in ordenes]
+    return [compra_service.orden_a_respuesta(orden) for orden in ordenes]
 
 
 @router.put(
@@ -288,7 +341,7 @@ def actualizar_orden_compra(
     db_control: Session = Depends(dependencies.get_db),
     db_negocio: Session = Depends(dependencies.get_db_negocio),
 ) -> OrdenCompraRespuesta:
-    return OrdenCompraRespuesta.model_validate(
+    return compra_service.orden_a_respuesta(
         compra_service.actualizar_orden_compra(
             db_negocio, db_control, orden_id, datos, identidad
         )
@@ -309,9 +362,14 @@ def actualizar_orden_compra(
         "Pasa la OC de `Borrador` a `Emitida`, asigna "
         "`numero_oc = OC-{ANIO}-{orden_compra_id:06d}` y sella `fecha_emision`. "
         "No se usa `MAX + 1`, de modo que dos emisiones concurrentes no colisionan.\n\n"
+        "En la misma transaccion congela el **plan de cobertura**: reparte las "
+        "cantidades de la OC entre los pedidos `EnCurso` de su sede por prioridad y "
+        "FIFO, despues del stock parcial y de los planes pendientes. Solo persiste "
+        "filas con `cantidad_asignada > 0`; sin pedidos o sin necesidad neta el "
+        "plan queda vacio.\n\n"
         "Solo se emite un borrador con items y con todos sus productos activos. "
         "Una segunda emision responde `409`; una OC ajena, `404`.\n\n"
-        "**Feature 020 (AC-4, DT-7).**"
+        "**Feature 020 (AC-4, DT-7) / Feature 021 (AC-3, DT-5).**"
     ),
     responses={
         **dependencies.respuestas_de_autorizacion(),
@@ -335,7 +393,7 @@ def emitir_orden_compra(
     ),
     db: Session = Depends(dependencies.get_db_negocio),
 ) -> OrdenCompraRespuesta:
-    return OrdenCompraRespuesta.model_validate(
+    return compra_service.orden_a_respuesta(
         compra_service.emitir_orden_compra(db, orden_id, identidad)
     )
 
@@ -454,9 +512,12 @@ def recepcionar_orden_compra(
         "Cancela una OC en `Borrador` o `Emitida` con un motivo obligatorio y "
         "persiste `motivo_cancelacion`, `fecha_cancelacion` y el usuario actor. No "
         "modifica stock ni facturas.\n\n"
+        "El **plan de cobertura** de una OC `Emitida` se conserva como auditoria, "
+        "pero deja de sumar en la cobertura activa: el pedido vuelve a ser "
+        "asignable por otra OC.\n\n"
         "Una OC `Facturada`, `Recibida` o `Cancelada` responde `409`; un motivo "
         "vacio, `422`; una OC ajena, `404`.\n\n"
-        "**Feature 020 (AC-12, DT-12).**"
+        "**Feature 020 (AC-12, DT-12) / Feature 021 (AC-7).**"
     ),
     responses={
         **dependencies.respuestas_de_autorizacion(),
@@ -481,6 +542,6 @@ def cancelar_orden_compra(
     ),
     db: Session = Depends(dependencies.get_db_negocio),
 ) -> OrdenCompraRespuesta:
-    return OrdenCompraRespuesta.model_validate(
+    return compra_service.orden_a_respuesta(
         compra_service.cancelar_orden_compra(db, orden_id, datos, identidad)
     )

@@ -12,6 +12,7 @@ from app.models.compra import (
     DetalleOrdenCompra,
     FacturaCompra,
     OrdenCompra,
+    OrdenCompraTicket,
     Proveedor,
 )
 from app.models.control import (
@@ -70,6 +71,7 @@ __all__ = [
     "MapaUsuarioEsquema",
     "MovimientoInventario",
     "OrdenCompra",
+    "OrdenCompraTicket",
     "Prioridad",
     "Producto",
     "Proveedor",

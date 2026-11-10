@@ -1,7 +1,7 @@
 <div class="space-y-6">
   <div class="flex justify-between items-center">
     <div>
-      <h2 class="text-2xl font-bold text-slate-800">Sistema de Tickets</h2>
+      <h2 class="text-2xl font-bold text-slate-800">Estados de pedidos</h2>
       <p class="text-sm text-slate-500">
         Gestión de solicitudes e insumos entre departamentos
       </p>
@@ -11,13 +11,13 @@
       (click)="abrirModal()"
       class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg shadow transition"
     >
-      + Crear Ticket
+      + Crear pedido
     </button>
   </div>
 
   @if (ticketCreado() !== null) {
     <div role="alert" class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-3 rounded-lg">
-      Ticket <span class="font-semibold">#{{ ticketCreado() }}</span> creado correctamente.
+      Pedido <span class="font-semibold">#{{ ticketCreado() }}</span> creado correctamente.
     </div>
   }
 
@@ -29,9 +29,9 @@
     <div class="bg-white rounded-xl shadow-xl border border-slate-200">
       <div class="flex justify-between items-start border-b border-slate-200 px-6 py-4">
         <div>
-          <h3 class="text-lg font-bold text-slate-800">Crear ticket de requerimiento</h3>
+          <h3 class="text-lg font-bold text-slate-800">Crear pedido de requerimiento</h3>
           <p class="text-xs text-slate-500 mt-1">
-            Los ítems son una petición: no descuentan stock al crear el ticket.
+            Los ítems son una petición: no descuentan stock al crear el pedido.
           </p>
         </div>
         <button
@@ -97,20 +97,27 @@
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label class="block space-y-1">
+            <div class="block space-y-1">
               <span class="text-xs font-semibold text-slate-700">Estado inicial</span>
-              <select
-                formControlName="estado_id"
-                class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+              <!-- Enmienda AC-27: todo pedido nace en `Pendiente`; el campo es
+                   informativo y el backend responde 409 si llega otro estado. -->
+              <div
+                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700 flex items-center justify-between gap-2"
               >
-                <!-- D-11 (013): `Anulado` queda fuera de la elección; el
-                     backend además responde 409 si llegara. -->
-                @for (estado of estadosAlta(); track estado.estado_id) {
-                  <option [ngValue]="estado.estado_id">{{ estado.nombre }}</option>
-                }
-              </select>
-              <span class="text-[11px] text-slate-400 block">Editable para la demostración.</span>
-            </label>
+                <span class="font-medium">{{ nombreEstadoInicial() }}</span>
+                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  Fijo
+                </span>
+              </div>
+              <span class="text-[11px] text-slate-400 block">
+                Todo pedido nuevo nace en este estado; no se puede cambiar.
+              </span>
+              @if (!estadoPendiente()) {
+                <span class="text-xs text-rose-600 block">
+                  El catálogo no contiene el estado Pendiente: no se puede crear un pedido.
+                </span>
+              }
+            </div>
 
             <label class="block space-y-1">
               <span class="text-xs font-semibold text-slate-700">Asunto</span>
@@ -220,7 +227,7 @@
               [disabled]="guardando()"
               class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 rounded-lg"
             >
-              {{ guardando() ? 'Guardando…' : 'Crear ticket' }}
+              {{ guardando() ? 'Guardando…' : 'Crear pedido' }}
             </button>
           </div>
         </form>
@@ -263,7 +270,7 @@
         <span>Buscar por asunto</span>
         <input
           type="search"
-          aria-label="Buscar tickets por asunto"
+          aria-label="Buscar pedidos por asunto"
           placeholder="Filtrar por asunto…"
           [value]="busqueda()"
           (input)="actualizarBusqueda($any($event.target).value)"
@@ -278,7 +285,7 @@
       @for (columna of columnas(); track columna.estado_id) {
         <div class="bg-slate-200/60 p-4 rounded-xl flex flex-col space-y-4">
           <div class="flex justify-between items-center">
-            <h3 class="font-bold text-slate-700">{{ columna.estado }}</h3>
+            <h3 class="font-bold text-slate-700">{{ columna.etiqueta }}</h3>
             <span
               class="bg-white text-slate-700 text-xs font-bold px-2 py-0.5 rounded-full shadow-sm"
             >
@@ -287,7 +294,12 @@
           </div>
 
           @for (tarjeta of columna.tarjetas; track tarjeta.ticket.ticket_id) {
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-2">
+            <!-- D-14 (013): la tarjeta completa es el enlace a la vista de
+                 detalle, donde vive todo el ciclo de vida (AC-24). -->
+            <a
+              [routerLink]="['/tickets', tarjeta.ticket.ticket_id]"
+              class="block bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-2 hover:border-blue-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition"
+            >
               <div class="flex justify-between items-start gap-2">
                 <span
                   class="text-xs font-semibold px-2 py-0.5 rounded"
@@ -307,24 +319,13 @@
                   Cerrado: {{ tarjeta.fechaCierre | date: 'short' }}
                 </p>
               }
-              <!-- D-14 (013): única acción de la tarjeta. Abre la vista de
-                   detalle, donde vive todo el ciclo de vida (AC-24). -->
-              <div class="flex justify-end pt-1">
-                <a
-                  [routerLink]="['/tickets', tarjeta.ticket.ticket_id]"
-                  [attr.aria-label]="'Gestionar ticket #' + tarjeta.ticket.ticket_id"
-                  class="inline-block text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition"
-                >
-                  Gestionar
-                </a>
-              </div>
-            </div>
+            </a>
           } @empty {
             <p class="text-xs text-slate-500 text-center py-4">
               {{
                 hayFiltros()
-                  ? 'Ningún ticket coincide con los filtros'
-                  : 'Sin tickets en esta columna'
+                  ? 'Ningún pedido coincide con los filtros'
+                  : 'Sin pedidos en esta columna'
               }}
             </p>
           }

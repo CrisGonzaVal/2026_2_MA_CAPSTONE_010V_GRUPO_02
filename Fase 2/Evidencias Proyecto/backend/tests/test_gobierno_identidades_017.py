@@ -168,8 +168,9 @@ def test_registro_es_solo_de_control_y_no_viaja_a_la_metadata_tenant():
     assert "mapa_usuario_esquema" not in nombres
     # Feature 014: el tenant replica 23 tablas de negocio: las 19 previas, los
     # dos historiales de transicion del catalogo (entidades 16.ª y 17.ª) y las
-    # cuatro entidades de compras de la Feature 020.
-    assert len(nombres) == 23, sorted(nombres)
+    # cuatro entidades de compras de la Feature 020. La Feature 021 suma
+    # `orden_compra_ticket` (22.ª entidad): 24 tablas.
+    assert len(nombres) == 24, sorted(nombres)
 
 
 def test_registro_persiste_una_constancia_de_compensacion(sesion):

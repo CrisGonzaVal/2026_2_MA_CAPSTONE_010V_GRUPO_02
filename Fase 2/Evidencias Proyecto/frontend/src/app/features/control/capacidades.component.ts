@@ -14,11 +14,16 @@ import { ControlNavComponent } from './control-nav.component';
 import { mensajeDeErrorControl } from './control-errores';
 import { ControlService } from './services/control.service';
 
-/** Etiquetas legibles del conjunto cerrado de seis capacidades (D-6/AC-5). */
+/**
+ * Etiquetas legibles del conjunto cerrado de seis capacidades (D-6/AC-5).
+ *
+ * Feature 021 (V-4): la capacidad `tickets` se rotula «Pedidos»; el valor
+ * persistido, el `CHECK` y la API siguen siendo `tickets`.
+ */
 const ETIQUETAS_CAPACIDAD: Record<string, string> = {
   catalogo: 'Catálogo',
   inventario: 'Inventario',
-  tickets: 'Tickets',
+  tickets: 'Pedidos',
   kanban: 'Tablero',
   dashboard: 'Dashboard',
   gestion_organizacional: 'Gestión organizacional',

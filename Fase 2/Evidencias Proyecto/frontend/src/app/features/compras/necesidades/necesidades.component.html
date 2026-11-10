@@ -1,10 +1,10 @@
 <section class="space-y-6">
   <header class="flex flex-wrap items-end justify-between gap-4">
     <div>
-      <h2 class="text-2xl font-bold text-slate-800">Necesidades de reabastecimiento</h2>
+      <h2 class="text-2xl font-bold text-slate-800">Compras</h2>
       <p class="text-sm text-slate-500">
-        Productos en nivel crítico o cuya demanda en curso supera el stock de la sede. El
-        sugerido combina el mínimo, la demanda y el saldo actual.
+        Necesidades de reabastecimiento por sede y producto: muestra los pedidos que
+        componen la demanda, lo ya comprometido en órdenes y el sugerido neto.
       </p>
     </div>
     <a
@@ -80,6 +80,12 @@
               Stock mínimo
             </th>
             <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Comprometido
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Borrador
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
               Demanda en curso
             </th>
             <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
@@ -91,32 +97,38 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-          @for (fila of necesidades(); track fila.sede_id + '-' + fila.producto_id) {
+          @for (vista of filas(); track vista.fila.sede_id + '-' + vista.fila.producto_id) {
             <tr class="hover:bg-slate-50">
-              <td class="px-4 py-3 text-slate-700">{{ fila.sede_nombre }}</td>
-              <td class="px-4 py-3 font-medium text-slate-800">{{ fila.nombre }}</td>
-              <td class="px-4 py-3 text-right text-slate-700">{{ fila.stock_actual }}</td>
-              <td class="px-4 py-3 text-right text-slate-700">{{ fila.stock_minimo }}</td>
-              <td class="px-4 py-3 text-right text-slate-700">{{ fila.demanda_tickets }}</td>
+              <td class="px-4 py-3 text-slate-700">{{ vista.fila.sede_nombre }}</td>
+              <td class="px-4 py-3 font-medium text-slate-800">{{ vista.fila.nombre }}</td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ vista.fila.stock_actual }}</td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ vista.fila.stock_minimo }}</td>
+              <td class="px-4 py-3 text-right text-slate-700">
+                {{ vista.fila.stock_comprometido ?? 0 }}
+              </td>
+              <td class="px-4 py-3 text-right text-slate-500">
+                {{ vista.fila.stock_borrador ?? 0 }}
+              </td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ vista.fila.demanda_tickets }}</td>
               <td class="px-4 py-3 text-right">
                 <span
                   class="inline-flex min-w-10 justify-center rounded-full px-2.5 py-1 text-xs font-semibold"
-                  [class.bg-amber-100]="fila.sugerido > 0"
-                  [class.text-amber-800]="fila.sugerido > 0"
-                  [class.bg-slate-100]="fila.sugerido === 0"
-                  [class.text-slate-600]="fila.sugerido === 0"
+                  [class.bg-amber-100]="vista.fila.sugerido > 0"
+                  [class.text-amber-800]="vista.fila.sugerido > 0"
+                  [class.bg-slate-100]="vista.fila.sugerido === 0"
+                  [class.text-slate-600]="vista.fila.sugerido === 0"
                 >
-                  {{ fila.sugerido }}
+                  {{ vista.fila.sugerido }}
                 </span>
               </td>
               <td class="px-4 py-3 text-right">
-                @if (fila.sugerido > 0) {
+                @if (vista.fila.sugerido > 0) {
                   <a
                     [routerLink]="['/compras/nueva']"
                     [queryParams]="{
-                      sede_id: fila.sede_id,
-                      producto_id: fila.producto_id,
-                      cantidad: fila.sugerido
+                      sede_id: vista.fila.sede_id,
+                      producto_id: vista.fila.producto_id,
+                      cantidad: vista.fila.sugerido
                     }"
                     class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
@@ -127,9 +139,100 @@
                 }
               </td>
             </tr>
+            @if (vista.tickets.length) {
+              <tr class="bg-slate-50/70">
+                <td colspan="9" class="px-4 pb-4 pt-1">
+                  <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                    <table class="min-w-full divide-y divide-slate-100 text-xs">
+                      <caption class="sr-only">
+                        Pedidos que componen la demanda de {{ vista.fila.nombre }}
+                      </caption>
+                      <thead class="bg-slate-50">
+                        <tr>
+                          <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                            Pedido
+                          </th>
+                          <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                            Asunto
+                          </th>
+                          <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                            Solicitante
+                          </th>
+                          <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                            Prioridad
+                          </th>
+                          <th scope="col" class="px-3 py-2 text-right font-semibold text-slate-500">
+                            Solicitado
+                          </th>
+                          <th scope="col" class="px-3 py-2 text-right font-semibold text-slate-500">
+                            Cubierto
+                          </th>
+                          <th scope="col" class="px-3 py-2 text-right font-semibold text-slate-500">
+                            Faltante
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        @for (pedido of vista.tickets; track pedido.ticket_id) {
+                          <tr>
+                            <td class="px-3 py-2 font-medium text-slate-700">
+                              #{{ pedido.ticket_id }}
+                            </td>
+                            <td class="px-3 py-2 text-slate-700">{{ pedido.asunto }}</td>
+                            <td class="px-3 py-2 text-slate-600">
+                              {{ pedido.solicitante_apellido }}, {{ pedido.solicitante_nombre }}
+                            </td>
+                            <td class="px-3 py-2 text-slate-600">
+                              {{ pedido.prioridad_nombre ?? '—' }}
+                            </td>
+                            <td class="px-3 py-2 text-right text-slate-700">
+                              {{ pedido.cantidad_solicitada }}
+                            </td>
+                            <td class="px-3 py-2 text-right text-slate-700">
+                              {{ pedido.cantidad_cubierta }}
+                            </td>
+                            <td class="px-3 py-2 text-right">
+                              <span
+                                class="inline-flex min-w-8 justify-center rounded-full px-2 py-0.5 font-semibold"
+                                [class.bg-rose-50]="pedido.cantidad_faltante > 0"
+                                [class.text-rose-700]="pedido.cantidad_faltante > 0"
+                                [class.bg-emerald-50]="pedido.cantidad_faltante === 0"
+                                [class.text-emerald-700]="pedido.cantidad_faltante === 0"
+                              >
+                                {{ pedido.cantidad_faltante }}
+                              </span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                      <tfoot class="bg-slate-50 font-semibold text-slate-600">
+                        <tr>
+                          <td colspan="4" class="px-3 py-2 text-right">
+                            Subtotal de los pedidos
+                          </td>
+                          <td class="px-3 py-2 text-right">
+                            Subtotal solicitado: {{ vista.subtotalSolicitado }}
+                          </td>
+                          <td class="px-3 py-2 text-right">
+                            Subtotal cubierto: {{ vista.subtotalCubierto }}
+                          </td>
+                          <td class="px-3 py-2 text-right">
+                            Subtotal faltante: {{ vista.subtotalFaltante }}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>
+      <p class="border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+        Comprometido = OC emitidas/facturadas; Borrador no descuenta el sugerido.
+        El sugerido es neto: máx(0, mínimo + demanda − stock − comprometido).
+      </p>
     </div>
   } @else {
     <p

@@ -7,7 +7,7 @@
   </a>
 
   @if (cargando()) {
-    <div class="py-16 text-center text-sm text-slate-500">Cargando ticket…</div>
+    <div class="py-16 text-center text-sm text-slate-500">Cargando pedido…</div>
   } @else if (errorCarga()) {
     <div class="bg-rose-50 border border-rose-200 rounded-xl px-6 py-8 text-center space-y-4">
       <p role="alert" class="text-sm text-rose-800">{{ errorCarga() }}</p>
@@ -25,7 +25,7 @@
     <div class="bg-white border border-slate-200 rounded-xl px-6 py-5 space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="space-y-1">
-          <p class="text-xs text-slate-400">Ticket #{{ ticket.ticket_id }}</p>
+          <p class="text-xs text-slate-400">Pedido #{{ ticket.ticket_id }}</p>
           <h2 class="text-2xl font-bold text-slate-800">{{ ticket.asunto }}</h2>
         </div>
         <div class="flex items-center gap-2">
@@ -73,7 +73,7 @@
       </dl>
     </div>
 
-    <!-- Feature 020 (AC-11): aviso de reabastecimiento. El ticket está cubierto por
+    <!-- Feature 020 (AC-11): aviso de reabastecimiento. El pedido está cubierto por
          el saldo de su sede según la simulación greedy del servidor. -->
     @if (ticket.stock_disponible) {
       <p
@@ -180,7 +180,7 @@
         </h3>
         @if (ticket.detalles.length === 0) {
           <p class="text-sm text-slate-500 px-6 py-6">
-            Este ticket no tiene ítems registrados.
+            Este pedido no tiene ítems registrados.
           </p>
         } @else {
           <table class="w-full text-sm">
@@ -238,12 +238,137 @@
                     Motivo: {{ motivo }}
                   </p>
                 }
+                @if (fila.numeroOc; as numeroOc) {
+                  <p class="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                    OC {{ numeroOc }} desbloqueó el pedido.
+                  </p>
+                }
               </li>
             }
           </ol>
         }
       </section>
       </div>
+
+      <!-- Feature 021 (AC-5): cobertura por producto y OC que cubren el pedido -->
+      @if (ticket.asignaciones?.length || ticket.cadena_productos?.length) {
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <section class="bg-white border border-slate-200 rounded-xl">
+            <h3 class="font-bold text-slate-800 px-6 py-4 border-b border-slate-200">
+              Cobertura por producto
+            </h3>
+            @if (ticket.cadena_productos?.length) {
+              <table class="w-full text-sm">
+                <caption class="sr-only">
+                  Solicitado, comprado, recibido, entregado y faltante por producto
+                </caption>
+                <thead>
+                  <tr class="text-left text-xs font-semibold text-slate-500 border-b border-slate-200">
+                    <th class="px-6 py-2">Producto</th>
+                    <th class="px-3 py-2 text-right">Solicitado</th>
+                    <th class="px-3 py-2 text-right">Comprado</th>
+                    <th class="px-3 py-2 text-right">Recibido</th>
+                    <th class="px-3 py-2 text-right">Entregado</th>
+                    <th class="px-6 py-2 text-right">Faltante</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (producto of ticket.cadena_productos ?? []; track producto.producto_id) {
+                    <tr class="border-b border-slate-100 last:border-0">
+                      <td class="px-6 py-2 text-slate-800">{{ producto.producto_nombre }}</td>
+                      <td class="px-3 py-2 text-right text-slate-700">{{ producto.solicitado }}</td>
+                      <td class="px-3 py-2 text-right text-blue-700">{{ producto.comprado }}</td>
+                      <td class="px-3 py-2 text-right text-emerald-700">
+                        {{ producto.recibido }}
+                      </td>
+                      <td class="px-3 py-2 text-right text-emerald-700">
+                        {{ producto.entregado }}
+                      </td>
+                      <td class="px-6 py-2 text-right">
+                        <span
+                          class="inline-flex min-w-8 justify-center rounded-full px-2 py-0.5 text-xs font-semibold"
+                          [class.bg-rose-50]="producto.faltante > 0"
+                          [class.text-rose-700]="producto.faltante > 0"
+                          [class.bg-emerald-50]="producto.faltante === 0"
+                          [class.text-emerald-700]="producto.faltante === 0"
+                        >
+                          {{ producto.faltante }}
+                        </span>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            } @else {
+              <p class="text-sm text-slate-500 px-6 py-6">
+                Sin cobertura registrada para este pedido.
+              </p>
+            }
+          </section>
+
+          <section class="bg-white border border-slate-200 rounded-xl">
+            <h3 class="font-bold text-slate-800 px-6 py-4 border-b border-slate-200">
+              Órdenes de compra que cubren el pedido
+            </h3>
+            @if (ticket.asignaciones?.length) {
+              <table class="w-full text-sm">
+                <caption class="sr-only">
+                  Órdenes de compra que cubren el pedido, incluidas las canceladas
+                </caption>
+                <thead>
+                  <tr class="text-left text-xs font-semibold text-slate-500 border-b border-slate-200">
+                    <th class="px-6 py-2">OC</th>
+                    <th class="px-3 py-2">Estado</th>
+                    <th class="px-3 py-2">Producto</th>
+                    <th class="px-3 py-2 text-right">Asignado</th>
+                    <th class="px-3 py-2 text-right">Faltante</th>
+                    <th class="px-6 py-2 text-right">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (asignacion of ticket.asignaciones ?? []; track asignacion.orden_compra_ticket_id) {
+                    <tr class="border-b border-slate-100 last:border-0">
+                      <td class="px-6 py-2 font-medium text-slate-800">
+                        {{ asignacion.numero_oc ?? 'OC #' + asignacion.orden_compra_id }}
+                      </td>
+                      <td class="px-3 py-2">
+                        <span
+                          class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                          [class.bg-rose-100]="asignacion.estado_orden === 'Cancelada'"
+                          [class.text-rose-800]="asignacion.estado_orden === 'Cancelada'"
+                          [class.bg-emerald-100]="asignacion.estado_orden === 'Recibida'"
+                          [class.text-emerald-800]="asignacion.estado_orden === 'Recibida'"
+                          [class.bg-blue-100]="asignacion.estado_orden !== 'Cancelada' && asignacion.estado_orden !== 'Recibida'"
+                          [class.text-blue-800]="asignacion.estado_orden !== 'Cancelada' && asignacion.estado_orden !== 'Recibida'"
+                        >
+                          {{ asignacion.estado_orden }}
+                        </span>
+                      </td>
+                      <td class="px-3 py-2 text-slate-600">{{ asignacion.producto_nombre }}</td>
+                      <td class="px-3 py-2 text-right text-slate-700">
+                        {{ asignacion.cantidad_asignada }}
+                      </td>
+                      <td class="px-3 py-2 text-right text-slate-700">
+                        {{ asignacion.cantidad_faltante }}
+                      </td>
+                      <td class="px-6 py-2 text-right text-xs text-slate-500">
+                        {{ asignacion.fecha_asignacion | date: 'dd/MM/yyyy HH:mm' }}
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <p class="border-t border-slate-100 px-6 py-3 text-xs text-slate-500">
+                Las OC canceladas se muestran para auditoría y no cuentan como cobertura activa.
+              </p>
+            } @else {
+              <p class="text-sm text-slate-500 px-6 py-6">
+                Este pedido no está asignado a ninguna orden de compra.
+              </p>
+            }
+          </section>
+        </div>
+      }
     }
   }
 
@@ -256,10 +381,10 @@
     <div class="bg-white rounded-xl shadow-xl border border-slate-200">
       <div class="border-b border-slate-200 px-6 py-4">
         <h3 class="text-lg font-bold text-slate-800">
-          {{ confirmando() === 'rechazo' ? 'Rechazar ticket' : 'Anular ticket' }}
+          {{ confirmando() === 'rechazo' ? 'Rechazar pedido' : 'Anular pedido' }}
         </h3>
         <p class="text-xs text-slate-500 mt-1">
-          El ticket pasará al estado «Anulado», que es terminal. El motivo queda
+          El pedido pasará al estado «Anulado», que es terminal. El motivo queda
           registrado en el historial para trazabilidad.
         </p>
       </div>
@@ -271,7 +396,7 @@
             formControlName="motivo"
             rows="3"
             maxlength="500"
-            placeholder="Explica por qué se anula o rechaza este ticket"
+            placeholder="Explica por qué se anula o rechaza este pedido"
             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-y"
           ></textarea>
           @if (motivoForm.controls.motivo.touched && motivoForm.controls.motivo.invalid) {
@@ -325,9 +450,9 @@
     <div class="bg-white rounded-xl shadow-xl border border-slate-200">
       <div class="flex justify-between items-start border-b border-slate-200 px-6 py-4">
         <div>
-          <h3 class="text-lg font-bold text-slate-800">Editar ticket #{{ ticketId() }}</h3>
+          <h3 class="text-lg font-bold text-slate-800">Editar pedido #{{ ticketId() }}</h3>
           <p class="text-xs text-slate-500 mt-1">
-            Solo editable mientras el ticket está en Pendiente: los ítems se
+            Solo editable mientras el pedido está en Pendiente: los ítems se
             reemplazan por completo.
           </p>
         </div>

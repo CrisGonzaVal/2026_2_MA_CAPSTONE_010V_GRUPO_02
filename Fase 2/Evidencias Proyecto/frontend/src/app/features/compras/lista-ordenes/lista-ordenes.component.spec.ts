@@ -282,4 +282,58 @@ describe('ListaOrdenesComponent', () => {
     montar([]);
     expect(texto()).toContain('No hay órdenes con los filtros actuales');
   });
+
+  // --- Feature 021 (T11, AC-4): plan congelado de la OC ---------------------
+
+  it('AC-4: «Ver pedidos» expande el plan con pedido, solicitante y producto', () => {
+    montar([
+      orden({
+        estado: 'Emitida',
+        numero_oc: 'OC-2026-000021',
+        plan: [
+          {
+            orden_compra_ticket_id: 1,
+            orden_compra_id: 21,
+            ticket_id: 33,
+            producto_id: 7,
+            cantidad_asignada: 4,
+            cantidad_faltante: 2,
+            fecha_asignacion: '2026-11-03T10:05:00',
+            asunto: 'Reposición de cuadernos',
+            estado_nombre: 'EnCurso',
+            prioridad_nombre: 'ALTA',
+            solicitante_nombre: 'Isabel',
+            solicitante_apellido: 'Contreras',
+            fecha_creacion: '2026-11-01T09:00:00',
+            producto_nombre: 'Cuaderno linedado',
+          },
+        ],
+      }),
+    ]);
+
+    botonPorAria('Ver pedidos de la orden')?.click();
+    fixture.detectChanges();
+
+    const visible = texto();
+    expect(visible).toContain('Pedidos cubiertos por esta OC');
+    expect(visible).toContain('#33');
+    expect(visible).toContain('Reposición de cuadernos');
+    expect(visible).toContain('Contreras, Isabel');
+    expect(visible).toContain('Cuaderno linedado');
+    expect(visible).toContain('Asignado');
+    expect(visible).toContain('Faltante');
+  });
+
+  it('AC-4: una OC sin plan muestra el aviso de compra para stock mínimo', () => {
+    montar([
+      orden({ estado: 'Emitida', numero_oc: 'OC-2026-000021', plan: [] }),
+    ]);
+
+    botonPorAria('Ver pedidos de la orden')?.click();
+    fixture.detectChanges();
+
+    expect(texto()).toContain(
+      'Sin pedidos cubiertos: compra para stock mínimo',
+    );
+  });
 });

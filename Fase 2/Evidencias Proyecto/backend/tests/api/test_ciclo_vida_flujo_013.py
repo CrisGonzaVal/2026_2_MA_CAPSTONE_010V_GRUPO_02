@@ -366,16 +366,21 @@ def test_despacho_de_un_anulado_responde_409_sin_movimientos_ac_5(
 # ---------------------------------------------------------------------------
 
 
-def test_alta_en_cerrado_sella_fecha_cierre_ac_6(motor, datos_013):
-    """AC-6/AC-17-004: `Cerrado` por alta directa conserva su sellado (regresion)."""
+def test_alta_en_cerrado_se_rechaza_con_409_ac_27(motor, datos_013):
+    """AC-27 (enmienda 05/Nov/2026): derogado el alta directa en `Cerrado`.
+
+    La 004 admitia nacer en `Cerrado` sellando `fecha_cierre` (AC-17/AC-6); hoy
+    el unico estado inicial es `Pendiente` y `Cerrado` solo se alcanza por el
+    despacho transaccional de la 005.
+    """
     with _cliente_solicitante(motor, datos_013) as cliente:
         respuesta = cliente.post(
             "/api/v1/tickets/",
             json=payload_alta(datos_013, datos_013["estados"]["Cerrado"]),
         )
 
-        assert respuesta.status_code == 201, respuesta.text
-        assert respuesta.json()["fecha_cierre"] is not None
+        assert respuesta.status_code == 409, respuesta.text
+        assert "Pendiente" in respuesta.json()["detail"]
 
 
 def test_despacho_sella_fecha_cierre_ac_6(motor, datos_013):

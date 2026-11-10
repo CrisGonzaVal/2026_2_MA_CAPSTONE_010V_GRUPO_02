@@ -113,7 +113,7 @@ describe('CapacidadesComponent', () => {
     const etiquetas = [
       'Catálogo',
       'Inventario',
-      'Tickets',
+      'Pedidos',
       'Tablero',
       'Dashboard',
       'Gestión organizacional',

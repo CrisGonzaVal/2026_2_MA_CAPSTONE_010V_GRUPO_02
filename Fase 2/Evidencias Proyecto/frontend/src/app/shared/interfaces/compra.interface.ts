@@ -42,10 +42,31 @@ export interface ProveedorCrear {
 // --- Necesidades de reabastecimiento (AC-1) --------------------------------
 
 /**
+ * Pedido `EnCurso` que compone la demanda de una necesidad (Feature 021).
+ *
+ * `cantidad_cubierta = cantidad_solicitada - cantidad_faltante`; el faltante
+ * es la necesidad neta **antes** de una nueva OC, ya descontados los planes
+ * pendientes y el stock parcial (DT-3).
+ */
+export interface NecesidadTicket {
+  ticket_id: number;
+  asunto: string;
+  solicitante_nombre: string | null;
+  solicitante_apellido: string | null;
+  solicitante_correo: string | null;
+  prioridad_nombre: string | null;
+  fecha_creacion: string;
+  cantidad_solicitada: number;
+  cantidad_cubierta: number;
+  cantidad_faltante: number;
+}
+
+/**
  * Fila consolidada por `(sede, producto)` de `GET /compras/necesidades`.
  *
- * `sugerido = max(0, stock_minimo + demanda_tickets - stock_actual)`; la formula
- * la calcula el servidor y la vista solo la muestra.
+ * Desde la Feature 021 el sugerido es neto:
+ * `sugerido = max(0, stock_minimo + demanda_tickets - stock_actual -
+ * stock_comprometido)`. `stock_borrador` es informativo y no descuenta.
  */
 export interface NecesidadReabastecimiento {
   sede_id: number;
@@ -56,6 +77,64 @@ export interface NecesidadReabastecimiento {
   stock_minimo: number;
   demanda_tickets: number;
   sugerido: number;
+  /** Unidades en OC `Emitida` + `Facturada` (comprometidas, aun no recibidas). */
+  stock_comprometido?: number;
+  /** Unidades en OC `Borrador`; se muestran aparte y no descuentan el sugerido. */
+  stock_borrador?: number;
+  /** Pedidos `EnCurso` que componen la demanda de esta fila. */
+  tickets?: NecesidadTicket[];
+}
+
+// --- Preview de cobertura automatica (AC-2, DT-4) --------------------------
+
+/** Linea simulada del preview: producto y cantidad de la compra hipotetica. */
+export interface CoberturaPreviewItem {
+  producto_id: number;
+  cantidad_solicitada: number;
+}
+
+/** Payload de `POST /compras/cobertura/preview` (AC-2). */
+export interface CoberturaPreviewSolicitud {
+  sede_id: number;
+  items: CoberturaPreviewItem[];
+}
+
+/** Resultado simulado por pedido dentro de un producto del preview. */
+export interface CoberturaPreviewTicket {
+  ticket_id: number;
+  asunto: string;
+  solicitante_nombre: string | null;
+  solicitante_apellido: string | null;
+  prioridad_nombre: string | null;
+  fecha_creacion: string;
+  solicitado: number;
+  cubierto_plan: number;
+  cubierto_stock: number;
+  necesidad: number;
+  asignada: number;
+  faltante: number;
+  /** `total`, `parcial` o `sin_cobertura` (AC-9). */
+  cobertura: 'total' | 'parcial' | 'sin_cobertura' | string;
+}
+
+/** Resultado simulado por producto del preview (AC-2). */
+export interface CoberturaPreviewProducto {
+  producto_id: number;
+  producto_nombre: string;
+  cantidad_simulada: number;
+  demanda_total: number;
+  cubierto_previo: number;
+  asignado: number;
+  faltante: number;
+  sin_asignar: number;
+  tickets: CoberturaPreviewTicket[];
+}
+
+/** Respuesta de `POST /compras/cobertura/preview`: no persiste ni reserva. */
+export interface CoberturaPreviewRespuesta {
+  sede_id: number;
+  sede_nombre: string;
+  productos: CoberturaPreviewProducto[];
 }
 
 // --- Orden de compra (AC-3, AC-4) ------------------------------------------
@@ -121,6 +200,31 @@ export interface OrdenCompra {
   sede: Sede | null;
   detalles: DetalleOrdenCompra[];
   factura: FacturaCompra | null;
+  /** Feature 021: plan congelado al emitir; vacio en `Borrador`. */
+  plan?: PlanOrdenCompra[];
+}
+
+/**
+ * Fila del plan congelado de cobertura de una OC (Feature 021, AC-4).
+ *
+ * Es una foto de la intencion al emitir: no se recalcula al facturar,
+ * recepcionar o cancelar. `cantidad_faltante` es el hueco que esta OC dejo.
+ */
+export interface PlanOrdenCompra {
+  orden_compra_ticket_id: number;
+  orden_compra_id: number;
+  ticket_id: number;
+  producto_id: number;
+  cantidad_asignada: number;
+  cantidad_faltante: number;
+  fecha_asignacion: string;
+  asunto: string | null;
+  estado_nombre: string | null;
+  prioridad_nombre: string | null;
+  solicitante_nombre: string | null;
+  solicitante_apellido: string | null;
+  fecha_creacion: string | null;
+  producto_nombre: string | null;
 }
 
 /** Filtros de lista de `GET /compras/ordenes` (solo Administrador). */

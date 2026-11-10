@@ -93,10 +93,10 @@ CAPACIDADES_018: dict[tuple[str, str], str] = {
 
 #: Total de operaciones de la matriz tras las ampliaciones documentadas: la 018
 #: (60 -> 61), la Feature 019 (61 -> 62, `GET
-#: /api/v1/inventario/existencias/{producto_id}`) y la Feature 020 (62 -> 72,
-#: diez rutas de compras). El baseline historico de la 018 sigue siendo 60
-#: previas + su operacion de ambito.
-TOTAL_OPERACIONES_018 = 72
+#: /api/v1/inventario/existencias/{producto_id}`), la Feature 020 (62 -> 72,
+#: diez rutas de compras) y la Feature 021 (72 -> 73, preview de cobertura). El
+#: baseline historico de la 018 sigue siendo 60 previas + su operacion de ambito.
+TOTAL_OPERACIONES_018 = 73
 
 _METODOS_OPENAPI = {"get", "put", "post", "delete", "patch"}
 _PREFIJO_CONTRATO = "/api/v1/"
@@ -865,19 +865,20 @@ def test_matriz_tiene_exactamente_61_operaciones_tras_018():
     El nombre conserva el baseline historico de la 018, pero la Feature 019
     amplia **explicitamente** el total a 62 (spec D-6/AC-11, plan §1.1.4): agrega
     `GET /api/v1/inventario/existencias/{producto_id}` sin cambiar ninguna fila
-    previa. La Feature 020 suma despues diez rutas de compras (62 -> 72). Por eso
-    `previas` pasa de 60 a 71: las operaciones de la 019 y la 020 son, desde este
-    modulo, anteriores a la comprobacion de cardinalidad de la 018. Ampliacion
-    documentada, no reescritura silenciosa.
+    previa. La Feature 020 suma despues diez rutas de compras (62 -> 72) y la 021
+    el preview de cobertura (72 -> 73). Por eso `previas` pasa de 60 a 72: las
+    operaciones de la 019, la 020 y la 021 son, desde este modulo, anteriores a
+    la comprobacion de cardinalidad de la 018. Ampliacion documentada, no
+    reescritura silenciosa.
     """
     total = len(permisos.MATRIZ_PERMISOS)
     previas = set(permisos.MATRIZ_PERMISOS) - set(OPERACIONES_018)
     assert total == TOTAL_OPERACIONES_018, (
-        "la matriz debe tener 72 operaciones (60 previas + la de ambito de la 018 "
-        f"+ el detalle de producto de la 019 + las 10 de compras de la 020); "
-        f"tiene {total}"
+        "la matriz debe tener 73 operaciones (60 previas + la de ambito de la 018 "
+        f"+ el detalle de producto de la 019 + las 10 de compras de la 020 + el "
+        f"preview de la 021); tiene {total}"
     )
-    assert len(previas) == 71, (
+    assert len(previas) == 72, (
         "la operacion nueva no puede sustituir a ninguna previa; "
         f"quedan {len(previas)} operaciones anteriores"
     )
@@ -958,8 +959,9 @@ def test_openapi_publica_61_operaciones_tras_018(cliente):
 
     El nombre conserva el baseline historico de la 018; la Feature 019 amplia
     **explicitamente** la cardinalidad a 62 al publicar
-    `GET /api/v1/inventario/existencias/{producto_id}` (spec D-6/AC-11) y la
-    Feature 020 la lleva a 72 con las diez rutas de compras.
+    `GET /api/v1/inventario/existencias/{producto_id}` (spec D-6/AC-11), la
+    Feature 020 la lleva a 72 con las diez rutas de compras y la Feature 021 a 73
+    con el preview de cobertura.
     """
     contrato = cliente.get("/openapi.json").json()
     total = sum(
@@ -970,5 +972,5 @@ def test_openapi_publica_61_operaciones_tras_018(cliente):
         if metodo in _METODOS_OPENAPI
     )
     assert total == TOTAL_OPERACIONES_018, (
-        f"/openapi.json debe publicar 72 operaciones v1; publica {total}"
+        f"/openapi.json debe publicar 73 operaciones v1; publica {total}"
     )

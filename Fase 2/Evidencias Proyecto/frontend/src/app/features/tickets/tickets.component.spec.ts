@@ -15,8 +15,10 @@ const RUTA_ESTADO = (id: number) => `${URL_API}/tickets/${id}/estado`;
 
 /**
  * `estados` en el orden del flujo, no alfabeticamente: "Pendiente" (1),
- * "EnRevision" (2), "Cerrado" (4). El componente toma `estados[0]`, asi que si
- * el fixture no respeta ese orden los tests probarian otra cosa.
+ * "EnRevision" (2), "Cerrado" (4). Desde la enmienda AC-27 el componente
+ * resuelve el estado inicial por **nombre canonico**, asi que este orden ya no
+ * decide el alta; se conserva porque es el que sirve el backend y lo consumen
+ * los tests de presentacion.
  */
 const CATALOGOS: CatalogosTicket = {
   prioridades: [
@@ -141,8 +143,8 @@ const TICKETS: Ticket[] = [
 /**
  * Fixture de T11: la de T6 mas un ticket en cada **terminal** del catalogo 013
  * —cerrado (5, con `fecha_cierre`) y anulado (6, con `fecha_cierre` nula)—
- * para probar que ambas columnas pintan tarjetas y que toda tarjeta ofrece
- * «Gestionar» sin importar su estado.
+ * para probar que ambas columnas pintan tarjetas y que toda tarjeta es un
+ * enlace al detalle sin importar su estado.
  */
 const TICKETS_013: Ticket[] = [
   ...TICKETS,
@@ -378,11 +380,20 @@ describe('TicketsComponent', () => {
       expect(componente.solicitantes().length).toBe(2);
     });
 
-    it('debe arrancar el estado en el primero del flujo, no en el alfabetico', () => {
+    it('debe arrancar el estado en Pendiente por nombre canonico, no por orden', () => {
       abrirConCatalogos();
 
+      expect(componente.estadoPendiente()?.nombre).toBe('Pendiente');
       expect(componente.estadoInicial()).toBe(1);
       expect(componente.formulario.controls.estado_id.value).toBe(1);
+    });
+
+    it('debe preseleccionar la prioridad Media y dejarla cambiable', () => {
+      abrirConCatalogos();
+
+      expect(componente.prioridadInicial()).toBe(2);
+      expect(componente.formulario.controls.prioridad_id.value).toBe(2);
+      expect(componente.formulario.controls.prioridad_id.valid).toBe(true);
     });
 
     it('debe exponer el error del tablero si falla el arranque', () => {
@@ -754,10 +765,10 @@ describe('TicketsComponent', () => {
   /**
    * D-14 / AC-24 (013): el tablero es de solo lectura. Deroganse en la capa de
    * UI los AC-9, AC-10, AC-12, AC-19 y AC-20 de la 004 (transiciones por
-   * botón en el tablero y su feedback): la unica accion por tarjeta es
-   * «Gestionar», que abre la vista de detalle, donde vive todo el ciclo de
-   * vida. Aqui se verifica tanto el comportamiento nuevo como la **ausencia**
-   * de la logica de transiciones que la 004 exibia.
+   * botón en el tablero y su feedback): cada tarjeta completa es un enlace que
+   * abre la vista de detalle, donde vive todo el ciclo de vida. Aqui se
+   * verifica tanto el comportamiento nuevo como la **ausencia** de la logica
+   * de transiciones que la 004 exibia.
    */
   describe('tablero de solo lectura (D-14, AC-24)', () => {
     /** Busca una tarjeta por el id de su ticket, aplanando las columnas. */
@@ -768,18 +779,18 @@ describe('TicketsComponent', () => {
         .find((tarjeta) => tarjeta.ticket.ticket_id === ticketId);
     }
 
-    /** Los enlaces «Gestionar» que el DOM pinta, uno por tarjeta. */
-    function enlacesGestionar() {
+    /** Las tarjetas-enlace que el DOM pinta, una por tarjeta. */
+    function tarjetasEnlazadas() {
       return fixture.nativeElement.querySelectorAll(
-        'a[aria-label^="Gestionar ticket #"]'
+        'a[href^="/tickets/"]'
       ) as NodeListOf<HTMLAnchorElement>;
     }
 
     beforeEach(() => responderArranque(CATALOGOS_013, TICKETS_013));
 
-    it('ofrece exactamente una acción «Gestionar» por tarjeta, sin controles de transición', () => {
+    it('ofrece exactamente una tarjeta-enlace por ticket, sin controles de transición', () => {
       // Una por tarjeta, sin importar su estado.
-      expect(enlacesGestionar().length).toBe(TICKETS_013.length);
+      expect(tarjetasEnlazadas().length).toBe(TICKETS_013.length);
 
       // Ni botones de avanzar/retroceder ni su texto en el tablero.
       expect(
@@ -791,6 +802,8 @@ describe('TicketsComponent', () => {
       const texto = fixture.nativeElement.textContent ?? '';
       expect(texto).not.toContain('Avanzar');
       expect(texto).not.toContain('Retroceder');
+      // El botón «Gestionar» desapareció: la tarjeta entera es el enlace.
+      expect(texto).not.toContain('Gestionar');
 
       // Ningún `PATCH /estado` sale del tablero: la única red del arranque fue
       // catálogos + lista.
@@ -798,15 +811,15 @@ describe('TicketsComponent', () => {
       httpMock.expectNone(RUTA_ESTADO(6));
     });
 
-    it('ofrece «Gestionar» también en la columna terminal y en la de Anulado', () => {
+    it('ofrece la tarjeta-enlace también en la columna terminal y en la de Anulado', () => {
       expect(tarjetaDe(5)).toBeTruthy(); // Cerrado (terminal)
       expect(tarjetaDe(6)).toBeTruthy(); // Anulado (terminal)
 
       expect(
-        fixture.nativeElement.querySelector('a[aria-label="Gestionar ticket #5"]')
+        fixture.nativeElement.querySelector('a[href="/tickets/5"]')
       ).not.toBeNull();
       expect(
-        fixture.nativeElement.querySelector('a[aria-label="Gestionar ticket #6"]')
+        fixture.nativeElement.querySelector('a[href="/tickets/6"]')
       ).not.toBeNull();
     });
 
@@ -837,14 +850,14 @@ describe('TicketsComponent', () => {
       }
     });
 
-    it('la acción «Gestionar» navega a la ruta de detalle del ticket', () => {
+    it('la tarjeta navega a la ruta de detalle del ticket', () => {
       const router = TestBed.inject(Router);
       const navegacion = spyOn(router, 'navigateByUrl').and.returnValue(
         Promise.resolve(true)
       );
 
       const enlace = fixture.nativeElement.querySelector(
-        'a[aria-label="Gestionar ticket #1"]'
+        'a[href="/tickets/1"]'
       ) as HTMLAnchorElement;
       expect(enlace).not.toBeNull();
       // La ruta hija `tickets/:ticketId` del T10.
@@ -871,7 +884,7 @@ describe('TicketsComponent', () => {
     it('hace exactamente dos peticiones al arranque y ninguna por tarjeta (sin N+1)', () => {
       // `responderArranque` ya descargo catálogos y lista: el render de cinco
       // columnas con seis tarjetas no añade peticiones…
-      expect(enlacesGestionar().length).toBe(TICKETS_013.length);
+      expect(tarjetasEnlazadas().length).toBe(TICKETS_013.length);
 
       // …ni los filtros, que son de cliente sobre el conjunto cargado…
       componente.cambiarPrioridad('1');
@@ -881,7 +894,7 @@ describe('TicketsComponent', () => {
 
       // …ni la navegación al detalle.
       (fixture.nativeElement.querySelector(
-        'a[aria-label="Gestionar ticket #3"]'
+        'a[href="/tickets/3"]'
       ) as HTMLAnchorElement).click();
       fixture.detectChanges();
 
@@ -922,13 +935,14 @@ describe('TicketsComponent', () => {
   });
 
   /**
-   * D-11 (013): un ticket nuevo no puede nacer en `Anulado`. El backend ya
-   * responde 409; el modal espeja esa regla excluyendo `Anulado` de la
-   * elección de estado inicial, resuelto por nombre (como el resto del
-   * catalogo), sin ids fijos.
+   * Enmienda post-cierre 05/Nov/2026 (AC-27): el alta nace siempre en
+   * `Pendiente`, resuelto por nombre canónico (no por la primera entrada del
+   * catálogo) y mostrado como dato **fijo** (sin selector ni cambio por UI).
+   * `Anulado` sigue fuera de `estadosAlta`; el backend responde 409 si llegara
+   * cualquier estado que no sea `Pendiente`.
    */
-  describe('alta sin Anulado como estado inicial (D-11)', () => {
-    it('excluye Anulado de la elección de estado inicial', () => {
+  describe('alta con estado inicial fijo en Pendiente (AC-27)', () => {
+    it('resuelve Pendiente por nombre y lo fija en el formulario', () => {
       abrirConCatalogos(CATALOGOS_013);
 
       expect(componente.estadosAlta().map((estado) => estado.nombre)).toEqual([
@@ -937,25 +951,68 @@ describe('TicketsComponent', () => {
         'EnCurso',
         'Cerrado',
       ]);
+      expect(componente.estadoPendiente()?.nombre).toBe('Pendiente');
       expect(componente.estadoInicial()).toBe(1);
       expect(componente.formulario.controls.estado_id.value).toBe(1);
     });
 
-    it('el desplegable del modal no ofrece Anulado', () => {
+    it('muestra el estado como dato fijo y no ofrece selector de estado', () => {
       abrirConCatalogos(CATALOGOS_013);
 
-      const opciones = fixture.nativeElement.querySelectorAll(
-        'dialog select[formcontrolname="estado_id"] option'
-      );
-      expect(opciones.length).toBe(4);
-      const textos = [...opciones].map((opcion) => (opcion as HTMLOptionElement).textContent?.trim());
-      expect(textos).not.toContain('Anulado');
+      expect(
+        fixture.nativeElement.querySelector('dialog select[formcontrolname="estado_id"]')
+      ).toBeNull();
+
+      const texto = (fixture.nativeElement.querySelector('dialog')?.textContent ?? '')
+        .replace(/\s+/g, ' ');
+      expect(texto).toContain('Pendiente');
+      expect(texto).toContain('Fijo');
+      expect(texto).toContain('no se puede cambiar');
+      expect(texto).not.toContain('Editable para la demostración');
     });
 
-    it('resuelve la exclusión por nombre canónico, no por posición ni id', () => {
+    it('resuelve Pendiente por nombre aunque no sea el primer estado del catálogo', () => {
+      // Catálogo hostil: `EnCurso` primero y `Pendiente` (id 7) en medio.
+      const catalogoHostil: CatalogosTicket = {
+        ...CATALOGOS_013,
+        estados: [
+          { estado_id: 8, nombre: 'EnCurso', descripcion: 'Primero' },
+          { estado_id: 7, nombre: 'Pendiente', descripcion: 'No primero' },
+          { estado_id: 9, nombre: 'anulado', descripcion: 'Terminal' },
+        ],
+      };
+      abrirConCatalogos(catalogoHostil);
+
+      expect(componente.nombreEstadoInicial()).toBe('Pendiente');
+      expect(componente.estadoInicial()).toBe(7);
+      expect(componente.formulario.controls.estado_id.value).toBe(7);
+    });
+
+    it('sin Pendiente en el catálogo bloquea el alta y lo avisa', () => {
+      const catalogoSinPendiente: CatalogosTicket = {
+        ...CATALOGOS_013,
+        estados: CATALOGOS_013.estados.filter(
+          (estado) => estado.nombre !== 'Pendiente'
+        ),
+      };
+      abrirConCatalogos(catalogoSinPendiente);
+
+      expect(componente.estadoInicial()).toBeNull();
+      expect(componente.formulario.controls.estado_id.value).toBeNull();
+
+      const texto = (fixture.nativeElement.querySelector('dialog')?.textContent ?? '')
+        .replace(/\s+/g, ' ');
+      expect(texto).toContain('no contiene el estado Pendiente');
+
+      // El envío no sale: el control obligatorio quedó vacío (fail-closed).
+      componente.formulario.controls.asunto.setValue('Sin estado inicial');
+      componente.detalles.at(0).controls.producto_id.setValue(1);
+      componente.enviar();
+      expect(httpMock.match(RUTA_TICKETS).length).toBe(0);
+    });
+
+    it('resuelve la exclusión de Anulado por nombre canónico, no por posición ni id', () => {
       // Catálogo degenerado: `anulado` en minúsculas y **primero** del arreglo.
-      // La exclusión es por nombre normalizado, asi que el estado inicial sigue
-      // siendo el primer operativo del flujo (Pendiente, id 1).
       const catalogoAnuladoPrimero: CatalogosTicket = {
         ...CATALOGOS_013,
         estados: [
@@ -969,6 +1026,45 @@ describe('TicketsComponent', () => {
         1, 2, 3, 4,
       ]);
       expect(componente.estadoInicial()).toBe(1);
+    });
+  });
+
+  /**
+   * Enmienda post-cierre 05/Nov/2026 (AC-27): la prioridad arranca en `Media`
+   * (resuelta por nombre canónico) y sigue siendo cambiable; tras un alta
+   * exitosa el formulario vuelve a los valores por defecto.
+   */
+  describe('prioridad Media predeterminada (AC-27)', () => {
+    it('el selector del modal muestra Media seleccionada y habilitada', () => {
+      abrirConCatalogos();
+
+      const select = fixture.nativeElement.querySelector(
+        'dialog select[formcontrolname="prioridad_id"]'
+      ) as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      expect(select.disabled).toBe(false);
+      expect(select.selectedOptions[0]?.textContent?.trim()).toBe('Media');
+    });
+
+    it('cambiarla a Alta se refleja en el POST', () => {
+      abrirConCatalogos();
+      completarFormulario(); // fija prioridad 1 (Alta)
+      componente.enviar();
+
+      const peticion = httpMock.expectOne(RUTA_TICKETS);
+      expect(peticion.request.body.prioridad_id).toBe(1);
+      peticion.flush(ticketRespuesta(42));
+    });
+
+    it('vuelve a Media y a Pendiente después de crear', () => {
+      abrirConCatalogos();
+      completarFormulario();
+      componente.enviar();
+      httpMock.expectOne(RUTA_TICKETS).flush(ticketRespuesta(42));
+
+      expect(componente.formulario.controls.prioridad_id.value).toBe(2);
+      expect(componente.formulario.controls.estado_id.value).toBe(1);
+      expect(componente.formulario.controls.prioridad_id.touched).toBe(false);
     });
   });
 
@@ -1139,7 +1235,7 @@ describe('TicketsComponent', () => {
     it('debe diferenciar el vacio por filtros del vacio normal (AC-5)', () => {
       // Sin filtros: la columna Cerrado (id 4) esta vacia.
       expect(componente.hayFiltros()).toBe(false);
-      expect(fixture.nativeElement.textContent).toContain('Sin tickets en esta columna');
+      expect(fixture.nativeElement.textContent).toContain('Sin pedidos en esta columna');
 
       componente.busqueda.set('zzzz');
       fixture.detectChanges();
@@ -1148,7 +1244,7 @@ describe('TicketsComponent', () => {
       expect(componente.hayFiltros()).toBe(true);
       expect(tarjetasVisibles().length).toBe(0);
       expect(fixture.nativeElement.textContent).toContain(
-        'Ningún ticket coincide con los filtros'
+        'Ningún pedido coincide con los filtros'
       );
     });
   });

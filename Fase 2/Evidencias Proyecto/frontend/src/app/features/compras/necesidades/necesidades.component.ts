@@ -9,10 +9,19 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { NecesidadReabastecimiento, Sede } from '../../../shared/interfaces';
+import { NecesidadReabastecimiento, NecesidadTicket, Sede } from '../../../shared/interfaces';
 import { AdministracionService } from '../../administracion/services/administracion.service';
 import { mensajeDeErrorCompras } from '../compras-errores';
 import { ComprasService } from '../services/compras.service';
+
+/** Fila con la demanda ya desglosada y sus subtotales (Feature 021). */
+interface FilaNecesidad {
+  fila: NecesidadReabastecimiento;
+  tickets: NecesidadTicket[];
+  subtotalSolicitado: number;
+  subtotalCubierto: number;
+  subtotalFaltante: number;
+}
 
 /**
  * Necesidades de reabastecimiento por sede y producto (Feature 020, AC-1; T8).
@@ -46,6 +55,32 @@ export class NecesidadesComponent implements OnInit {
   /** Unidades sugeridas del filtro vigente, para el resumen de cabecera. */
   readonly totalSugerido = computed(() =>
     this.necesidades().reduce((total, fila) => total + fila.sugerido, 0),
+  );
+
+  /**
+   * Feature 021 (AC-1): cada fila con los pedidos que componen su demanda y
+   * sus subtotales. Toda la aritmetica se resuelve aqui; el template solo pinta.
+   */
+  readonly filas = computed<FilaNecesidad[]>(() =>
+    this.necesidades().map((fila) => {
+      const tickets = fila.tickets ?? [];
+      return {
+        fila,
+        tickets,
+        subtotalSolicitado: tickets.reduce(
+          (total, pedido) => total + pedido.cantidad_solicitada,
+          0,
+        ),
+        subtotalCubierto: tickets.reduce(
+          (total, pedido) => total + pedido.cantidad_cubierta,
+          0,
+        ),
+        subtotalFaltante: tickets.reduce(
+          (total, pedido) => total + pedido.cantidad_faltante,
+          0,
+        ),
+      };
+    }),
   );
 
   ngOnInit(): void {

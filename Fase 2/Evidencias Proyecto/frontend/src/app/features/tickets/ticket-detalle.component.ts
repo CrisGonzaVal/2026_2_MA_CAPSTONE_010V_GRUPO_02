@@ -31,6 +31,8 @@ import {
   TicketDetalle,
   TicketEditar,
 } from '../../shared/interfaces';
+// Feature 021 (V-3): presentacion de estados, con las palabras separadas.
+import { etiquetaEstado as etiquetaVisible } from '../../shared/utils/etiqueta-estado';
 import { TicketService } from './services/ticket.service';
 
 /** Fila resuelta del historial para el template (sin ids que el template no conozca). */
@@ -41,6 +43,8 @@ interface FilaHistorial {
   actor: string;
   fecha: string;
   motivo: string | null;
+  /** Feature 021 (AC-6): OC que desbloqueo el pedido, si aplica. */
+  numeroOc: string | null;
 }
 
 /** Acciones que la barra ofrece según estado y rol (AC-24). */
@@ -88,13 +92,13 @@ export function mensajeDeErrorTickets(error: HttpErrorResponse): string {
     case 401:
       return 'Tu sesión no es válida. Vuelve a iniciar sesión.';
     case 403:
-      return 'Tu rol no tiene permiso para esta operación sobre el ticket.';
+      return 'Tu rol no tiene permiso para esta operación sobre el pedido.';
     case 404:
-      return 'El ticket indicado no existe o no está en tu alcance.';
+      return 'El pedido indicado no existe o no está en tu alcance.';
     case 409:
-      return 'La operación entra en conflicto con el estado actual del ticket.';
+      return 'La operación entra en conflicto con el estado actual del pedido.';
     case 422:
-      return 'Los datos enviados no son válidos: revisa el motivo y los campos del ticket.';
+      return 'Los datos enviados no son válidos: revisa el motivo y los campos del pedido.';
     case 0:
       return 'No se pudo contactar al servidor. Verifica la conexión e inténtalo de nuevo.';
     default:
@@ -279,9 +283,9 @@ export class TicketDetalleComponent {
       return null;
     }
     if (this.esTerminal()) {
-      return 'Este ticket está en un estado terminal (Cerrado o Anulado): no admite acciones del ciclo de vida.';
+      return 'Este pedido está en un estado terminal (Cerrado o Anulado): no admite acciones del ciclo de vida.';
     }
-    return 'Tu rol no puede operar el ciclo de vida de este ticket: solo puede consultarlo.';
+    return 'Tu rol no puede operar el ciclo de vida de este pedido: solo puede consultarlo.';
   });
 
   // --- Etiquetas de presentación ---
@@ -308,7 +312,7 @@ export class TicketDetalleComponent {
     if (ticket === null) {
       return '';
     }
-    return this.nombreEstado() ?? `Estado #${ticket.estado_id}`;
+    return etiquetaVisible(this.nombreEstado() ?? `Estado #${ticket.estado_id}`);
   });
 
   /** Badge de estado: `Anulado` y `Cerrado` se distinguen de un vistazo (AC-23). */
@@ -391,16 +395,20 @@ export class TicketDetalleComponent {
       origen:
         fila.estado_origen_id === null
           ? 'Creación'
-          : (fila.estado_origen_nombre ??
-            this.nombreDeEstado(fila.estado_origen_id) ??
-            `Estado #${fila.estado_origen_id}`),
-      destino:
+          : etiquetaVisible(
+              fila.estado_origen_nombre ??
+                this.nombreDeEstado(fila.estado_origen_id) ??
+                `Estado #${fila.estado_origen_id}`,
+            ),
+      destino: etiquetaVisible(
         fila.estado_destino_nombre ??
-        this.nombreDeEstado(fila.estado_destino_id) ??
-        `Estado #${fila.estado_destino_id}`,
+          this.nombreDeEstado(fila.estado_destino_id) ??
+          `Estado #${fila.estado_destino_id}`,
+      ),
       actor: this.actorDeFila(fila),
       fecha: fila.fecha_transicion,
       motivo: fila.motivo,
+      numeroOc: fila.numero_oc ?? null,
     })),
   );
 
@@ -570,7 +578,7 @@ export class TicketDetalleComponent {
   private cargar(): void {
     if (this.ticketId() === null) {
       this.cargando.set(false);
-      this.errorCarga.set('El identificador del ticket no es válido.');
+      this.errorCarga.set('El identificador del pedido no es válido.');
       return;
     }
     this.cargando.set(true);
@@ -650,7 +658,7 @@ export class TicketDetalleComponent {
     this.limpiarAvisos();
     this.enOperacion.set(true);
     this.servicioTickets.actualizarEstado(this.ticketId()!, destino).subscribe({
-      next: () => this.terminarOperacion('Estado del ticket actualizado.'),
+      next: () => this.terminarOperacion('Estado del pedido actualizado.'),
       error: (error: HttpErrorResponse) => this.fallarOperacion(error),
     });
   }
@@ -702,7 +710,7 @@ export class TicketDetalleComponent {
     peticion.subscribe({
       next: () => {
         this.confirmando.set(null);
-        this.terminarOperacion(tipo === 'anular' ? 'Ticket anulado.' : 'Ticket rechazado.');
+        this.terminarOperacion(tipo === 'anular' ? 'Pedido anulado.' : 'Pedido rechazado.');
       },
       error: (error: HttpErrorResponse) => this.fallarOperacion(error),
     });
@@ -770,7 +778,7 @@ export class TicketDetalleComponent {
     this.servicioTickets.editarTicket(this.ticketId()!, cuerpo).subscribe({
       next: () => {
         this.editando.set(false);
-        this.terminarOperacion('Ticket editado.');
+        this.terminarOperacion('Pedido editado.');
       },
       error: (error: HttpErrorResponse) => this.fallarOperacion(error),
     });

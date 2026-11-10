@@ -8,6 +8,8 @@ import { TestBed } from '@angular/core/testing';
 
 import { URL_API } from '../../../shared/config/url-api';
 import {
+  CoberturaPreviewRespuesta,
+  CoberturaPreviewSolicitud,
   FacturaCompra,
   FacturaCompraRegistrar,
   NecesidadReabastecimiento,
@@ -322,5 +324,58 @@ describe('ComprasService (Feature 020)', () => {
       motivo_cancelacion: 'Quiebre de stock del proveedor',
     });
     peticion.flush({ ...ORDEN, estado: 'Cancelada' });
+  });
+
+  // --- Feature 021 (AC-2): preview de cobertura -----------------------------
+
+  it('previsualizarCobertura envia POST con sede e items y devuelve la simulacion', () => {
+    const datos: CoberturaPreviewSolicitud = {
+      sede_id: 4,
+      items: [{ producto_id: 7, cantidad_solicitada: 10 }],
+    };
+    const respuesta: CoberturaPreviewRespuesta = {
+      sede_id: 4,
+      sede_nombre: 'Sede Central',
+      productos: [
+        {
+          producto_id: 7,
+          producto_nombre: 'Cuaderno linedado',
+          cantidad_simulada: 10,
+          demanda_total: 12,
+          cubierto_previo: 0,
+          asignado: 10,
+          faltante: 2,
+          sin_asignar: 0,
+          tickets: [
+            {
+              ticket_id: 33,
+              asunto: 'Reposicion de cuadernos',
+              solicitante_nombre: 'Isabel',
+              solicitante_apellido: 'Contreras',
+              prioridad_nombre: 'ALTA',
+              fecha_creacion: '2026-11-01T09:00:00',
+              solicitado: 12,
+              cubierto_plan: 0,
+              cubierto_stock: 0,
+              necesidad: 12,
+              asignada: 10,
+              faltante: 2,
+              cobertura: 'parcial',
+            },
+          ],
+        },
+      ],
+    };
+    const recibidas: CoberturaPreviewRespuesta[] = [];
+    servicio
+      .previsualizarCobertura(datos)
+      .subscribe((cuerpo) => recibidas.push(cuerpo));
+
+    const peticion = peticionA(`${URL_API}/compras/cobertura/preview`);
+    expect(peticion.request.method).toBe('POST');
+    expect(peticion.request.body).toEqual(datos);
+    peticion.flush(respuesta);
+
+    expect(recibidas).toEqual([respuesta]);
   });
 });

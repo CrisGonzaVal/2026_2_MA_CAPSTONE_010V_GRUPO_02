@@ -335,7 +335,8 @@ describe('TicketDetalleComponent', () => {
 
       const texto = textoRaiz();
       expect(texto).toContain('Creación → Pendiente');
-      expect(texto).toContain('Pendiente → EnRevision');
+      // Feature 021 (V-3): el historial separa las palabras del estado.
+      expect(texto).toContain('Pendiente → En Revisión');
       expect(texto).toContain('Contreras, Isabel');
       expect(texto).toContain('Soto, Bruno');
       expect(texto).toContain('Revisión inicial del requerimiento');
@@ -353,7 +354,85 @@ describe('TicketDetalleComponent', () => {
       sinItems.detalles = [];
       responderCarga(sinItems);
 
-      expect(textoRaiz()).toContain('Este ticket no tiene ítems registrados.');
+      expect(textoRaiz()).toContain('Este pedido no tiene ítems registrados.');
+    });
+
+    // --- Feature 021 (T11, AC-5/AC-6/AC-9): cobertura y OC ---------------
+
+    it('AC-5: muestra la cobertura por producto y las OC que cubren el pedido', () => {
+      const detalle = crearDetalle(3);
+      detalle.asignaciones = [
+        {
+          orden_compra_ticket_id: 1,
+          orden_compra_id: 21,
+          numero_oc: 'OC-2026-000021',
+          estado_orden: 'Recibida',
+          producto_id: 1,
+          producto_nombre: 'Papel oficio',
+          cantidad_asignada: 2,
+          cantidad_faltante: 0,
+          fecha_asignacion: '2026-11-03T10:05:00',
+        },
+      ];
+      detalle.cadena_productos = [
+        {
+          producto_id: 1,
+          producto_nombre: 'Papel oficio',
+          solicitado: 3,
+          comprado: 2,
+          recibido: 2,
+          entregado: 1,
+          faltante: 0,
+        },
+      ];
+      responderCarga(detalle);
+
+      const visible = textoRaiz();
+      expect(visible).toContain('Cobertura por producto');
+      expect(visible).toContain('Comprado');
+      expect(visible).toContain('Recibido');
+      expect(visible).toContain('Faltante');
+      expect(visible).toContain('Órdenes de compra que cubren el pedido');
+      expect(visible).toContain('OC-2026-000021');
+      expect(visible).toContain('Recibida');
+    });
+
+    it('AC-9: una OC cancelada se marca y no se presenta como cobertura activa', () => {
+      const detalle = crearDetalle(3);
+      detalle.asignaciones = [
+        {
+          orden_compra_ticket_id: 2,
+          orden_compra_id: 22,
+          numero_oc: 'OC-2026-000022',
+          estado_orden: 'Cancelada',
+          producto_id: 1,
+          producto_nombre: 'Papel oficio',
+          cantidad_asignada: 2,
+          cantidad_faltante: 1,
+          fecha_asignacion: '2026-11-04T10:05:00',
+        },
+      ];
+      detalle.cadena_productos = [];
+      responderCarga(detalle);
+
+      const visible = textoRaiz();
+      expect(visible).toContain('Cancelada');
+      expect(visible).toContain('no cuentan como cobertura');
+    });
+
+    it('AC-6: el historial muestra la OC que desbloqueó el pedido', () => {
+      const historial = crearHistorial();
+      historial[1] = {
+        ...historial[1],
+        estado_origen_nombre: 'EnCurso',
+        estado_destino_nombre: 'EnCurso',
+        orden_compra_id: 21,
+        numero_oc: 'OC-2026-000021',
+      };
+      responderCarga(crearDetalle(3), historial);
+
+      expect(textoRaiz()).toContain('En Curso → En Curso');
+      expect(textoRaiz()).toContain('OC-2026-000021');
     });
 
     it('muestra un error accesible (role="alert") ante un 404 y permite reintentar', () => {
@@ -451,7 +530,7 @@ describe('TicketDetalleComponent', () => {
       responderReconsulta();
 
       expect(alertas()).toEqual([]);
-      expect(textoRaiz()).toContain('Estado del ticket actualizado.');
+      expect(textoRaiz()).toContain('Estado del pedido actualizado.');
       expect(componente.enOperacion()).toBe(false);
     });
 
@@ -546,7 +625,7 @@ describe('TicketDetalleComponent', () => {
       responderReconsulta(crearDetalle(5));
 
       expect(componente.confirmando()).toBeNull();
-      expect(textoRaiz()).toContain('Ticket anulado.');
+      expect(textoRaiz()).toContain('Pedido anulado.');
     });
 
     it('un 422 del backend queda accesible en role="alert" y el modal sigue abierto', () => {
@@ -588,7 +667,7 @@ describe('TicketDetalleComponent', () => {
       peticion.flush(crearDetalle(5));
       responderReconsulta(crearDetalle(5));
 
-      expect(textoRaiz()).toContain('Ticket rechazado.');
+      expect(textoRaiz()).toContain('Pedido rechazado.');
     });
 
     it('muestra el 409 del servidor al rechazar en un role="alert" y reconsulta', () => {
@@ -649,7 +728,7 @@ describe('TicketDetalleComponent', () => {
       responderReconsulta(editado);
 
       expect(componente.editando()).toBe(false);
-      expect(textoRaiz()).toContain('Ticket editado.');
+      expect(textoRaiz()).toContain('Pedido editado.');
     });
 
     it('un 409 del servidor (fuera de Pendiente) queda accesible en role="alert"', () => {
@@ -732,7 +811,7 @@ describe('TicketDetalleComponent', () => {
       peticion.flush(editado);
       responderReconsulta(editado);
 
-      expect(textoRaiz()).toContain('Ticket editado.');
+      expect(textoRaiz()).toContain('Pedido editado.');
     });
 
     it('no ofrece el producto inactivo para una línea nueva', () => {

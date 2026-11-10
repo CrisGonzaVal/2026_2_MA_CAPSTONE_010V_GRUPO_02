@@ -1,13 +1,19 @@
-"""Contratos Pydantic v2 del reabastecimiento externo y compras (Feature 020).
+"""Contratos Pydantic v2 del reabastecimiento externo y compras (Features 020 y 021).
 
-Diseno en `docs/spec/features/020-reabastecimiento-compras/plan.md` (DT-1,
-DT-2, DT-10, DT-12 y DT-13) y criterios en `spec.md` (AC-1…AC-14).
+La Feature 020 define proveedores, orden de compra, factura, recepcion y
+necesidades. La Feature 021 (cobertura automatica de pedidos) agrega los DTO de
+lectura de necesidades enriquecidas, preview de cobertura, plan de la OC y
+asignaciones del pedido. Diseno en
+`docs/spec/features/020-reabastecimiento-compras/plan.md` (DT-1, DT-2, DT-10,
+DT-12 y DT-13) y `docs/spec/features/021-cobertura-automatica-tickets-compras/plan.md`
+(DT-2…DT-8), con criterios en las `spec.md` respectivas.
 
 Convenciones del proyecto:
 
 * Solo sintaxis Pydantic v2 (`ConfigDict`, `model_validate`); nunca `class Config`.
 * `from_attributes=True` **solo** en los DTO que proyectan una entidad ORM. Los
   read models que cruzan tablas o agregan (`NecesidadReabastecimiento`,
+  `CoberturaPreviewRespuesta`, `PlanOrdenCompraRespuesta`,
   `RecepcionRespuesta` y sus partes) se arman a mano en `compra_service`.
 * La validacion de forma vive aqui; la de referencias, estado y pertenencia vive
   en el servicio para conservar la precedencia 401 → 403 → 409 → 404 → 422.
@@ -71,13 +77,37 @@ class ProveedorRespuesta(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class NecesidadTicketRespuesta(BaseModel):
+    """Pedido `EnCurso` que compone la demanda de una necesidad (Feature 021).
+
+    Read model de DT-3: lo arma
+    `compra_service.listar_necesidades_reabastecimiento` con la simulacion de
+    necesidad neta parcial. `cantidad_cubierta = cantidad_solicitada -
+    cantidad_faltante`; el faltante es la necesidad neta **antes** de una nueva
+    OC, ya descontados los planes pendientes y el stock parcial.
+    """
+
+    ticket_id: int
+    asunto: str
+    solicitante_nombre: Optional[str] = None
+    solicitante_apellido: Optional[str] = None
+    solicitante_correo: Optional[str] = None
+    prioridad_nombre: Optional[str] = None
+    fecha_creacion: datetime
+    cantidad_solicitada: int
+    cantidad_cubierta: int
+    cantidad_faltante: int
+
+
 class NecesidadReabastecimiento(BaseModel):
     """Fila consolidada por `(sede, producto)` de `GET /compras/necesidades`.
 
     Read model: lo arma `compra_service.listar_necesidades_reabastecimiento`.
     `demanda_tickets` es la suma de `detalle_ticket.cantidad_solicitada` de los
-    tickets `EnCurso` de la sede y `sugerido` se calcula como
-    `max(0, stock_minimo + demanda_tickets - stock_actual)` (AC-1).
+    pedidos `EnCurso` de la sede. La Feature 021 agrega el comprometido por OC
+    (`Emitida` + `Facturada`), el borrador (informativo, no descuenta) y los
+    pedidos que componen la demanda; el sugerido pasa a
+    `max(0, stock_minimo + demanda_tickets - stock_actual - stock_comprometido)`.
     """
 
     sede_id: int
@@ -88,6 +118,80 @@ class NecesidadReabastecimiento(BaseModel):
     stock_minimo: int
     demanda_tickets: int
     sugerido: int
+    stock_comprometido: int = 0
+    stock_borrador: int = 0
+    tickets: List[NecesidadTicketRespuesta] = []
+
+
+# ---------------------------------------------------------------------------
+# Preview de cobertura automatica (AC-2, DT-4)
+# ---------------------------------------------------------------------------
+
+
+class CoberturaPreviewItem(BaseModel):
+    """Linea simulada del preview: producto y cantidad de la compra hipotetica."""
+
+    producto_id: int = Field(ge=1, description="Producto activo de la institucion.")
+    cantidad_solicitada: int = Field(
+        gt=0, description="Unidades simuladas para ese producto; mayor que cero."
+    )
+
+
+class CoberturaPreviewSolicitud(BaseModel):
+    """Payload de `POST /compras/cobertura/preview` (AC-2).
+
+    No incluye proveedor: la cobertura depende de la sede, los pedidos y el
+    stock, no de a quien se compra. La sede se valida en el servicio (404 si no
+    existe o es ajena); la forma del cuerpo se valida aqui (422).
+    """
+
+    sede_id: int = Field(ge=1, description="Sede de la institucion del actor.")
+    items: List[CoberturaPreviewItem] = Field(
+        min_length=1,
+        description="Al menos una linea; el servicio rechaza productos repetidos.",
+    )
+
+
+class CoberturaPreviewTicket(BaseModel):
+    """Resultado simulado por pedido dentro de un producto del preview."""
+
+    ticket_id: int
+    asunto: str
+    solicitante_nombre: Optional[str] = None
+    solicitante_apellido: Optional[str] = None
+    prioridad_nombre: Optional[str] = None
+    fecha_creacion: datetime
+    solicitado: int
+    cubierto_plan: int
+    cubierto_stock: int
+    necesidad: int
+    asignada: int
+    faltante: int
+    cobertura: str = Field(
+        description="`total`, `parcial` o `sin_cobertura` (AC-9)."
+    )
+
+
+class CoberturaPreviewProducto(BaseModel):
+    """Resultado simulado por producto del preview (AC-2)."""
+
+    producto_id: int
+    producto_nombre: str
+    cantidad_simulada: int
+    demanda_total: int
+    cubierto_previo: int
+    asignado: int
+    faltante: int
+    sin_asignar: int
+    tickets: List[CoberturaPreviewTicket] = []
+
+
+class CoberturaPreviewRespuesta(BaseModel):
+    """Respuesta de `POST /compras/cobertura/preview`: no persiste ni reserva."""
+
+    sede_id: int
+    sede_nombre: str
+    productos: List[CoberturaPreviewProducto] = []
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +255,33 @@ class DetalleOrdenCompraRespuesta(BaseModel):
     producto: Optional[ProductoRespuesta] = None
 
 
+class PlanOrdenCompraRespuesta(BaseModel):
+    """Fila del plan congelado de cobertura de una OC (Feature 021, AC-4).
+
+    Read model construido por `compra_service.orden_a_respuesta`: resuelve el
+    resumen del pedido y el nombre del producto en el servicio, porque no son
+    columnas de `orden_compra_ticket`. `cantidad_faltante` es la foto del hueco
+    que esta OC dejo al emitirse; no se recalcula.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    orden_compra_ticket_id: int
+    orden_compra_id: int
+    ticket_id: int
+    producto_id: int
+    cantidad_asignada: int
+    cantidad_faltante: int
+    fecha_asignacion: datetime
+    asunto: Optional[str] = None
+    estado_nombre: Optional[str] = None
+    prioridad_nombre: Optional[str] = None
+    solicitante_nombre: Optional[str] = None
+    solicitante_apellido: Optional[str] = None
+    fecha_creacion: Optional[datetime] = None
+    producto_nombre: Optional[str] = None
+
+
 class OrdenCompraRespuesta(BaseModel):
     """Proyeccion completa de una OC con proveedor, sede, detalles y factura."""
 
@@ -173,6 +304,8 @@ class OrdenCompraRespuesta(BaseModel):
     sede: Optional[SedeRespuesta] = None
     detalles: List[DetalleOrdenCompraRespuesta] = []
     factura: Optional["FacturaCompraRespuesta"] = None
+    #: Feature 021: plan congelado al emitir. Vacio en `Borrador`.
+    plan: List[PlanOrdenCompraRespuesta] = []
 
 
 # ---------------------------------------------------------------------------

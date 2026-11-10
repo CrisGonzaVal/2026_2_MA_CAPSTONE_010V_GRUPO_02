@@ -17,8 +17,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #: `014.1` (spec 014, AC-13/AC-14). La Feature 020 agrega el catalogo global de
 #: proveedores y las tablas de orden, detalle y factura de compra en control y en
 #: cada tenant, ademas de la septima capacidad `compras`, de modo que el objetivo
-#: sube de `014.1` a `020.1` (spec 020, AC-2/AC-14).
-VERSION_ESQUEMA_OBJETIVO = "020.1"
+#: sube de `014.1` a `020.1` (spec 020, AC-2/AC-14). La Feature 021 agrega la tabla
+#: `orden_compra_ticket` y la columna `historial_transicion_ticket.orden_compra_id`
+#: en control y en cada tenant, de modo que el objetivo sube de `020.1` a `021.1`
+#: (spec 021, AC-6/AC-11).
+VERSION_ESQUEMA_OBJETIVO = "021.1"
 
 
 class Settings(BaseSettings):

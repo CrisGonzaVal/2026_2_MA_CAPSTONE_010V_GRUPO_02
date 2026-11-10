@@ -111,9 +111,11 @@ MAPA_OPERACION_CAPACIDAD: dict[tuple[str, str], str] = {
     ): "gestion_organizacional",
     # --- Feature 020 (spec DT-6/AC-13, plan §4): reabastecimiento externo y
     # compras. Las diez operaciones se gatean por la septima capacidad
-    # `compras`; el catalogo global del Superadmin no tiene contexto tenant y
+    # `compras`; la Feature 021 suma el preview de cobertura (72 -> 73). El
+    # catalogo global del Superadmin no tiene contexto tenant y
     # `requiere_capacidad` no lo gatea, como en el resto de `/control/*`. ---
     ("GET", "/api/v1/compras/necesidades"): "compras",
+    ("POST", "/api/v1/compras/cobertura/preview"): "compras",
     ("GET", "/api/v1/compras/proveedores"): "compras",
     ("POST", "/api/v1/compras/proveedores"): "compras",
     ("POST", "/api/v1/compras/ordenes"): "compras",

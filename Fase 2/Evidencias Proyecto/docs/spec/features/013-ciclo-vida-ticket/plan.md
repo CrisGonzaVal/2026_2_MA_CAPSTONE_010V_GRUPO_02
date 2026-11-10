@@ -151,3 +151,30 @@ La sección «Ciclo de vida del ticket: estado `Anulado` e historial de transici
 ## 7. Condición de bloqueo
 
 No iniciar ninguna tarea de modelos, schemas, DDL, semilla, constructor, migración ni `VERSION_ESQUEMA_OBJETIVO` hasta la aprobación del apartado de `stack.md` (§1). Si la implementación revela una contradicción real con la spec aprobada —p. ej. un contrato de códigos imposible de satisfacer con el orden 404→409→422, o un rol que la matriz no puede representar—, se detiene la tarea y se eleva el hallazgo al coordinador; no se amplía la spec ni se corrige el código de forma implícita. El `tasks.md` de la 013 se genera en la fase posterior, con tareas en orden de dependencia ancladas a este plan.
+
+## 8. Enmienda post-cierre (05/Nov/2026): alta fija en `Pendiente` y prioridad `Media`
+
+**Alcance:** solo `backend/app/services/ticket_service.py` (+ descripción OpenAPI de
+`POST /tickets`) y `frontend/src/app/features/tickets/tickets.component.{ts,html,spec.ts}`. Sin
+modelo, sin DDL, sin semilla, sin migración, sin permisos nuevos, sin cambios de matriz.
+
+**Backend.** `crear_ticket` resuelve `Pendiente` por nombre canónico (nueva constante
+`NOMBRE_ESTADO_PENDIENTE = "pendiente"` + `_resolver_estado_por_nombre`, mismo patrón que
+`Anulado`/`Cerrado`), exige que `datos.estado_id` sea ese id y que el catálogo lo contenga;
+ambos incumplimientos responden **409** antes del primer `add()`. Se retiran la rama de sellado
+en `Cerrado` y la mención específica de `Anulado` (subsumida por la regla general; el 409 sigue
+existiendo). La validación de referencia (`_verificar_referencia`) va antes, así que un id ajeno
+sigue siendo **404** y no 409. Los tests que sembraban tickets en otro estado vía API pasan a
+sembrarlos por ORM (patrón `sembrar_ticket` de `_soporte_ciclo_vida_013.py`) o a crear en
+`Pendiente` y transicionar con `PATCH /estado`; el fixture `datos_base` renombra sus estados a
+`Pendiente`/`Cerrado`, que es lo que el resto de la suite ya usa por id.
+
+**Frontend.** El modal muestra el estado inicial como dato de solo lectura (nombre del catálogo,
+etiqueta «Fijo», sin `<select>`); el `FormControl estado_id` se llena por código y se envía con
+`getRawValue()`. `estadoInicial()` y `prioridadInicial()` resuelven por nombre canónico
+(`mismo` patrón que `NOMBRE_ESTADO_ANULADO`), y un `aplicarValoresPorDefecto()` los fija al
+cargar catálogos y tras cada alta exitosa. La prioridad conserva su `<select>` habilitado.
+
+**Riesgo principal:** el renombrado de `datos_base` (`INGRESADO`→`Pendiente`). Se acota a un
+fixture y a las aserciones de orden de `test_modal_ticket.py`; ninguna otra suite fija el nombre
+del primer estado (grep `INGRESADO` en `backend/tests`).

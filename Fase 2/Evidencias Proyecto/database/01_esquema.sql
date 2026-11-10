@@ -6,8 +6,8 @@
 --
 -- PROPOSITO
 --   Crear TODA la estructura de una instalacion limpia:
---     * el esquema global `control` (26 tablas);
---     * un esquema `tenant_<slug>_<hash>` por institucion, con las 23 tablas
+--     * el esquema global `control` (27 tablas);
+--     * un esquema `tenant_<slug>_<hash>` por institucion, con las 24 tablas
 --       de negocio replicadas.
 --   Los datos de negocio los siembra `02_datos_semilla.sql`, que corre despues.
 --
@@ -516,6 +516,11 @@ CREATE TABLE control.historial_transicion_ticket (
     -- Escala de `ticket.descripcion`. Nullable: la anulacion y el rechazo lo
     -- exigen no vacio, pero esa validacion vive en el servicio, no en el DDL.
     motivo VARCHAR(500),
+    -- Feature 021: enlace de auditoria de la recepcion de compras. Nulo en todas
+    -- las transiciones salvo en la fila `EnCurso -> EnCurso` que desbloquea un
+    -- pedido cubierto por una OC. La FK se agrega con ALTER TABLE despues de
+    -- crear `orden_compra`, porque esta tabla se crea antes en el DDL.
+    orden_compra_id INTEGER,
 
     CONSTRAINT historial_transicion_ticket_ticket_fk
         FOREIGN KEY (ticket_id)
@@ -839,6 +844,69 @@ CREATE TABLE control.factura_compra (
 );
 
 -- =====================================================
+-- 12g. ORDEN_COMPRA_TICKET  (Feature 021)
+-- =====================================================
+-- Plan congelado de cobertura: una fila por `(OC, pedido, producto)` con las
+-- unidades que esa OC asigna a ese pedido al emitir. `cantidad_faltante` es la
+-- foto del hueco que dejo esa asignacion, no un saldo vivo. Varias OC pueden
+-- cubrir el mismo pedido/producto y un pedido puede quedar cubierto en parte.
+-- La FK a `detalle_orden_compra` impide asignar un producto que no esta en la
+-- OC; la FK compuesta a `ticket` y `producto` impide cruzar instituciones.
+
+CREATE TABLE control.orden_compra_ticket (
+    orden_compra_ticket_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    institucion_id VARCHAR(20) NOT NULL,
+    orden_compra_id INTEGER NOT NULL,
+    ticket_id INTEGER NOT NULL,
+    producto_id INTEGER NOT NULL,
+    cantidad_asignada INTEGER NOT NULL,
+    cantidad_faltante INTEGER NOT NULL,
+    fecha_asignacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT orden_compra_ticket_institucion_fk
+        FOREIGN KEY (institucion_id)
+        REFERENCES institucion(institucion_id),
+
+    CONSTRAINT orden_compra_ticket_orden_institucion_fk
+        FOREIGN KEY (institucion_id, orden_compra_id)
+        REFERENCES orden_compra(institucion_id, orden_compra_id),
+
+    CONSTRAINT orden_compra_ticket_orden_producto_fk
+        FOREIGN KEY (orden_compra_id, producto_id)
+        REFERENCES detalle_orden_compra(orden_compra_id, producto_id),
+
+    CONSTRAINT orden_compra_ticket_ticket_institucion_fk
+        FOREIGN KEY (institucion_id, ticket_id)
+        REFERENCES ticket(institucion_id, ticket_id),
+
+    CONSTRAINT orden_compra_ticket_producto_institucion_fk
+        FOREIGN KEY (institucion_id, producto_id)
+        REFERENCES producto(institucion_id, producto_id),
+
+    CONSTRAINT orden_compra_ticket_clave_uk
+        UNIQUE (orden_compra_id, ticket_id, producto_id),
+
+    CONSTRAINT orden_compra_ticket_asignada_ck
+        CHECK (cantidad_asignada > 0),
+
+    CONSTRAINT orden_compra_ticket_faltante_ck
+        CHECK (cantidad_faltante >= 0)
+);
+
+CREATE INDEX orden_compra_ticket_ticket_idx
+    ON control.orden_compra_ticket (institucion_id, ticket_id);
+
+CREATE INDEX orden_compra_ticket_producto_idx
+    ON control.orden_compra_ticket (institucion_id, producto_id);
+
+-- La FK del historial se agrega aqui, cuando `orden_compra` ya existe.
+ALTER TABLE control.historial_transicion_ticket
+    ADD CONSTRAINT historial_transicion_ticket_orden_compra_fk
+    FOREIGN KEY (orden_compra_id)
+    REFERENCES orden_compra(orden_compra_id);
+
+
+-- =====================================================
 -- TOPOLOGIA DE TENANTS  (un esquema por institucion)
 -- =====================================================
 -- Las cuatro instituciones de la instalacion de QA. Esta lista es la
@@ -890,7 +958,7 @@ AS $nombre$
 $nombre$;
 
 -- Crea un esquema tenant por cada institucion de la topologia. Las plantillas
--- son identicas al DDL de `control` de las 23 tablas de negocio, con las FKs
+-- son identicas al DDL de `control` de las 24 tablas de negocio, con las FKs
 -- calificadas al mismo esquema (sin referencias cross-schema). El espejo
 -- `institucion` se limita a dos columnas (`institucion_id`, `nombre`): `rut`,
 -- `direccion`, `activo` y `funcion_institucion` viven SOLO en control.
@@ -1082,6 +1150,7 @@ BEGIN
         'usuario_id INTEGER NOT NULL, '
         'fecha_transicion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, '
         'motivo VARCHAR(500), '
+        'orden_compra_id INTEGER, '
         'CONSTRAINT historial_transicion_ticket_ticket_fk '
         'FOREIGN KEY (ticket_id) REFERENCES %1$I.ticket(ticket_id), '
         'CONSTRAINT historial_transicion_ticket_estado_origen_fk '
@@ -1190,10 +1259,46 @@ BEGIN
         'REFERENCES %1$I.orden_compra(orden_compra_id, proveedor_id), '
         'CONSTRAINT factura_compra_monto_ck CHECK (monto_total > 0))',
 
+        -- Feature 021: plan congelado de cobertura por (OC, pedido, producto).
+        'CREATE TABLE %1$I.orden_compra_ticket ('
+        'orden_compra_ticket_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
+        'institucion_id VARCHAR(20) NOT NULL, '
+        'orden_compra_id INTEGER NOT NULL, '
+        'ticket_id INTEGER NOT NULL, '
+        'producto_id INTEGER NOT NULL, '
+        'cantidad_asignada INTEGER NOT NULL, '
+        'cantidad_faltante INTEGER NOT NULL, '
+        'fecha_asignacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, '
+        'CONSTRAINT orden_compra_ticket_institucion_fk FOREIGN KEY (institucion_id) '
+        'REFERENCES %1$I.institucion(institucion_id), '
+        'CONSTRAINT orden_compra_ticket_orden_institucion_fk FOREIGN KEY (institucion_id, orden_compra_id) '
+        'REFERENCES %1$I.orden_compra(institucion_id, orden_compra_id), '
+        'CONSTRAINT orden_compra_ticket_orden_producto_fk FOREIGN KEY (orden_compra_id, producto_id) '
+        'REFERENCES %1$I.detalle_orden_compra(orden_compra_id, producto_id), '
+        'CONSTRAINT orden_compra_ticket_ticket_institucion_fk FOREIGN KEY (institucion_id, ticket_id) '
+        'REFERENCES %1$I.ticket(institucion_id, ticket_id), '
+        'CONSTRAINT orden_compra_ticket_producto_institucion_fk FOREIGN KEY (institucion_id, producto_id) '
+        'REFERENCES %1$I.producto(institucion_id, producto_id), '
+        'CONSTRAINT orden_compra_ticket_clave_uk UNIQUE (orden_compra_id, ticket_id, producto_id), '
+        'CONSTRAINT orden_compra_ticket_asignada_ck CHECK (cantidad_asignada > 0), '
+        'CONSTRAINT orden_compra_ticket_faltante_ck CHECK (cantidad_faltante >= 0))',
+
+        'CREATE INDEX orden_compra_ticket_ticket_idx '
+        'ON %1$I.orden_compra_ticket (institucion_id, ticket_id)',
+
+        'CREATE INDEX orden_compra_ticket_producto_idx '
+        'ON %1$I.orden_compra_ticket (institucion_id, producto_id)',
+
         'CREATE TABLE %1$I.version_esquema ('
         'version_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
         'version VARCHAR(20) NOT NULL, '
-        'actualizada_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)'
+        'actualizada_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)',
+
+        -- Feature 021: la FK se agrega al final, cuando `orden_compra` ya existe.
+        'ALTER TABLE %1$I.historial_transicion_ticket '
+        'ADD CONSTRAINT historial_transicion_ticket_orden_compra_fk '
+        'FOREIGN KEY (orden_compra_id) '
+        'REFERENCES %1$I.orden_compra(orden_compra_id)'
     ];
 
     FOR v_institucion_id IN SELECT institucion_id FROM control.institucion ORDER BY institucion_id LOOP
@@ -1204,17 +1309,17 @@ BEGIN
             EXECUTE format(v_plantilla, v_esquema);
         END LOOP;
 
-        -- Fail-closed: el tenant debe tener exactamente las 23 tablas de negocio.
+        -- Fail-closed: el tenant debe tener exactamente las 24 tablas de negocio.
         SELECT count(*) INTO v_conteo
         FROM information_schema.tables
         WHERE table_schema = v_esquema
           AND table_type = 'BASE TABLE';
-        IF v_conteo <> 23 THEN
+        IF v_conteo <> 24 THEN
             RAISE EXCEPTION
-                '01: el tenant % tiene % tabla(s) (esperadas 23).',
+                '01: el tenant % tiene % tabla(s) (esperadas 24).',
                 v_esquema, v_conteo;
         END IF;
-        RAISE NOTICE '01: tenant % creado con 23 tablas.', v_esquema;
+        RAISE NOTICE '01: tenant % creado con 24 tablas.', v_esquema;
     END LOOP;
 END;
 $tenants$;

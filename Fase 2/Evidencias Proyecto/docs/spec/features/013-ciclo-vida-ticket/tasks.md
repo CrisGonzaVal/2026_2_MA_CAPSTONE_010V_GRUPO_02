@@ -115,3 +115,31 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
   - **AC:** AC-25.
   - **Hecho cuando:** cada AC tiene evidencia verificada, `MEMORY.md` queda breve y actualizado, el grep no deja rutas ni afirmaciones obsoletas sin reportar (con el conteo «15 entidades» corregido en `AGENTS.md` §7), y el roadmap se marca `[x]` únicamente con todas las casillas de este `tasks.md` —incluidas las de cierre— en `[x]`.
     - *Hecho (19/Oct/2026):* `spec.md` registra evidencia real bajo cada AC-1…AC-26 (tests verificados por grep en `backend/tests/api/test_ciclo_vida_*_013.py` y `test_ciclo_vida_ticket_postgres_013.py`, specs de `frontend/src/app/features/tickets/*.spec.ts`, OpenAPI y secciones del recorrido de `evidencia/README.md`), con los 26 AC marcados y la nota de cierre; Estado → «aprobada y cerrada (19/Oct/2026)» con las dos enmiendas. `AGENTS.md` §7 y las skills `sdd-workflow`/`fastapi-pydantic-v2` actualizadas a **«15 de dominio + `departamento_encargado`»** (justificación en `stack.md` §2, sección 013); grep de coherencia §8.7 sin rutas ni afirmaciones obsoletas pendientes. `MEMORY.md` reescrito (013 cerrada, ~50 líneas) y `roadmap.md` con la fila 013 en `[x]`.
+
+## Enmienda post-cierre (05/Nov/2026): alta fija en `Pendiente` y prioridad `Media`
+
+- [x] **T16 — Backend: el alta exige `Pendiente` (409 en cualquier otro estado).**
+  - `crear_ticket` resuelve `Pendiente` por nombre canónico (`NOMBRE_ESTADO_PENDIENTE`) y exige
+    ese id; 409 si el `estado_id` no es `Pendiente` o si el catálogo no lo contiene, antes de
+    escribir. Retirar el sellado de `Cerrado` y la rama específica de `Anulado`. Actualizar la
+    descripción OpenAPI de `POST /tickets`.
+  - Tests: nuevo `test_ciclo_vida_alta_inicial_013.py` (409 en EnRevision/EnCurso/Cerrado/Anulado
+    y en id ajeno, 201 con Pendiente y `fecha_cierre` nula, 409 con catálogo sin Pendiente, 422
+    sin `estado_id`); ajustar `conftest.datos_base` a `Pendiente`/`Cerrado`,
+    `test_modal_ticket.py` (orden), `test_tablero_kanban.py`, `test_ciclo_vida_flujo_013.py` y
+    `test_ticket_sede_011.py` (sembrar por ORM o transicionar).
+  - **Hecho cuando:** `pytest` completo en verde y `/openapi.json` documenta el 409.
+  - **AC:** AC-27.
+    - *Hecho (05/Nov/2026):* `ticket_service.crear_ticket` resuelve `Pendiente` por nombre canónico y responde **409** si el `estado_id` no es ese (o si el catálogo no lo contiene), antes del primer `add()`; retirado el sellado de `fecha_cierre` y la rama de `Anulado`. `test_ciclo_vida_alta_inicial_013.py` **9/9**; suite completa SQLite **1459 passed / 83 skipped / 0 failed** y gated PostgreSQL 16 **1542 passed / 0 skipped / 0 failed**. `/openapi.json` (61 operaciones) documenta el 409 en la descripción del `POST /tickets/` y en `TicketCrear.estado_id`.
+- [x] **T17 — Frontend: estado inicial fijo en `Pendiente` y prioridad `Media` predeterminada.**
+  - Modal: campo de solo lectura para el estado (sin `<select>`, sin texto «Editable»); prioridad
+    editable con `Media` preseleccionada; `aplicarValoresPorDefecto()` tras catálogos y tras
+    alta; specs actualizadas y nuevas.
+  - **Hecho cuando:** `ng test` y `ng build` limpios.
+  - **AC:** AC-27.
+    - *Hecho (05/Nov/2026):* modal con estado de solo lectura (`Pendiente` + etiqueta «Fijo», sin `<select>` ni el texto «Editable»), prioridad `Media` preseleccionada y cambiable, y `aplicarValoresPorDefecto()` al cargar catálogos y tras cada alta; `estadoInicial()`/`prioridadInicial()` por nombre canónico con bloqueo fail-closed si falta `Pendiente`. `tickets.component.spec.ts` **69/69**, `ng test` **524 SUCCESS**, `ng build` limpio.
+- [x] **T18 — Verificación y cierre de la enmienda.**
+  - `pytest`, `ng test` (Edge headless), `ng build`, recorrido 4200 (modal con Pendiente fijo y
+    Media, alta real si aplica) y humo 8080 reconstruido; evidencia bajo AC-27 y `MEMORY.md`.
+  - **AC:** AC-25, AC-27.
+    - *Hecho (05/Nov/2026):* `evidencia/README.md` §9 registra las cuatro verificaciones: suites **1459/83/0** (SQLite) y **1542/0/0** (gated PG16), `ng test` **524** y `ng build` limpio (`main-BX5UQPQ3.js`); recorrido 4200 con alta real **#11** en la columna `Pendiente` y reset del modal a `Media`/`Pendiente`; humo 8080 con la imagen reconstruida sirviendo el mismo bundle, estado fijo sin selector y `Media` habilitada. `MEMORY.md`, `stack.md` y `roadmap.md` actualizados; grep de coherencia sin afirmaciones obsoletas sobre `estados[0]`.

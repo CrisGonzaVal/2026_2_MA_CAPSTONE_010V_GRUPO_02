@@ -63,7 +63,7 @@
 --   secuencia lineal y solo se alcanza por anulacion o rechazo con motivo.
 --
 -- VERSION OBJETIVO DEL DDL
---   020.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
+--   021.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
 -- =====================================================
 
 BEGIN;
@@ -129,6 +129,7 @@ BEGIN
         'ticket', 'detalle_ticket', 'historial_transicion_ticket',
         'historial_transicion_producto', 'historial_transicion_categoria',
         'proveedor', 'orden_compra', 'detalle_orden_compra', 'factura_compra',
+        'orden_compra_ticket',
         'mapa_usuario_esquema', 'version_esquema', 'registro_motivo_constancia'
     ] LOOP
         EXECUTE format('SELECT count(*) FROM control.%I', v_tabla) INTO v_conteo;
@@ -148,6 +149,7 @@ BEGIN
             'ticket', 'detalle_ticket', 'historial_transicion_ticket',
             'historial_transicion_producto', 'historial_transicion_categoria',
             'proveedor', 'orden_compra', 'detalle_orden_compra', 'factura_compra',
+            'orden_compra_ticket',
             'version_esquema'
         ] LOOP
             IF to_regclass(format('%I.%I', v_esquema, v_tabla)) IS NULL THEN
@@ -580,7 +582,8 @@ DECLARE
         'historial_transicion_categoria:historial_categoria_id',
         'orden_compra:orden_compra_id',
         'detalle_orden_compra:detalle_orden_compra_id',
-        'factura_compra:factura_compra_id'
+        'factura_compra:factura_compra_id',
+        'orden_compra_ticket:orden_compra_ticket_id'
     ];
     par text;
     v_tabla text;
@@ -605,7 +608,7 @@ $reset$;
 
 DO $construccion$
 DECLARE
-    v_version_objetivo constant text := '020.1';
+    v_version_objetivo constant text := '021.1';
     v_institucion_id text;
     v_esquema text;
     v_plantilla text;
@@ -810,6 +813,9 @@ BEGIN
     -- instalacion limpia. El resto del catalogo (y `prioridad`) se vacia como antes.
     -- Feature 020: las compras no se siembran; el catalogo de proveedores SI se
     -- conserva (es global y lo usan todas las instituciones).
+    -- Feature 021: el plan de cobertura tampoco se siembra y se borra antes de
+    -- `detalle_orden_compra`, `ticket` y `producto` por sus FKs compuestas.
+    DELETE FROM control.orden_compra_ticket;
     DELETE FROM control.factura_compra;
     DELETE FROM control.detalle_orden_compra;
     DELETE FROM control.orden_compra;
@@ -889,7 +895,8 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM control.orden_compra) <> 0
        OR (SELECT count(*) FROM control.detalle_orden_compra) <> 0
-       OR (SELECT count(*) FROM control.factura_compra) <> 0 THEN
+       OR (SELECT count(*) FROM control.factura_compra) <> 0
+       OR (SELECT count(*) FROM control.orden_compra_ticket) <> 0 THEN
         RAISE EXCEPTION '02: las compras no deben quedar sembradas en control.';
     END IF;
     -- Feature 014: la semilla no fabrica transiciones de catalogo.

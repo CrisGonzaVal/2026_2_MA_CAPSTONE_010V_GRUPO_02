@@ -210,11 +210,14 @@ def datos_base(motor):
         db.add(prioridad)
         db.flush()
 
-        estado_ingresado = EstadoTicket(nombre="INGRESADO", descripcion="Ticket recien creado")
+        # Enmienda post-cierre 013 (AC-27): el alta solo admite `Pendiente`, y
+        # `Cerrado` se reserva al despacho. Los nombres canonicos importan: el
+        # servicio los resuelve por nombre (case-insensitive), no por id.
+        estado_ingresado = EstadoTicket(nombre="Pendiente", descripcion="Ticket recien creado")
         db.add(estado_ingresado)
         db.flush()
 
-        estado_cerrado = EstadoTicket(nombre="CERRADO", descripcion="Ticket cerrado")
+        estado_cerrado = EstadoTicket(nombre="Cerrado", descripcion="Ticket cerrado")
         db.add(estado_cerrado)
         db.flush()
 

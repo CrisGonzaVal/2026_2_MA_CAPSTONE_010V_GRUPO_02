@@ -2,55 +2,43 @@
 Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya no aporte.
 
 ## Estado actual
-- Features 000…**020 cerradas**; la **020** el **04/Nov/2026**, la **019** el **22/Oct/2026**, la **018** el **21/Oct/2026**, la **014** y la **017** el **20/Oct/2026**, la 013 el **19/Oct/2026**.
-- **020 (reabastecimiento externo y compras) CERRADA:** T0 (justificación en `stack.md`), T1 (DDL, capacidad `compras`, versión `020.1`), T2 (modelos SQLAlchemy + `Base.metadata` 19→23), T3 (schemas Pydantic v2), T4 (servicio parte 1), T5 (recepción ACID y cobertura greedy), T6 (10 endpoints, matriz 62→72), T7 (interfaces + `ComprasService`), T8 (vistas de Administrador) y T9 (recepción de Bodeguero + badge `stock_disponible`), cerradas el **03-04/Nov/2026**; T10 (cierre) verificado el **04-05/Nov/2026**. Suite backend completa con gated PG **1533 passed**; gated PG 020 **6/6**; `ng test` **518/518**; `ng build` limpio. Recorrido 4200 con escritura real (OC, factura, recepción, desbloqueo y badge) y humo 8080 con imagen reconstruida. Sprint 7 = **03/Nov/2026 – 11/Dic/2026** e incluye 015, 016 y 020; el Hito 2 se trasladó a su cierre.
-- **019 (detalle de producto por alcance):** lectura aditiva `GET /inventario/existencias/{producto_id}` (producto + stock por sede acotado al rol) y ruta Angular `:productoId` con retorno `?tab=gestion`; matriz **61 → 62**. Cierre: `pytest` SQLite **1391/77/0**, gated PG16 **1468/0/0** (`apt_erp` intacta en `014.1`, 22 tablas, 4 tenants), `ng test` **446**, `ng build` limpio (`main-D6GKPODP.js`); recorrido 4200 y humo 8080 con imagen reconstruida; evidencia en `019-detalle-producto-por-alcance/evidencia/README.md`.
-- **018:** `sede_id` aditivo en existencias (**200/`[]`** para id ajeno), lectura `GET /inventario/ambito` bajo `inventario` y nota de stock compartido del Bodeguero; matriz 60→61. Cierre: pytest 1339/76/0, gated 1415/0, `ng test` 419, bundle `main-7QF7T5XQ.js`. **014:** `activo` reversible e historiales de producto/categoría (16.ª/17.ª entidades), gating `catalogo`, matriz 55→60. **017:** invitaciones Clerk persistidas y gobierno de Administradores, matriz 55.
-- **Enmienda T-17 de la 012 (22/Oct/2026):** `/administracion` se presenta como pestañas ARIA (`tablist`, 4 `tab`, `tabpanel` con `aria-labelledby`, flechas circulares y `tabindex` roving) sin tocar `administracion.routes.ts`, guards, backend ni contratos; **la 012 sigue cerrada**. `ng test` **466** (20 casos nuevos en `administracion-nav.component.spec.ts`), `ng build` limpio (`main-KWQKKL6Q.js`); recorrido 4200 y humo 8080 en `012-gestion-administrativa/evidencia/README.md` §«Enmienda T-17» (capturas 19–28).
-- **Base consolidada (03/Nov/2026):** `database/` tiene solo `01_esquema.sql` (control **26** tablas + **23** por tenant) y `02_datos_semilla.sql` (`020.1`, 28 capacidades, 3 proveedores, guardia fail-closed). Sin migraciones: reset = `down -v` + `up -d`.
-- **Enmienda de autoatribución de tickets (22/Oct/2026) — cerrada:** el alta atribuye siempre a la identidad de sesión (sin `usuario_id`), con sede del departamento (409 si falta) y «Solicitante (sesión)» en solo lectura; `TicketDespacho.usuario_id` sigue obligatorio. Evidencia en `003-modal-ticket/evidencia/README.md`.
+- Features 000…**021 cerradas**; la **021** el **08/Nov/2026**, la **020** el **04/Nov/2026**, la **019** el **22/Oct/2026**, la **018** el **21/Oct/2026**, la **014** y la **017** el **20/Oct/2026**, la **013** el **19/Oct/2026**.
+- **021 (cobertura automática de pedidos por OC) CERRADA:** una tabla nueva `orden_compra_ticket` (22.ª entidad de dominio), plan congelado al emitir, necesidad neta parcial con `stock_comprometido`/`stock_borrador`, preview `POST /compras/cobertura/preview` (matriz 72→73), cadena por producto en el detalle, auditoría de la recepción en el historial y renombrado visible a «pedido», «Compras» y «Estados de pedidos». Versión `021.1`, 27/24 tablas. Suite backend **1496 passed/88 skipped**, gated PG 021 **5/5**, `test_cobertura_021.py` **37/37**, `ng test` **537**, build limpio; recorrido 4200 (pedido #9, OC 1) y humo 8080 sin errores de consola. Evidencia en `021-cobertura-automatica-tickets-compras/evidencia/README.md`.
+- **020 (reabastecimiento externo y compras):** 21 entidades, séptima capacidad `compras`, matriz 62→72, catálogo global de proveedores replicado por `proveedor_id`, `numero_oc` derivado del identity y `stock_disponible` calculado. Cierre 04/Nov/2026: 1533 passed con gated, `ng test` 518, recorrido 4200 y humo 8080. Evidencia en `020-reabastecimiento-compras/evidencia/README.md`.
+- **019/018/014/017/013:** detalle de producto por alcance (matriz 62), filtro `sede_id` (61), ciclo de vida del catálogo (55→60, historiales 16.ª/17.ª), invitaciones Clerk y gobierno de Administradores (55), y ciclo de vida del pedido con `Anulado` e historial inmutable (15.ª entidad, 49). Enmiendas post-cierre: T-17 (pestañas ARIA de `/administracion`) y AC-27 de la 013 (alta fija en `Pendiente`, prioridad `Media`).
+- **Base consolidada (08/Nov/2026):** `database/` tiene solo `01_esquema.sql` (control **27** tablas + **24** por tenant) y `02_datos_semilla.sql` (`021.1`, 28 capacidades, 3 proveedores, guardia fail-closed). Sin migraciones: reset = `down -v` + `up -d`.
+
+## Feature 021 — decisiones clave
+- **`orden_compra_ticket` es la intención:** una fila por `(OC, pedido, producto)` con `cantidad_asignada > 0` y `cantidad_faltante >= 0`, `UNIQUE` y FKs compuestas por institución. Varias OC pueden cubrir el mismo pedido/producto.
+- **Necesidad neta parcial:** `base = max(0, solicitado - plan_previo - entregado)`; `cubierto_stock = min(base, stock_restante)`; `necesidad = base - cubierto_stock`; `asignada = min(necesidad, restante_oc)`; `faltante = necesidad - asignada`. `plan_previo` = OC `Emitida` + `Facturada`; `Recibida` ya está en stock; `Cancelada` no cubre. Prioridad/FIFO, sin reserva.
+- **`stock_comprometido`** suma `detalle_orden_compra` de OC `Emitida` + `Facturada`; `stock_borrador` es aparte; `sugerido = max(0, mínimo + demanda - actual - comprometido)`.
+- **`Cerrado` sigue siendo el despacho.** La recepción deja el pedido en `EnCurso` con `stock_disponible` y badge; no crea estado ni `fecha_cierre`. La fila `EnCurso → EnCurso` del historial lleva `orden_compra_id`.
+- **Cancelación:** conserva el plan para auditoría, lo excluye de la cobertura activa y no replanifica. **Una OC = una sede**, sin traspasos.
+- **Renombrado solo de copia visible:** rutas, API, tablas, permisos y mensajes del backend siguen con «ticket»; helper `etiquetaEstado` traduce `EnCurso`/`EnRevision`.
 
 ## Feature 020 — decisiones clave
-- **21 entidades de dominio** (17 + `proveedor`, `orden_compra`, `detalle_orden_compra`, `factura_compra`); 26 tablas en control / 23 por tenant; séptima capacidad `compras`; matriz **62 → 72** (10 endpoints nuevos).
-- **`control.proveedor` es catálogo global** y la réplica tenant usa el **mismo `proveedor_id`** (PK simple, sin identity). El Administrador lee/escribe control y replica en su tenant; el Superadmin solo opera control y **no** replica.
-- **`stock_disponible` es propiedad calculada** de `TicketDetalleRespuesta`: asignación greedy sobre tickets `EnCurso` (prioridad ASC, FIFO), todo o nada por ticket/producto. Sin columna ni estado nuevo. La recepción escribe historial con `estado_origen = estado_destino = EnCurso`.
-- **Producto inactivo:** crear/editar/emitir OC exige activos; la recepción sí procede si se desactivó después de emitir; `POST /inventario/movimientos` conserva su 409.
-- **`numero_oc = OC-{AÑO}-{id:06d}`** derivado del identity (no `MAX+1`); `factura_compra` con `proveedor_id`, `UNIQUE(proveedor_id, numero_factura)` y FK compuesta a la OC; cancelación persiste motivo, fecha y actor.
-- **Listado de OC:** el Administrador filtra `estado`/`sede_id` dentro de su institución; el Bodeguero queda **forzado** a `Facturada` + su sede (ignora query params), 409 sin sede y `[]` si su sede no tiene facturadas. Precedencia 401 → 403 matriz → 403 capacidad → 409 sede → 404 → 200/201.
-- **Semilla:** 3 proveedores en control replicados a los 4 tenants; `control.proveedor` **no** se borra en Fase 3; las compras quedan vacías. Verificado: 26/23 tablas, 28 capacidades, 3 proveedores, `020.1` en control y tenants; segunda ejecución aborta con «237 fila(s) de negocio».
+- **21 entidades** (17 + proveedor/OC/detalle/factura; hoy **22** con `orden_compra_ticket`); `control.proveedor` es catálogo global y la réplica tenant usa el mismo `proveedor_id`; el Superadmin no replica.
+- **`stock_disponible` todo-o-nada** (prioridad ASC, FIFO) convive con la simulación parcial de la 021; no se modifica. **Listado de OC:** el Bodeguero queda forzado a `Facturada` + su sede.
 
-## Feature 019 — decisiones clave
-- **Ámbito completo, sin heredar filtros:** el detalle ignora sede/departamento de la lista; Admin todas las sedes de su institución, Bodeguero su sede asignada, Solicitante la sede de su departamento. El cliente no elige ámbito.
-- **Sedes inactivas incluidas:** no se filtra `Sede.activo`; sus filas aparecen y suman, y una sede asignada inactiva responde **200**.
-- **Precedencia:** 401 → 403 matriz → 403 capacidad → 403 institución → **409** sede no resoluble → **404** producto → 200. La sede se resuelve **antes** del producto (409 con id inexistente, ajeno o retirado).
-- **Capacidad `inventario`, no `catalogo`:** coexiste con `GET /inventario/productos/{id}` (solo catálogo). Con `catalogo` sí e `inventario` no, Gestión sigue visible y el detalle da 403.
-- **Agregado del ámbito:** `stock_total` = suma de las sedes devueltas; `es_critico` solo con esas sedes (vacío = saldo 0). `stock_sede` es la única fuente; nunca el `inventario` legado.
-- **Retorno `?tab=gestion`:** solo para el Administrador que llega desde Gestión; el query param es navegación, no autorización (`gestionVisible()` manda).
-
-## Decisiones vigentes (018/014/012/011)
-- **018:** `sede_id` es filtro dentro de `condicion_stock` (antes del `outerjoin`, sin lookup previo) y no contradice el 404 de recurso de `/inventario/stock`. «departamento = sede»: no hay saldo departamental. Franja de indicadores solo server-side.
-- **014:** nunca producto activo bajo categoría inactiva; baja de categoría → 409 si tiene activos; baja de producto exige saldo cero en `stock_sede`. Idempotencia sin motivo = 200 sin historial, precede a 422/409.
-- **012/011:** `control.institucion.activo` gobierna el routing; 7 capacidades cerradas (`compras` desde la 020); `stock_sede` es la única fuente de saldo operativo. **013:** `Anulado` no sella `fecha_cierre` ni toca stock.
+## Decisiones vigentes (019/018/014/012/011)
+- **019:** ámbito completo sin heredar filtros (Admin todas, Bodeguero su sede, Solicitante la de su departamento); sedes inactivas incluidas; 409 de sede antes de 404 de producto.
+- **018:** `sede_id` es filtro dentro de `condicion_stock` (200/`[]` para id ajeno). **014:** nunca producto activo bajo categoría inactiva; baja exige saldo cero. **012/011:** `control.institucion.activo` gobierna el routing; 7 capacidades; `stock_sede` es la única fuente de saldo.
+- **013:** `Anulado` no sella `fecha_cierre` ni toca stock; el alta nace en `Pendiente` por nombre canónico.
 
 ## Aprendizajes y errores a evitar
-- **Filtro de lista ≠ recurso:** `sede_id` en `/inventario/existencias` responde 200/`[]`; no añadir lookup previo de sede.
-- **Detalle ≠ producto:** el detalle nuevo usa `inventario` y devuelve stock; `/productos/{id}` sigue bajo `catalogo`. No unificar ni mover el gating.
-- **Criticidad del detalle** se calcula sobre las sedes devueltas; `_es_producto_critico` con `sedes: []` evalúa 0 ≤ mínimo. Nunca sobre saldo fuera de ámbito.
+- **Filtro de lista ≠ recurso:** `sede_id` en `/inventario/existencias` responde 200/`[]`; no añadir lookup previo. El detalle nuevo usa `inventario` y `/productos/{id}` sigue en `catalogo`.
 - Cierre = verificación (AGENTS §8.5–§8.7): los dos puertos; 8080 exige `docker compose build frontend`; el backend recarga solo; grep de coherencia sobre AGENTS/MEMORY/skills.
-- **Árbol revertido por un proceso externo:** antes de rehacer trabajo, revisar `git stash list` y `git reflog`; el trabajo con seguimiento puede estar en `stash@{0}` y se recupera con `git stash apply`. Los archivos nuevos sin seguimiento sobreviven.
-- **Contratos externos:** la API real de Clerk `GET /v1/invitations` devuelve lista desnuda, no `{"data":[…]}`; verificar contra la API real.
-- **La semilla limpia no crea al Superadmin:** `control.usuario` queda vacía y el bootstrap no se invoca al arrancar.
-- Tests PostgreSQL **gated** (`POSTGRES_TEST_URL`); SQLite no valida esquemas/namespaces ni FK compuestas. Bases desechables; `apt_erp` nunca se toca.
-- Toda mutación exige actor **persistido** (FK del historial); fixtures con sonda `9999` deben usar un usuario real.
-- Edge: `CHROME_BIN` + `--watch=false --browsers=ChromeHeadless` (nunca `npm test`). PowerShell: `pg_dump` con `cmd /c`; `curl.exe` conserva backslashes (usar archivos de body).
-- Clerk por HTTP sin navegador: dev browser + sign-in ticket BAPI + `Origin: localhost:4200` (exige `azp`); código de prueba `424242`. Tokens ~60 s.
-- `resolver_contexto_solicitud` sin `abrir_sesion_tenant` lee la versión de **control**; el gated debe cablear `abrir_sesion_tenant=crear_sesion_esquema`.
-- Specs Angular: con `provideRouter([])` el click de un `routerLink` no actualiza `router.url`; probar el `href` con espía a `navigateByUrl`.
-- **Pestañas ARIA sobre Router:** derivar la pestaña activa de `Router.url` (sin query/fragmento) y activar el anchor destino con su propio `RouterLink` (`click()`), nunca con `navigateByUrl`: así se conservan href real, clic central y apertura en pestaña nueva.
-- **Autoría del ticket = identidad de sesión:** no validar `usuario_id` del alta como referencia (no 404/422 por ese campo) ni usar `usuario.sede_id`; la sede sale de `departamento.sede_id` (409 si falta). El selector de solicitante no se reintroduce.
-- **Carreras gated:** el `Barrier` de arranque no fija el orden del lock; la poseedora confirma la adquisición (`threading.Event`) y la contendiente espera a bloquear.
+- **Árbol revertido por un proceso externo:** revisar `git stash list` y `git reflog` antes de rehacer trabajo.
+- **Contratos externos:** la API real de Clerk `GET /v1/invitations` devuelve lista desnuda, no `{"data":[…]}`.
+- **La semilla limpia no crea al Superadmin:** `control.usuario` queda vacía.
+- Tests PostgreSQL **gated** (`POSTGRES_TEST_URL`); SQLite no valida esquemas/namespaces ni FK compuestas. El gated debe cablear `abrir_sesion_tenant=crear_sesion_esquema`. Toda mutación exige actor persistido.
+- Edge: `CHROME_BIN` + `--watch=false --browsers=ChromeHeadless` (nunca `npm test`). Clerk por HTTP: dev browser + sign-in ticket BAPI + `Origin: localhost:4200`; tokens ~60 s.
+- **Detalle del pedido con scroll interno:** `take_screenshot(fullPage)` no incluye la cobertura; hacer `scrollIntoView` antes de capturar.
+- Specs Angular: con `provideRouter([])` el click de un `routerLink` no actualiza `router.url` (probar el `href`). Pestañas ARIA sobre Router: derivar de `Router.url` y activar con `RouterLink`.
+- **Autoría del ticket = identidad de sesión:** no validar `usuario_id` del alta; la sede sale de `departamento.sede_id`.
+- **Carreras gated:** `Barrier` no fija el orden del lock; la poseedora confirma con `threading.Event`.
 
 ## Próximos pasos
-- **Sprint 7 (03/Nov/2026 – 11/Dic/2026):** 020 cerrada; siguen **015** informes PDF/Excel y **016** notificaciones in-app. **Hito 2** al cierre del Sprint 7.
-- **Diagramas (21–23/Oct/2026):** 5 HTML + 5 PNG @2x de casos de uso en `docs/diagramas/` (26 casos, 015/016 en `PLAN`) y 8 diagramas 4+1 de Kruchten en `docs/diagramas/4+1-kruchten/` (lógica, procesos, desarrollo y despliegue) con `00-indice.html` y `README.md`; la vista de casos de uso sigue fuera del 4+1.
-- Hallazgo abierto: la semilla no trae Administrador `+clerk_test`. Aviso de accesibilidad preexistente en el buscador operativo de inventario (input sin `id`/`name`).
+- **Sprint 7 (03/Nov/2026 – 11/Dic/2026):** 020 y 021 cerradas; siguen **015** informes PDF/Excel y **016** notificaciones in-app. **Hito 2** al cierre del Sprint 7.
+- **Diagramas:** 5 HTML + 5 PNG de casos de uso en `docs/diagramas/` y 8 diagramas 4+1 en `docs/diagramas/4+1-kruchten/`.
+- Hallazgo abierto: la semilla no trae Administrador `+clerk_test`; aviso de accesibilidad en el buscador operativo de inventario.

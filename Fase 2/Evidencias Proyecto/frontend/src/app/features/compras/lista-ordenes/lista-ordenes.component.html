@@ -119,6 +119,9 @@
               Estado
             </th>
             <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
+              Pedidos
+            </th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold text-slate-600">
               Acciones
             </th>
           </tr>
@@ -157,6 +160,20 @@
                     Recibida el {{ recepcion | date: 'dd/MM/yyyy HH:mm' }}
                   </p>
                 }
+              </td>
+              <td class="px-4 py-3 text-right">
+                <button
+                  type="button"
+                  [attr.aria-expanded]="planVisible() === orden.orden_compra_id"
+                  [attr.aria-label]="'Ver pedidos de la orden ' + orden.orden_compra_id"
+                  class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  (click)="alternarPlan(orden)"
+                >
+                  {{ planVisible() === orden.orden_compra_id ? 'Ocultar pedidos' : 'Ver pedidos' }}
+                </button>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ orden.plan?.length ?? 0 }} asignación(es)
+                </p>
               </td>
               <td class="px-4 py-3">
                 <div class="flex flex-wrap justify-end gap-2">
@@ -206,6 +223,79 @@
                 </div>
               </td>
             </tr>
+            @if (planVisible() === orden.orden_compra_id) {
+              <tr class="bg-slate-50/70">
+                <td colspan="8" class="px-4 pb-4 pt-1">
+                  @if (orden.plan?.length) {
+                    <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                      <table class="min-w-full divide-y divide-slate-100 text-xs">
+                        <caption class="sr-only">
+                          Pedidos cubiertos por esta OC
+                        </caption>
+                        <thead class="bg-slate-50">
+                          <tr>
+                            <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                              Pedido
+                            </th>
+                            <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                              Asunto
+                            </th>
+                            <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                              Solicitante
+                            </th>
+                            <th scope="col" class="px-3 py-2 text-left font-semibold text-slate-500">
+                              Producto
+                            </th>
+                            <th scope="col" class="px-3 py-2 text-right font-semibold text-slate-500">
+                              Asignado
+                            </th>
+                            <th scope="col" class="px-3 py-2 text-right font-semibold text-slate-500">
+                              Faltante
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                          @for (fila of orden.plan ?? []; track fila.orden_compra_ticket_id) {
+                            <tr>
+                              <td class="px-3 py-2 font-medium text-slate-700">
+                                #{{ fila.ticket_id }}
+                              </td>
+                              <td class="px-3 py-2 text-slate-700">
+                                {{ fila.asunto ?? '—' }}
+                              </td>
+                              <td class="px-3 py-2 text-slate-600">
+                                {{ fila.solicitante_apellido }}, {{ fila.solicitante_nombre }}
+                              </td>
+                              <td class="px-3 py-2 text-slate-600">
+                                {{ fila.producto_nombre ?? 'Producto #' + fila.producto_id }}
+                              </td>
+                              <td class="px-3 py-2 text-right text-slate-700">
+                                {{ fila.cantidad_asignada }}
+                              </td>
+                              <td class="px-3 py-2 text-right">
+                                <span
+                                  class="inline-flex min-w-8 justify-center rounded-full px-2 py-0.5 font-semibold"
+                                  [class.bg-rose-50]="fila.cantidad_faltante > 0"
+                                  [class.text-rose-700]="fila.cantidad_faltante > 0"
+                                  [class.bg-emerald-50]="fila.cantidad_faltante === 0"
+                                  [class.text-emerald-700]="fila.cantidad_faltante === 0"
+                                >
+                                  {{ fila.cantidad_faltante }}
+                                </span>
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 text-xs text-slate-500">
+                      Sin pedidos cubiertos: compra para stock mínimo.
+                    </p>
+                  }
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>

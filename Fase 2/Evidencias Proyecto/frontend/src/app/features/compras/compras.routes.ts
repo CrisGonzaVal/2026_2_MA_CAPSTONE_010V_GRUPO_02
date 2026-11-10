@@ -35,7 +35,7 @@ export const comprasRoutes: Routes = [
       import('./necesidades/necesidades.component').then(
         (m) => m.NecesidadesComponent,
       ),
-    title: 'Necesidades de reabastecimiento | CompuStock',
+    title: 'Compras | CompuStock',
   },
   {
     path: 'nueva',

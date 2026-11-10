@@ -295,12 +295,14 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
     # evalua despues de esta matriz.
     ("GET", "/api/v1/inventario/existencias/{producto_id}"): _LECTURA_NEGOCIO,
     # Feature 020 (spec D-7/AC-13, plan §4): reabastecimiento externo y compras.
-    # Diez operaciones **aditivas** (matriz 62 -> 72); ninguna entrada previa
-    # cambia de roles ni se retira. El catalogo global de proveedores queda en
-    # manos del Administrador y del Superadmin (control); el resto es
-    # administracion institucional y el panel/recepcion del Bodeguero. El gating
-    # de la capacidad `compras` se evalua despues de esta matriz.
+    # Diez operaciones **aditivas** (matriz 62 -> 72) y una mas de la Feature 021
+    # (72 -> 73, preview de cobertura); ninguna entrada previa cambia de roles ni
+    # se retira. El catalogo global de proveedores queda en manos del
+    # Administrador y del Superadmin (control); el resto es administracion
+    # institucional y el panel/recepcion del Bodeguero. El gating de la capacidad
+    # `compras` se evalua despues de esta matriz.
     ("GET", "/api/v1/compras/necesidades"): _COMPRAS_ADMINISTRACION,
+    ("POST", "/api/v1/compras/cobertura/preview"): _COMPRAS_ADMINISTRACION,
     ("GET", "/api/v1/compras/proveedores"): _COMPRAS_PROVEEDORES,
     ("POST", "/api/v1/compras/proveedores"): _COMPRAS_PROVEEDORES,
     ("POST", "/api/v1/compras/ordenes"): _COMPRAS_ADMINISTRACION,

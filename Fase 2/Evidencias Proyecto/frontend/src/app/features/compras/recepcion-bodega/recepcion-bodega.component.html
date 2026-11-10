@@ -4,7 +4,7 @@
       <h2 class="text-2xl font-bold text-slate-800">Recepción de compras</h2>
       <p class="text-sm text-slate-500">
         Órdenes facturadas de tu sede listas para ingresar a bodega. Al confirmar, el stock
-        se incrementa y se desbloquean los tickets ya cubiertos.
+        se incrementa y se desbloquean los pedidos ya cubiertos.
       </p>
     </div>
   </header>
@@ -18,7 +18,7 @@
       <p class="font-medium">{{ exito }}</p>
       @if (ticketsDesbloqueados().length) {
         <p class="mt-1">
-          Se desbloquearon {{ ticketsDesbloqueados().length }} ticket(s):
+          Se desbloquearon {{ ticketsDesbloqueados().length }} pedido(s):
           {{ ticketsDesbloqueados().length === 1
             ? ticketsDesbloqueados()[0].asunto
             : ticketsDesbloqueados().length + ' requerimientos quedaron listos para despacho' }}

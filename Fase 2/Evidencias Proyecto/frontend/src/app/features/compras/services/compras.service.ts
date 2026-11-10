@@ -3,6 +3,8 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import {
+  CoberturaPreviewRespuesta,
+  CoberturaPreviewSolicitud,
   FacturaCompra,
   FacturaCompraRegistrar,
   FiltrosOrdenesCompra,
@@ -52,6 +54,25 @@ export class ComprasService {
 
   listarProveedores(): Observable<Proveedor[]> {
     return this.http.get<Proveedor[]>(`${URL_API}/compras/proveedores`);
+  }
+
+  // --- Feature 021 (AC-2): preview de cobertura ----------------------------
+
+  /**
+   * `POST /compras/cobertura/preview`: simula la asignacion automatica de una
+   * compra hipotetica sobre los pedidos `EnCurso` de la sede.
+   *
+   * No persiste, no reserva stock y no cambia estados; es idempotente. El
+   * servidor responde 404 (sede/producto ajeno o inexistente), 409 (producto
+   * inactivo o repetido) y 422 (cuerpo invalido).
+   */
+  previsualizarCobertura(
+    datos: CoberturaPreviewSolicitud,
+  ): Observable<CoberturaPreviewRespuesta> {
+    return this.http.post<CoberturaPreviewRespuesta>(
+      `${URL_API}/compras/cobertura/preview`,
+      datos,
+    );
   }
 
   crearProveedor(datos: ProveedorCrear): Observable<Proveedor> {

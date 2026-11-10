@@ -80,6 +80,14 @@ def _crear_ticket(
     )
 
 
+def _transicionar(cliente_http, ticket_id: int, estado_id: int) -> None:
+    """Aplica una transicion lineal valida (AC-27 reserva el alta a `Pendiente`)."""
+    respuesta = cliente_http.patch(
+        f"{RUTA_TICKETS}{ticket_id}/estado", json={"estado_id": estado_id}
+    )
+    assert respuesta.status_code == 200, respuesta.text
+
+
 def _crear_ticket_directo(
     motor,
     *,
@@ -203,12 +211,14 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(motor, datos_base):
             cliente_http,
             usuario_id=datos_base["usuario_id"],
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["EnCurso"],
+            estado_id=ids["Pendiente"],
             producto_id=datos_base["producto_id"],
             cantidad=5,
         )
         assert alta.status_code == 201, alta.text
         ticket_id = alta.json()["ticket_id"]
+        _transicionar(cliente_http, ticket_id, ids["EnRevision"])
+        _transicionar(cliente_http, ticket_id, ids["EnCurso"])
 
         # Reasignacion posterior: el ticket ya emitido conserva su instantanea.
         asignar_sede_a_departamento(motor, datos_base["departamento_id"], sede_b)
@@ -259,11 +269,13 @@ def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(motor, datos_base
             cliente_http,
             usuario_id=datos_base["usuario_id"],
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["EnCurso"],
+            estado_id=ids["Pendiente"],
             producto_id=datos_base["producto_id"],
             cantidad=5,
         )
         ticket_id = alta.json()["ticket_id"]
+        _transicionar(cliente_http, ticket_id, ids["EnRevision"])
+        _transicionar(cliente_http, ticket_id, ids["EnCurso"])
         despacho = cliente_http.post(
             RUTA_DESPACHO.format(ticket_id=ticket_id),
             json={"usuario_id": datos_base["usuario_id"]},
@@ -298,11 +310,13 @@ def test_despacho_registra_movimiento_por_stock_sede(motor, datos_base):
             cliente_http,
             usuario_id=datos_base["usuario_id"],
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["EnCurso"],
+            estado_id=ids["Pendiente"],
             producto_id=datos_base["producto_id"],
             cantidad=4,
         )
         ticket_id = alta.json()["ticket_id"]
+        _transicionar(cliente_http, ticket_id, ids["EnRevision"])
+        _transicionar(cliente_http, ticket_id, ids["EnCurso"])
         despacho = cliente_http.post(
             RUTA_DESPACHO.format(ticket_id=ticket_id),
             json={"usuario_id": datos_base["usuario_id"]},

@@ -321,3 +321,51 @@ funcionó: `dev_browser` → `sign_in_tokens` (BAPI) → `sign_ins` con
   anotadas arriba; (4) en Windows, `docker exec … sh -c '…'` con `$()` y comillas
   anidadas se rompe (PowerShell) y BusyBox `grep` no admite `--include`: usar
   `grep -r` sobre el directorio.
+
+## 9. Enmienda post-cierre (05/Nov/2026): alta fija en `Pendiente` y prioridad `Media`
+
+**Regla:** todo ticket nuevo nace en `Pendiente`, resuelto por **nombre canónico**
+(casefold, menor `estado_id` ante duplicados) y no por la posición del catálogo. `POST
+/tickets/` conserva `estado_id` obligatorio y responde **409** si no es `Pendiente` o si
+el catálogo no lo contiene, antes de escribir; ya no se admite nacer en `Cerrado` ni se
+sella `fecha_cierre` en el alta (004 AC-17 derogado en esa cláusula). La prioridad
+arranca en `Media` (también por nombre) y sigue editable. No se toca DDL, semilla,
+migración, matriz ni permisos.
+
+### 9.1 Backend y contrato
+
+| Verificación | Resultado real |
+|---|---|
+| `tests/api/test_ciclo_vida_alta_inicial_013.py` | **9 passed** — 409 en `EnRevision`/`EnCurso`/`Cerrado`/`Anulado` sin dejar tickets; 404 con id inexistente (la referencia precede a la regla); 422 sin `estado_id`; 409 con catálogo sin `Pendiente`; 201 con `Pendiente` y `fecha_cierre: null`; el `PATCH /estado` posterior sigue en 200; `Pendiente` fuera de la primera posición también resuelve |
+| `pytest` (SQLite, suite completa) | **1459 passed / 83 skipped / 0 failed** en 4:06 min |
+| `pytest` gated PostgreSQL 16 (`POSTGRES_TEST_URL`, base desechable) | **1542 passed / 0 skipped / 0 failed** en 9:17 min; `apt_erp` intacta |
+| Ajustes de regresión | `conftest.datos_base` renombra `INGRESADO`/`CERRADO` a `Pendiente`/`Cerrado`; `test_tablero_kanban.py` siembra por ORM los escenarios no-`Pendiente` y los dos casos de alta en `Cerrado` pasan a exigir **409**; `test_ciclo_vida_flujo_013.py` ídem; `test_ticket_sede_011.py` crea en `Pendiente` y transiciona con `PATCH`; `test_modal_ticket.py` afirma `Pendiente` como primer estado |
+| `/openapi.json` (`:8000`, 61 operaciones) | La descripción de `POST /api/v1/tickets/` documenta el estado inicial fijo y el **409**; `TicketCrear.estado_id` describe la obligatoriedad de `Pendiente` y el 409 |
+| OpenAPI del alta | `estado_id` sigue en el `requestBody` (contrato aditivo; no se retiró el campo) |
+
+### 9.2 Frontend
+
+| Verificación | Resultado real |
+|---|---|
+| `tickets.component.spec.ts` | **69/69** — estado de solo lectura (sin `dialog select[formcontrolname="estado_id"]`, sin «Editable»), `Pendiente`/«Fijo»/«no se puede cambiar», resolución por nombre en catálogo hostil, bloqueo y aviso sin `Pendiente`, `Media` seleccionada y habilitada, cambio a `Alta` reflejado en el POST y vuelta a los valores por defecto tras crear |
+| `ng test` (Edge headless) | **524 SUCCESS / 0 failed** |
+| `ng build` | limpio; bundle `main-BX5UQPQ3.js` |
+
+### 9.3 Recorrido funcional en 4200 (escritura real)
+
+- Modal de alta: `Prioridad` con **Media** seleccionada y habilitada; `Estado inicial`
+  muestra **Pendiente** + etiqueta **FIJO** y la ayuda «Todo ticket nuevo nace en este
+  estado; no se puede cambiar»; **no existe** `<select>` de estado.
+- Alta real como `Admin QA020` (Solicitante de sesión), 1 ítem × 2: `POST
+  /api/v1/tickets/` → **201**; la tarjeta **#11** aparece en la columna **Pendiente** y el
+  modal se cierra y resetea a `Media` + `Pendiente` con el asunto vacío.
+- Sin errores de consola ni peticiones fallidas en el flujo.
+
+### 9.4 Humo en 8080 (imagen reconstruida)
+
+- `docker compose build frontend` + `up -d frontend`; contenedor **healthy** y bundle
+  servido **`main-BX5UQPQ3.js`** (el mismo del `ng build`).
+- `/tickets` carga con la sesión de QA y 11 tarjetas; el modal muestra el estado fijo
+  (`Pendiente`/`FIJO`, sin selector) y `Media` preseleccionada y habilitada; «Cancelar»
+  cierra sin errores de consola.
+

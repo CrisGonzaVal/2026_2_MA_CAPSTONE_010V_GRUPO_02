@@ -46,8 +46,8 @@ docs/diagramas/4+1-kruchten/
 - `docs/spec/stack.md` — arquitectura, stack y esquemas.
 - `backend/app/models/` y `backend/app/services/` — entidades y reglas de negocio.
 - `frontend/src/app/` — features, guards, interceptor y servicios.
-- `database/01_esquema.sql` y `database/02_datos_semilla.sql` — 26 tablas de
-  `control` y 23 tablas por esquema tenant.
+- `database/01_esquema.sql` y `database/02_datos_semilla.sql` — 27 tablas de
+  `control` y 24 tablas por esquema tenant.
 - `docker-compose.yml`, `backend/Dockerfile` y `frontend/Dockerfile` — vista física.
 
 Los diagramas se contrastaron con el código y con las features 013 (despacho

@@ -43,7 +43,13 @@ class TicketCrear(BaseModel):
         ),
     )
     prioridad_id: int = Field(description="Prioridad. Debe existir en `prioridad`.")
-    estado_id: int = Field(description="Estado inicial. Debe existir en `estado_ticket`.")
+    estado_id: int = Field(
+        description=(
+            "Estado inicial. Obligatorio: debe ser el id del estado `Pendiente` "
+            "del catalogo —el ticket nace siempre ahi (AC-27)—; cualquier otro "
+            "estado existente responde **409**."
+        )
+    )
     asunto: str = Field(
         min_length=3,
         max_length=150,
@@ -139,6 +145,43 @@ class TicketRespuesta(BaseModel):
     detalles: List[DetalleTicketRespuesta] = []
 
 
+class AsignacionTicketRespuesta(BaseModel):
+    """OC que cubre un pedido (Feature 021, AC-5).
+
+    Read model de `orden_compra_ticket` + `orden_compra`: incluye las filas de
+    OC canceladas para auditoria, marcadas por `estado_orden`. La UI no las suma
+    a la cobertura activa. Los nombres se resuelven en `ticket_service`.
+    """
+
+    orden_compra_ticket_id: int
+    orden_compra_id: int
+    numero_oc: Optional[str] = None
+    estado_orden: str
+    producto_id: int
+    producto_nombre: str
+    cantidad_asignada: int
+    cantidad_faltante: int
+    fecha_asignacion: datetime
+
+
+class CadenaProductoTicketRespuesta(BaseModel):
+    """Avance por producto del pedido (Feature 021, D-7/AC-5).
+
+    `comprado` suma las asignaciones de OC activas (`Emitida` + `Facturada` +
+    `Recibida`); `recibido`, solo las `Recibida`; `entregado`, la cantidad ya
+    despachada. `faltante` es 0 en un pedido terminal y, si no, la necesidad
+    neta viva despues del stock parcial y los planes pendientes.
+    """
+
+    producto_id: int
+    producto_nombre: str
+    solicitado: int
+    comprado: int
+    recibido: int
+    entregado: int
+    faltante: int
+
+
 class TicketDetalleRespuesta(TicketRespuesta):
     """Detalle completo de `GET /api/v1/tickets/{ticket_id}` (Feature 013).
 
@@ -148,6 +191,11 @@ class TicketDetalleRespuesta(TicketRespuesta):
     prioridad, solicitante con su departamento, y la sede instantanea. Son
     columnas de tablas relacionadas, no de `ticket`, por lo que los puebla
     `ticket_service.obtener_ticket_detalle` y no `from_attributes`.
+
+    La Feature 021 agrega `asignaciones` (OC que cubren el pedido, incluidas las
+    canceladas) y `cadena_productos` (solicitado → comprado → recibido →
+    entregado → faltante). Ambas listas son lecturas derivadas: no cambian el
+    estado del pedido ni `stock_disponible`.
     """
 
     estado_nombre: Optional[str] = Field(
@@ -181,6 +229,10 @@ class TicketDetalleRespuesta(TicketRespuesta):
             "segun prioridad y FIFO; no reserva stock ni muta el ticket."
         ),
     )
+    #: Feature 021: OC que cubren el pedido, incluidas las canceladas.
+    asignaciones: List[AsignacionTicketRespuesta] = []
+    #: Feature 021: avance por producto (D-7). Una fila por detalle del pedido.
+    cadena_productos: List[CadenaProductoTicketRespuesta] = []
 
 
 class HistorialTransicionRespuesta(BaseModel):
@@ -214,6 +266,10 @@ class HistorialTransicionRespuesta(BaseModel):
     estado_destino_nombre: Optional[str] = None
     usuario_nombre: Optional[str] = None
     usuario_apellido: Optional[str] = None
+    #: Feature 021: OC que desbloqueo el pedido en la recepcion. Nulo en el
+    #: resto de las transiciones. `numero_oc` lo resuelve el servicio.
+    orden_compra_id: Optional[int] = None
+    numero_oc: Optional[str] = None
 
 
 class PrioridadRespuesta(BaseModel):

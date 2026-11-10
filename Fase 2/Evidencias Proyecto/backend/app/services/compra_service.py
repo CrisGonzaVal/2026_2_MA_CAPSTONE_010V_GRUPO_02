@@ -18,6 +18,7 @@ la prueba de aislamiento real se ejerce en los tests gated de PostgreSQL 16.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Iterable, Sequence
@@ -37,6 +38,7 @@ from app.models import (
     HistorialTransicionTicket,
     MovimientoInventario,
     OrdenCompra,
+    OrdenCompraTicket,
     Prioridad,
     Producto,
     Proveedor,
@@ -47,13 +49,19 @@ from app.models import (
 )
 from app.schemas.compra_schema import (
     CancelacionOrdenCompra,
+    CoberturaPreviewProducto,
+    CoberturaPreviewRespuesta,
+    CoberturaPreviewSolicitud,
+    CoberturaPreviewTicket,
     DetalleOrdenCompraCrear,
     FacturaCompraRegistrar,
     MovimientoRecepcionRespuesta,
     NecesidadReabastecimiento,
+    NecesidadTicketRespuesta,
     OrdenCompraActualizar,
     OrdenCompraCrear,
     OrdenCompraRespuesta,
+    PlanOrdenCompraRespuesta,
     ProveedorCrear,
     RecepcionRespuesta,
     TicketDesbloqueadoRespuesta,
@@ -68,6 +76,33 @@ _EMITIDA = "Emitida"
 _FACTURADA = "Facturada"
 _RECIBIDA = "Recibida"
 _CANCELADA = "Cancelada"
+
+
+@dataclass
+class SimulacionTicketProducto:
+    """Resultado de la necesidad neta parcial para un `(pedido, producto)`.
+
+    Es una lectura: no se persiste ni reserva. La usan las necesidades, el
+    preview, la emision y la cadena del pedido (Feature 021, DT-2). `faltante`
+    es el hueco **despues** de repartir la compra simulada; en la necesidad
+    (sin compra nueva) coincide con `necesidad`.
+    """
+
+    ticket_id: int
+    asunto: str
+    solicitante_nombre: str | None
+    solicitante_apellido: str | None
+    solicitante_correo: str | None
+    prioridad_nombre: str | None
+    fecha_creacion: datetime
+    solicitado: int
+    plan_previo: int
+    cubierto_stock: int
+    entregado: int
+    necesidad: int
+    asignada: int
+    faltante: int
+    cobertura: str
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +262,7 @@ def _cargar_orden(
             selectinload(OrdenCompra.detalles).joinedload(
                 DetalleOrdenCompra.producto
             ),
+            selectinload(OrdenCompra.plan),
         )
         .where(OrdenCompra.orden_compra_id == orden_id)
     ).unique().scalar_one_or_none()
@@ -236,6 +272,55 @@ def _cargar_orden(
     ):
         raise _no_encontrado("Orden de compra no encontrada")
     return orden
+
+
+def orden_a_respuesta(orden: OrdenCompra) -> OrdenCompraRespuesta:
+    """Proyeccion de una OC con su plan resuelto (Feature 021, DT-8).
+
+    `OrdenCompraRespuesta.model_validate` proyecta columnas y relaciones, pero
+    el resumen del pedido y el nombre del producto no son columnas de
+    `orden_compra_ticket`; se resuelven aqui para no duplicar la logica en cada
+    endpoint. El llamador debe mantener la sesion abierta (carga perezosa).
+    """
+    respuesta = OrdenCompraRespuesta.model_validate(orden)
+    respuesta.plan = [
+        PlanOrdenCompraRespuesta(
+            orden_compra_ticket_id=fila.orden_compra_ticket_id,
+            orden_compra_id=fila.orden_compra_id,
+            ticket_id=fila.ticket_id,
+            producto_id=fila.producto_id,
+            cantidad_asignada=fila.cantidad_asignada,
+            cantidad_faltante=fila.cantidad_faltante,
+            fecha_asignacion=fila.fecha_asignacion,
+            asunto=fila.ticket.asunto if fila.ticket else None,
+            estado_nombre=(
+                fila.ticket.estado.nombre
+                if fila.ticket and fila.ticket.estado
+                else None
+            ),
+            prioridad_nombre=(
+                fila.ticket.prioridad.nombre
+                if fila.ticket and fila.ticket.prioridad
+                else None
+            ),
+            solicitante_nombre=(
+                fila.ticket.usuario.nombre
+                if fila.ticket and fila.ticket.usuario
+                else None
+            ),
+            solicitante_apellido=(
+                fila.ticket.usuario.apellido
+                if fila.ticket and fila.ticket.usuario
+                else None
+            ),
+            fecha_creacion=(
+                fila.ticket.fecha_creacion if fila.ticket else None
+            ),
+            producto_nombre=fila.producto.nombre if fila.producto else None,
+        )
+        for fila in orden.plan
+    ]
+    return respuesta
 
 
 def _agregar_detalles(
@@ -260,6 +345,189 @@ def _agregar_detalles(
 # ---------------------------------------------------------------------------
 
 
+def _simular_claves(
+    db: Session,
+    institucion_id: str,
+    claves: Iterable[tuple[int, int]],
+    cantidades_oc: dict[tuple[int, int], int] | None = None,
+    bloquear: bool = False,
+) -> dict[tuple[int, int], list[SimulacionTicketProducto]]:
+    """Simula la necesidad neta parcial por `(sede, producto)` (DT-2).
+
+    Para cada pedido `EnCurso` de la sede, en orden `prioridad_id ASC`,
+    `fecha_creacion ASC`, `ticket_id ASC`:
+
+    ```
+    base           = max(0, solicitado - plan_previo - entregado)
+    cubierto_stock = min(base, stock_restante)
+    necesidad      = base - cubierto_stock
+    asignada       = min(necesidad, cantidad_oc_restante)
+    faltante       = necesidad - asignada
+    ```
+
+    `plan_previo` suma solo OC `Emitida` + `Facturada`; las `Recibida` ya estan
+    en `stock_actual` y las `Cancelada` no cubren. El stock se reparte de forma
+    **parcial** entre pedidos (a diferencia de `calcular_cobertura_tickets`, que
+    es todo-o-nada y no se modifica). No reserva stock y es determinista.
+
+    Devuelve **todas** las filas de pedidos que demandan la clave, incluidas las
+    que reciben `asignada = 0`. Con `bloquear=True` toma `FOR UPDATE` sobre los
+    pedidos participantes (solo PostgreSQL); SQLite lo ignora.
+    """
+    claves_normalizadas = {(int(sede), int(producto)) for sede, producto in claves}
+    resultado: dict[tuple[int, int], list[SimulacionTicketProducto]] = {
+        clave: [] for clave in claves_normalizadas
+    }
+    if not claves_normalizadas:
+        return resultado
+
+    sedes = {sede for sede, _producto in claves_normalizadas}
+    productos = {producto for _sede, producto in claves_normalizadas}
+    cantidades = cantidades_oc or {}
+
+    estado_en_curso = db.execute(
+        select(EstadoTicket).where(EstadoTicket.nombre == _ESTADO_EN_CURSO)
+    ).scalar_one_or_none()
+    if estado_en_curso is None:
+        return resultado
+
+    consulta_ids = (
+        select(Ticket.ticket_id)
+        .join(DetalleTicket, DetalleTicket.ticket_id == Ticket.ticket_id)
+        .where(Ticket.institucion_id == institucion_id)
+        .where(Ticket.estado_id == estado_en_curso.estado_id)
+        .where(Ticket.sede_id.in_(sedes))
+        .where(DetalleTicket.producto_id.in_(productos))
+        .distinct()
+    )
+    if bloquear and _es_postgres(db):
+        db.execute(
+            select(Ticket.ticket_id)
+            .where(Ticket.ticket_id.in_(consulta_ids))
+            .with_for_update()
+        )
+
+    tickets = (
+        db.execute(
+            select(Ticket)
+            .options(
+                joinedload(Ticket.prioridad),
+                joinedload(Ticket.usuario),
+                selectinload(Ticket.detalles),
+            )
+            .where(Ticket.ticket_id.in_(consulta_ids))
+            .order_by(
+                Ticket.prioridad_id.asc(),
+                Ticket.fecha_creacion.asc(),
+                Ticket.ticket_id.asc(),
+            )
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    if not tickets:
+        return resultado
+
+    ids_tickets = [ticket.ticket_id for ticket in tickets]
+    plan_previo: dict[tuple[int, int], int] = {
+        (ticket_id, producto_id): int(cantidad or 0)
+        for ticket_id, producto_id, cantidad in db.execute(
+            select(
+                OrdenCompraTicket.ticket_id,
+                OrdenCompraTicket.producto_id,
+                func.sum(OrdenCompraTicket.cantidad_asignada),
+            )
+            .join(
+                OrdenCompra,
+                OrdenCompra.orden_compra_id
+                == OrdenCompraTicket.orden_compra_id,
+            )
+            .where(OrdenCompraTicket.institucion_id == institucion_id)
+            .where(OrdenCompra.estado.in_({_EMITIDA, _FACTURADA}))
+            .where(OrdenCompraTicket.ticket_id.in_(ids_tickets))
+            .where(OrdenCompraTicket.producto_id.in_(productos))
+            .group_by(
+                OrdenCompraTicket.ticket_id, OrdenCompraTicket.producto_id
+            )
+        ).all()
+    }
+    stock: dict[tuple[int, int], int] = {
+        (sede, producto): int(cantidad)
+        for sede, producto, cantidad in db.execute(
+            select(
+                StockSede.sede_id,
+                StockSede.producto_id,
+                StockSede.stock_actual,
+            )
+            .where(StockSede.institucion_id == institucion_id)
+            .where(StockSede.sede_id.in_(sedes))
+            .where(StockSede.producto_id.in_(productos))
+        ).all()
+    }
+
+    for clave in claves_normalizadas:
+        sede_id, producto_id = clave
+        stock_restante = max(0, stock.get(clave, 0))
+        oc_restante = max(0, int(cantidades.get(clave, 0)))
+        filas: list[SimulacionTicketProducto] = []
+
+        for ticket in tickets:
+            if ticket.sede_id != sede_id:
+                continue
+            solicitado = sum(
+                detalle.cantidad_solicitada
+                for detalle in ticket.detalles
+                if detalle.producto_id == producto_id
+            )
+            if solicitado <= 0:
+                continue
+            entregado = sum(
+                detalle.cantidad_entregada or 0
+                for detalle in ticket.detalles
+                if detalle.producto_id == producto_id
+            )
+            plan = plan_previo.get((ticket.ticket_id, producto_id), 0)
+            base = max(0, solicitado - plan - entregado)
+            cubierto_stock = min(base, stock_restante)
+            stock_restante -= cubierto_stock
+            necesidad = base - cubierto_stock
+            asignada = min(necesidad, oc_restante)
+            oc_restante -= asignada
+            faltante = necesidad - asignada
+            cubierto_previo = plan + cubierto_stock + entregado
+            if faltante == 0:
+                cobertura = "total"
+            elif cubierto_previo + asignada == 0:
+                cobertura = "sin_cobertura"
+            else:
+                cobertura = "parcial"
+
+            usuario = ticket.usuario
+            prioridad = ticket.prioridad
+            filas.append(
+                SimulacionTicketProducto(
+                    ticket_id=ticket.ticket_id,
+                    asunto=ticket.asunto,
+                    solicitante_nombre=usuario.nombre if usuario else None,
+                    solicitante_apellido=usuario.apellido if usuario else None,
+                    solicitante_correo=usuario.correo if usuario else None,
+                    prioridad_nombre=prioridad.nombre if prioridad else None,
+                    fecha_creacion=ticket.fecha_creacion,
+                    solicitado=solicitado,
+                    plan_previo=plan,
+                    cubierto_stock=cubierto_stock,
+                    entregado=entregado,
+                    necesidad=necesidad,
+                    asignada=asignada,
+                    faltante=faltante,
+                    cobertura=cobertura,
+                )
+            )
+        resultado[clave] = filas
+    return resultado
+
+
 def institucion_de_compras(
     db: Session, identidad: IdentidadAutenticada | None
 ) -> str:
@@ -279,8 +547,13 @@ def listar_necesidades_reabastecimiento(
 
     Participan productos y categorias activos. Un `sede_id` inexistente o ajeno
     se comporta como filtro de lista y devuelve `[]` (no 404). La demanda suma
-    solo tickets `EnCurso` de la sede; los estados no aprobados y los terminales
+    solo pedidos `EnCurso` de la sede; los estados no aprobados y los terminales
     quedan fuera (spec §9.4/§9.9).
+
+    Feature 021: agrega `stock_comprometido` (OC `Emitida` + `Facturada`),
+    `stock_borrador` (informativo, no descuenta), los pedidos que componen la
+    demanda y el sugerido neto
+    `max(0, stock_minimo + demanda_tickets - stock_actual - stock_comprometido)`.
     """
     if sede_id is not None:
         sede = db.get(Sede, sede_id)
@@ -318,9 +591,34 @@ def listar_necesidades_reabastecimiento(
         .where(Categoria.activo.is_(True))
         .group_by(Ticket.sede_id, DetalleTicket.producto_id)
     )
+    consulta_comprometida = (
+        select(
+            OrdenCompra.sede_id,
+            DetalleOrdenCompra.producto_id,
+            OrdenCompra.estado,
+            func.sum(DetalleOrdenCompra.cantidad_solicitada).label("cantidad"),
+        )
+        .join(
+            OrdenCompra,
+            OrdenCompra.orden_compra_id
+            == DetalleOrdenCompra.orden_compra_id,
+        )
+        .where(DetalleOrdenCompra.institucion_id == institucion_id)
+        .where(
+            OrdenCompra.estado.in_({_EMITIDA, _FACTURADA, _BORRADOR})
+        )
+        .group_by(
+            OrdenCompra.sede_id,
+            DetalleOrdenCompra.producto_id,
+            OrdenCompra.estado,
+        )
+    )
     if sede_id is not None:
         consulta_stock = consulta_stock.where(StockSede.sede_id == sede_id)
         consulta_demanda = consulta_demanda.where(Ticket.sede_id == sede_id)
+        consulta_comprometida = consulta_comprometida.where(
+            OrdenCompra.sede_id == sede_id
+        )
 
     stock: dict[tuple[int, int], int] = {
         (fila.sede_id, fila.producto_id): fila.stock_actual
@@ -330,6 +628,16 @@ def listar_necesidades_reabastecimiento(
         (fila.sede_id, fila.producto_id): int(fila.demanda or 0)
         for fila in db.execute(consulta_demanda).all()
     }
+    comprometido: dict[tuple[int, int], int] = {}
+    borrador: dict[tuple[int, int], int] = {}
+    for fila in db.execute(consulta_comprometida).all():
+        clave = (fila.sede_id, fila.producto_id)
+        if fila.estado == _BORRADOR:
+            borrador[clave] = borrador.get(clave, 0) + int(fila.cantidad or 0)
+        else:
+            comprometido[clave] = comprometido.get(clave, 0) + int(
+                fila.cantidad or 0
+            )
 
     productos = {
         producto.producto_id: producto
@@ -353,6 +661,7 @@ def listar_necesidades_reabastecimiento(
     }
 
     claves = set(stock) | set(demanda)
+    simulaciones = _simular_claves(db, institucion_id, claves)
     necesidades: list[NecesidadReabastecimiento] = []
     for clave in claves:
         sede_id_fila, producto_id = clave
@@ -367,10 +676,31 @@ def listar_necesidades_reabastecimiento(
             and demanda_tickets <= stock_actual
         ):
             continue
+        stock_comprometido = comprometido.get(clave, 0)
         sugerido = max(
             0,
-            producto.stock_minimo + demanda_tickets - stock_actual,
+            producto.stock_minimo
+            + demanda_tickets
+            - stock_actual
+            - stock_comprometido,
         )
+        tickets = [
+            NecesidadTicketRespuesta(
+                ticket_id=simulacion.ticket_id,
+                asunto=simulacion.asunto,
+                solicitante_nombre=simulacion.solicitante_nombre,
+                solicitante_apellido=simulacion.solicitante_apellido,
+                solicitante_correo=simulacion.solicitante_correo,
+                prioridad_nombre=simulacion.prioridad_nombre,
+                fecha_creacion=simulacion.fecha_creacion,
+                cantidad_solicitada=simulacion.solicitado,
+                cantidad_cubierta=max(
+                    0, simulacion.solicitado - simulacion.faltante
+                ),
+                cantidad_faltante=simulacion.faltante,
+            )
+            for simulacion in simulaciones.get(clave, [])
+        ]
         necesidades.append(
             NecesidadReabastecimiento(
                 sede_id=sede.sede_id,
@@ -381,10 +711,113 @@ def listar_necesidades_reabastecimiento(
                 stock_minimo=producto.stock_minimo,
                 demanda_tickets=demanda_tickets,
                 sugerido=sugerido,
+                stock_comprometido=stock_comprometido,
+                stock_borrador=borrador.get(clave, 0),
+                tickets=tickets,
             )
         )
     necesidades.sort(key=lambda fila: (fila.sede_id, fila.producto_id))
     return necesidades
+
+
+# ---------------------------------------------------------------------------
+# AC-2: preview de cobertura automatica
+# ---------------------------------------------------------------------------
+
+
+def previsualizar_cobertura(
+    db: Session,
+    datos: CoberturaPreviewSolicitud,
+    identidad: IdentidadAutenticada | None,
+) -> CoberturaPreviewRespuesta:
+    """Simula la cobertura de una compra hipotetica (AC-2, DT-4).
+
+    Ejecuta exactamente `_simular_claves` sin persistir ni reservar. La sede es
+    concreta: inexistente o ajena responde **404** (no es un filtro de lista).
+    El producto ajeno o inexistente responde **404**; el inactivo o repetido,
+    **409**. La precedencia sigue el plan §3: primero 409 (regla) y despues 404.
+    """
+    institucion_id = _institucion_del_actor(db, identidad)
+    sede = _sede_valida(db, datos.sede_id, institucion_id)
+
+    ids = [item.producto_id for item in datos.items]
+    if len(set(ids)) != len(ids):
+        raise _conflicto(
+            "No se puede repetir un producto en la simulacion de cobertura"
+        )
+
+    productos = {
+        producto.producto_id: producto
+        for producto in db.execute(
+            select(Producto)
+            .where(Producto.institucion_id == institucion_id)
+            .where(Producto.producto_id.in_(ids))
+        )
+        .scalars()
+        .all()
+    }
+    for item in datos.items:
+        producto = productos.get(item.producto_id)
+        if producto is not None and not producto.activo:
+            raise _conflicto("El producto esta inactivo")
+    for item in datos.items:
+        if item.producto_id not in productos:
+            raise _no_encontrado("Producto no encontrado")
+
+    cantidades_oc = {
+        (sede.sede_id, item.producto_id): item.cantidad_solicitada
+        for item in datos.items
+    }
+    simulaciones = _simular_claves(
+        db,
+        institucion_id,
+        cantidades_oc.keys(),
+        cantidades_oc=cantidades_oc,
+    )
+
+    respuesta_productos: list[CoberturaPreviewProducto] = []
+    for item in datos.items:
+        filas = simulaciones.get((sede.sede_id, item.producto_id), [])
+        producto = productos[item.producto_id]
+        asignado = sum(fila.asignada for fila in filas)
+        respuesta_productos.append(
+            CoberturaPreviewProducto(
+                producto_id=producto.producto_id,
+                producto_nombre=producto.nombre,
+                cantidad_simulada=item.cantidad_solicitada,
+                demanda_total=sum(fila.solicitado for fila in filas),
+                cubierto_previo=sum(
+                    fila.plan_previo + fila.cubierto_stock + fila.entregado
+                    for fila in filas
+                ),
+                asignado=asignado,
+                faltante=sum(fila.faltante for fila in filas),
+                sin_asignar=max(0, item.cantidad_solicitada - asignado),
+                tickets=[
+                    CoberturaPreviewTicket(
+                        ticket_id=fila.ticket_id,
+                        asunto=fila.asunto,
+                        solicitante_nombre=fila.solicitante_nombre,
+                        solicitante_apellido=fila.solicitante_apellido,
+                        prioridad_nombre=fila.prioridad_nombre,
+                        fecha_creacion=fila.fecha_creacion,
+                        solicitado=fila.solicitado,
+                        cubierto_plan=fila.plan_previo,
+                        cubierto_stock=fila.cubierto_stock,
+                        necesidad=fila.necesidad,
+                        asignada=fila.asignada,
+                        faltante=fila.faltante,
+                        cobertura=fila.cobertura,
+                    )
+                    for fila in filas
+                ],
+            )
+        )
+    return CoberturaPreviewRespuesta(
+        sede_id=sede.sede_id,
+        sede_nombre=sede.nombre,
+        productos=respuesta_productos,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -476,6 +909,7 @@ def listar_ordenes_compra(
             selectinload(OrdenCompra.detalles).joinedload(
                 DetalleOrdenCompra.producto
             ),
+            selectinload(OrdenCompra.plan),
         )
         .where(OrdenCompra.institucion_id == institucion_id)
         .order_by(
@@ -568,7 +1002,21 @@ def actualizar_orden_compra(
 def emitir_orden_compra(
     db_tenant: Session, orden_id: int, identidad: IdentidadAutenticada | None
 ) -> OrdenCompra:
-    """Emite el borrador con `numero_oc` derivado del identity (AC-4/DT-7)."""
+    """Emite el borrador y congela su plan de cobertura (AC-3/AC-4, DT-5).
+
+    Conserva las validaciones de la 020 (`Borrador`, detalles y productos
+    activos) y, en la misma transaccion del cambio a `Emitida`:
+
+    1. Bloquea con `FOR UPDATE` los pedidos `EnCurso` de la sede que demandan
+       los productos de la OC (solo PostgreSQL; SQLite lo ignora).
+    2. Ejecuta `_simular_claves` con las cantidades de `detalle_orden_compra`,
+       que resta el plan pendiente (`Emitida` + `Facturada`) y el stock parcial.
+    3. Inserta una fila por pedido/producto con `asignada > 0`; el `faltante`
+       es la foto del hueco que dejo esta OC.
+
+    Sin pedidos o sin necesidad neta la emision es exitosa con plan vacio. Si
+    algo falla no se persiste ninguna fila.
+    """
     institucion_id = _institucion_del_actor(db_tenant, identidad)
     orden = _cargar_orden(db_tenant, orden_id, institucion_id)
     if orden.estado != _BORRADOR:
@@ -578,11 +1026,41 @@ def emitir_orden_compra(
     for detalle in orden.detalles:
         _producto_activo(db_tenant, detalle.producto_id, institucion_id)
 
+    cantidades_oc = {
+        (orden.sede_id, detalle.producto_id): detalle.cantidad_solicitada
+        for detalle in orden.detalles
+    }
+    simulaciones = _simular_claves(
+        db_tenant,
+        institucion_id,
+        cantidades_oc.keys(),
+        cantidades_oc=cantidades_oc,
+        bloquear=True,
+    )
+    instante = datetime.utcnow()
+    for clave, filas in simulaciones.items():
+        producto_id = clave[1]
+        for fila in filas:
+            if fila.asignada <= 0:
+                continue
+            db_tenant.add(
+                OrdenCompraTicket(
+                    institucion_id=institucion_id,
+                    orden_compra_id=orden.orden_compra_id,
+                    ticket_id=fila.ticket_id,
+                    producto_id=producto_id,
+                    cantidad_asignada=fila.asignada,
+                    cantidad_faltante=fila.faltante,
+                    fecha_asignacion=instante,
+                )
+            )
+    db_tenant.flush()
+
     orden.estado = _EMITIDA
     orden.numero_oc = (
         f"OC-{datetime.utcnow().year:04d}-{orden.orden_compra_id:06d}"
     )
-    orden.fecha_emision = datetime.utcnow()
+    orden.fecha_emision = instante
     _confirmar(db_tenant, "No se pudo emitir la orden de compra")
     return _cargar_orden(db_tenant, orden_id, institucion_id)
 
@@ -919,6 +1397,9 @@ def recepcionar_orden_compra(
                         estado_destino_id=estado_en_curso.estado_id,
                         usuario_id=actor_id,
                         motivo=motivo,
+                        # Feature 021 (AC-6): enlace de auditoria de la OC que
+                        # desbloqueo el pedido. Solo esta fila lo lleva.
+                        orden_compra_id=orden.orden_compra_id,
                     )
                 )
             desbloqueados.append(
@@ -931,7 +1412,7 @@ def recepcionar_orden_compra(
     _confirmar(db_tenant, "No se pudo confirmar la recepcion de la orden")
     orden = _cargar_orden(db_tenant, orden_id, institucion_id)
     return RecepcionRespuesta(
-        orden=OrdenCompraRespuesta.model_validate(orden),
+        orden=orden_a_respuesta(orden),
         estado=orden.estado,
         fecha_recepcion=orden.fecha_recepcion,
         movimientos=movimientos,

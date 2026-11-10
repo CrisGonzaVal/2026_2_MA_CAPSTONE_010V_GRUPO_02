@@ -382,6 +382,44 @@ export interface HistorialTransicion {
   estado_destino_nombre?: string | null;
   usuario_nombre?: string | null;
   usuario_apellido?: string | null;
+  /** Feature 021 (AC-6): OC que desbloqueo el pedido; `null` en el resto. */
+  orden_compra_id?: number | null;
+  /** Numero de la OC de desbloqueo, resuelto por el servidor. */
+  numero_oc?: string | null;
+}
+
+/**
+ * Fila del plan de cobertura de un pedido (`GET /tickets/{id}`, Feature 021).
+ *
+ * Incluye las OC canceladas (auditoria): la vista las marca y no las suma a la
+ * cobertura activa.
+ */
+export interface AsignacionTicket {
+  orden_compra_ticket_id: number;
+  orden_compra_id: number;
+  numero_oc: string | null;
+  estado_orden: string;
+  producto_id: number;
+  producto_nombre: string;
+  cantidad_asignada: number;
+  cantidad_faltante: number;
+  fecha_asignacion: string;
+}
+
+/**
+ * Cadena por producto del pedido (Feature 021, D-7).
+ *
+ * `comprado` incluye lo recibido; `recibido` es informativo y no se resta dos
+ * veces; `faltante` es 0 en pedidos terminales.
+ */
+export interface CadenaProductoTicket {
+  producto_id: number;
+  producto_nombre: string;
+  solicitado: number;
+  comprado: number;
+  recibido: number;
+  entregado: number;
+  faltante: number;
 }
 
 /**
@@ -419,6 +457,10 @@ export interface TicketDetalle {
    * siempre lo envía.
    */
   stock_disponible?: boolean | null;
+  /** Feature 021 (AC-5): OC que cubren el pedido, incluidas las canceladas. */
+  asignaciones?: AsignacionTicket[];
+  /** Feature 021 (AC-5): avance por producto solicitado/comprado/recibido/… */
+  cadena_productos?: CadenaProductoTicket[];
 }
 
 /**

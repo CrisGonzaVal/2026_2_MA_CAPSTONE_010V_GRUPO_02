@@ -10,7 +10,7 @@
 > conservan solo las pruebas de instalación limpia y del token de versión; los
 > casos de migración se retiraron junto con los scripts.
 
-**Estado:** aprobada y cerrada (19/Oct/2026) — con las enmiendas incorporadas: D-4/AC-26 (terminalidad por nombre en cualquier catálogo) y AC-18 (403 de matriz vs 404 de ocultamiento)  
+**Estado:** aprobada y cerrada (19/Oct/2026) — con las enmiendas incorporadas: D-4/AC-26 (terminalidad por nombre en cualquier catálogo), AC-18 (403 de matriz vs 404 de ocultamiento) y AC-27 (05/Nov/2026: alta fija en `Pendiente` y prioridad `Media`)  
 **Release:** 2.0 — Sprint 6
 **Tipo:** Evolución del ciclo de vida del ticket y auditoría
 
@@ -560,6 +560,34 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
 
 **Cerrada (19/Oct/2026):** AC-1…AC-26 en verde con la evidencia de arriba; `pytest` SQLite 952 passed/68 skipped/0 failed, gated PostgreSQL 16 1020 passed/0 skipped/0 failed, `ng test` 323 SUCCESS y `ng build` limpio; matriz/OpenAPI de **49 operaciones** v1; recorrido funcional en 4200 con escritura real (`evidencia/README.md` §3) y humo en 8080 con la imagen reconstruida (bundle `main-R6LIXDWJ.js`, §8). Enmiendas incorporadas durante la implementación: **D-4/AC-26** (la terminalidad por nombre canónico en cualquier catálogo sustituyó a la ordinal de la 004) y **AC-18** (un rol sin la operación en la matriz —p. ej. Solicitante en rechazo— recibe 403, no el 404 de ocultamiento).
 
+### Enmienda post-cierre (05/Nov/2026): el alta nace siempre en `Pendiente`
+
+La elección de estado inicial del alta (D-11) se retira: todo ticket nuevo nace en el estado
+`Pendiente`, resuelto por **nombre canónico** (normalizado, menor `estado_id` ante duplicados) y
+no por posición del catálogo. El campo `estado_id` sigue **obligatorio** en `TicketCrear`
+—contrato aditivo, el campo no se retira— y debe transportar el id de `Pendiente`: cualquier otro
+id (`EnRevision`, `EnCurso`, `Cerrado`, `Anulado` o ajeno al catálogo) responde **409** antes de
+cualquier escritura, y un catálogo sin `Pendiente` responde también **409** (fail-closed). Queda
+**derogada** la admisión de `Cerrado` en el alta y su sellado de `fecha_cierre` (004 AC-17):
+`Cerrado` solo se alcanza por el despacho transaccional de la 005. En la interfaz, el modal de
+alta muestra el estado inicial como dato **fijo** —no editable para ningún rol— y el backend
+sigue siendo la frontera real. La prioridad se conserva editable y pasa a tener `Media`
+predeterminada, resuelta igualmente por nombre canónico. La tarjeta completa del tablero es el
+enlace al detalle (sustituye a la acción «Gestionar» de D-14).
+
+**Por qué:** todo ticket debe arrancar en la cola de revisión; permitir nacer en un estado
+posterior fabricaba tickets que nunca pasaron por `Pendiente` y abría la puerta al sellado de
+cierre sin despacho. La prioridad `Media` evita el envío con el campo vacío sin quitar la
+capacidad de priorizar.
+
+- [x] **AC-27** DADO QUE cualquier usuario autenticado abre el modal de alta, ENTONCES el estado
+      inicial se muestra fijo en `Pendiente` y no es editable; la prioridad aparece predeterminada
+      en `Media` y sigue siendo cambiable. El alta envía siempre el `Pendiente` resuelto del
+      catálogo; el backend responde **409** si el `estado_id` no es `Pendiente` (o si el catálogo
+      no lo contiene) y **201** con `Pendiente` en el resto de casos, sin sellar `fecha_cierre`
+      jamás en el alta.
+  - **Evidencia:** `backend/tests/api/test_ciclo_vida_alta_inicial_013.py` (409 en `EnRevision`/`EnCurso`/`Cerrado`/`Anulado` sin efectos, 201 con `Pendiente` y `fecha_cierre` nula con `PATCH /estado` posterior intacto, 409 con catálogo sin `Pendiente`, 404 con id inexistente —la referencia precede a la regla—, 422 sin `estado_id` y resolución por nombre con `Pendiente` fuera de la primera posición) + ajustes en `test_tablero_kanban.py`/`test_ciclo_vida_flujo_013.py`/`test_ticket_sede_011.py` y `test_modal_ticket.py`; `frontend/src/app/features/tickets/tickets.component.spec.ts` (estado fijo sin selector, resolución por nombre en catálogo hostil, `Media` predeterminada y cambiable, vuelta a los valores por defecto tras crear); recorrido `evidencia/README.md` §9 «Enmienda post-cierre (05/Nov/2026)» en 4200 y humo 8080 reconstruido.
+
 ## 8. Restricciones
 
 - `constitucion.md` §2 (Trazabilidad Absoluta): el historial de transiciones es inmutable; la
@@ -603,3 +631,8 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
   se aceptaron en su momento.
 - La migración operacional nunca usa la semilla destructiva y es verificable contra
   PostgreSQL 16; SQLite no acredita el token de versión ni la replicación por esquema.
+- **Derogación adicional de la 004 (enmienda post-cierre 05/Nov/2026):** el AC-17 de
+  `004-tablero-kanban/spec.md` en lo que admitía **nacer en `Cerrado`** y sellar `fecha_cierre`
+  en el alta queda derogado; `Cerrado` solo se alcanza por el despacho transaccional de la 005.
+  El resto del AC-17 (sellado de la fecha al cerrar) permanece intacto. La spec de la 004 se
+  conserva sin editar: es registro histórico de su release.

@@ -71,6 +71,8 @@ export class ListaOrdenesComponent implements OnInit {
   readonly guardandoFactura = signal(false);
   readonly guardandoCancelacion = signal(false);
   readonly procesando = signal<number | null>(null);
+  /** Feature 021 (AC-4): OC cuyo plan congelado esta expandido. */
+  readonly planVisible = signal<number | null>(null);
 
   readonly formularioFactura = this.constructorFormulario.group({
     numero_factura: ['', [Validators.required, Validators.maxLength(50)]],
@@ -131,6 +133,13 @@ export class ListaOrdenesComponent implements OnInit {
 
   puedeCancelar(orden: OrdenCompra): boolean {
     return orden.estado === 'Borrador' || orden.estado === 'Emitida';
+  }
+
+  /** Feature 021 (AC-4): expande o contrae el plan congelado de la OC. */
+  alternarPlan(orden: OrdenCompra): void {
+    this.planVisible.update((actual) =>
+      actual === orden.orden_compra_id ? null : orden.orden_compra_id,
+    );
   }
 
   /** Clases Tailwind completas del badge de estado (no se concatenan). */

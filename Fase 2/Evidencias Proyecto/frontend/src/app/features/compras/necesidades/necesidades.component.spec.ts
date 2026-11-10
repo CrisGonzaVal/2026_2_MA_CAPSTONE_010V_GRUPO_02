@@ -150,4 +150,59 @@ describe('NecesidadesComponent', () => {
     expect(enlace?.getAttribute('href')).toContain('producto_id=9');
     expect(enlace?.getAttribute('href')).toContain('cantidad=14');
   });
+
+  // --- Feature 021 (T11, AC-1): comprometido, borrador y pedidos -----------
+
+  it('AC-1: muestra el comprometido y el borrador como columnas separadas', () => {
+    montar([necesidad({ stock_comprometido: 4, stock_borrador: 2 })]);
+
+    const visible = texto();
+    expect(visible).toContain('Comprometido');
+    expect(visible).toContain('Borrador');
+    expect(visible).toContain('Comprometido = OC emitidas/facturadas');
+    expect(visible).toContain('Borrador no descuenta el sugerido');
+  });
+
+  it('AC-1: cada pedido que compone la demanda aparece en una subfila', () => {
+    montar([
+      necesidad({
+        stock_comprometido: 3,
+        tickets: [
+          {
+            ticket_id: 33,
+            asunto: 'Reposición de cuadernos',
+            solicitante_nombre: 'Isabel',
+            solicitante_apellido: 'Contreras',
+            solicitante_correo: null,
+            prioridad_nombre: 'ALTA',
+            fecha_creacion: '2026-11-01T09:00:00',
+            cantidad_solicitada: 8,
+            cantidad_cubierta: 3,
+            cantidad_faltante: 5,
+          },
+        ],
+      }),
+    ]);
+
+    const visible = texto();
+    expect(visible).toContain('Pedido');
+    expect(visible).toContain('#33');
+    expect(visible).toContain('Reposición de cuadernos');
+    expect(visible).toContain('Contreras, Isabel');
+    expect(visible).toContain('ALTA');
+    expect(visible).toContain('Subtotal solicitado');
+    expect(visible).toContain('Subtotal cubierto');
+    expect(visible).toContain('Subtotal faltante');
+  });
+
+  it('AC-1: un sugerido 0 se presenta como cubierto y no enlaza a crear OC', () => {
+    montar([necesidad({ sugerido: 0, stock_comprometido: 14 })]);
+    const visible = texto();
+    expect(visible).toContain('Cubierto');
+
+    const enlaceCrear = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('a'),
+    ).find((a) => (a.textContent ?? '').includes('Crear OC'));
+    expect(enlaceCrear).toBeUndefined();
+  });
 });

@@ -12,6 +12,7 @@ from app.models import (
     EstadoTicket,
     HistorialTransicionTicket,
     MovimientoInventario,
+    OrdenCompraTicket,
     Prioridad,
     Producto,
     StockSede,
@@ -20,6 +21,8 @@ from app.models import (
 )
 from app.core import permisos
 from app.schemas.ticket_schema import (
+    AsignacionTicketRespuesta,
+    CadenaProductoTicketRespuesta,
     CatalogosTicketRespuesta,
     EstadoTicketRespuesta,
     HistorialTransicionRespuesta,
@@ -62,6 +65,14 @@ PLANTILLA_OBSERVACION_DESPACHO = (
 
 #: Rol cuya propiedad se resuelve por `ticket.usuario_id` y no por institucion.
 _SOLICITANTE = permisos.RolConocido.SOLICITANTE.value
+
+#: Feature 021 (D-7): estados terminales del pedido. Su cadena queda con
+#: `faltante = 0`; el resto se calcula con la simulacion parcial de stock.
+_ESTADOS_TERMINALES = {"Cerrado", "Anulado"}
+#: Estados de OC que suman al `comprado` de la cadena (incluye lo recibido).
+_ESTADOS_ORDEN_COMPRADO = {"Emitida", "Facturada", "Recibida"}
+#: Estado de OC cuyas unidades ya llegaron fisicamente (`recibido`).
+_ESTADO_ORDEN_RECIBIDA = "Recibida"
 
 
 def _es_solicitante(identidad: IdentidadAutenticada | None) -> bool:
@@ -544,14 +555,14 @@ def crear_ticket(
     reglas de estado inicial -> escritura transaccional. La sede se resuelve
     siempre por `usuario.departamento_id`, nunca como fallback a `usuario.sede_id`.
 
-    AC-17: si el estado destino es `Cerrado` (case-insensitive), se sella
-    `fecha_cierre` en la propia creacion.
-
-    Feature 013 (spec D-11, plan decision 8): un ticket nuevo **no puede nacer
-    en `Anulado`**. El estado existe en el catalogo, asi que el rechazo es
-    **409** (precondicion, no 404/422) y ocurre antes del primer `add()`, sin
-    dejar ticket ni detalle parciales. Ademas la creacion inserta su fila de
-    historial (origen nulo, destino = estado inicial, actor = identidad o
+    Enmienda post-cierre de la 013 (spec AC-27): todo ticket nace en
+    `Pendiente`, resuelto por nombre canonico; cualquier otro `estado_id`
+    responde **409** (precondicion, no 404/422) antes del primer `add()`, sin
+    dejar ticket ni detalle parciales, y un catalogo sin `Pendiente` tambien
+    deniega cerrado (409). Queda derogado el alta directa en `Cerrado` y su
+    sellado de `fecha_cierre` (004 AC-17): `Cerrado` solo se alcanza por el
+    despacho de la 005. Ademas la creacion inserta su fila de historial
+    (origen nulo, destino = estado inicial, actor = identidad o
     `ticket.usuario_id`; decision 9) en la misma transaccion del ticket (AC-9,
     AC-11).
     """
@@ -583,27 +594,31 @@ def crear_ticket(
     # del solicitante. Se resuelve **antes** de escribir; sin sede el alta es 409.
     sede_ticket = _sede_vigente_de_solicitante(db, solicitante)
 
-    # Resolucion por nombre (case-insensitive) de los dos estados con reglas
-    # propias en el alta: `Cerrado` sella fecha (AC-17) y `Anulado` se rechaza
-    # (D-11). Ante nombres duplicados gana el de menor `estado_id` (plan §3.2).
+    # Enmienda post-cierre (spec AC-27): el estado inicial es siempre
+    # `Pendiente`, resuelto por nombre canonico (menor `estado_id` ante
+    # duplicados, plan §3.2). El `estado_id` del DTO es obligatorio y debe ser
+    # ese id; cualquier otro responde 409 antes del primer `add()` para no
+    # dejar ticket ni detalle parciales. Sin `Pendiente` en el catalogo el alta
+    # deniega cerrado (409), como el resto de las reglas por nombre.
     estados = db.execute(
         select(EstadoTicket).order_by(EstadoTicket.estado_id)
     ).scalars().all()
-    estado_cierre = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_CERRADO)
-    es_estado_cierre = (
-        estado_cierre is not None and datos.estado_id == estado_cierre.estado_id
-    )
-
-    # D-11 (plan decision 8): `Anulado` no es elegible para alta. El estado
-    # existe, asi que el rechazo es 409 y no 404/422; va antes del primer
-    # `add()` para no dejar ticket ni detalle parciales.
-    estado_anulado = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_ANULADO)
-    if estado_anulado is not None and datos.estado_id == estado_anulado.estado_id:
+    estado_pendiente = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_PENDIENTE)
+    if estado_pendiente is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "El estado 'Anulado' no es elegible para alta: un ticket nuevo "
-                "no puede nacer anulado"
+                "El catalogo de estados no contiene 'Pendiente': el alta no "
+                "puede resolver su estado inicial"
+            ),
+        )
+    if datos.estado_id != estado_pendiente.estado_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "El estado inicial de un ticket nuevo debe ser 'Pendiente' "
+                f"(estado_id={estado_pendiente.estado_id}); se recibio "
+                f"estado_id={datos.estado_id}"
             ),
         )
 
@@ -615,10 +630,6 @@ def crear_ticket(
         )
         db.add(nuevo_ticket)
         db.flush()  # asigna ticket_id sin cerrar la transaccion
-
-        # AC-17: sellar fecha_cierre si se crea directamente en Cerrado
-        if es_estado_cierre:
-            nuevo_ticket.fecha_cierre = datetime.utcnow()
 
         for detalle in datos.detalles:
             db.add(
@@ -1426,6 +1437,108 @@ def obtener_ticket_detalle(
             db, ticket.sede_id
         )
         respuesta.stock_disponible = cobertura.get(ticket.ticket_id, False)
+
+    # Feature 021 (AC-5, D-7, DT-6): asignaciones y cadena por producto. La
+    # lectura no cambia el alcance de la 013/017 ni `stock_disponible`.
+    asignaciones_db = (
+        db.execute(
+            select(OrdenCompraTicket)
+            .options(
+                selectinload(OrdenCompraTicket.orden),
+                selectinload(OrdenCompraTicket.producto),
+            )
+            .where(OrdenCompraTicket.ticket_id == ticket_id)
+            .order_by(OrdenCompraTicket.orden_compra_ticket_id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    respuesta.asignaciones = [
+        AsignacionTicketRespuesta(
+            orden_compra_ticket_id=fila.orden_compra_ticket_id,
+            orden_compra_id=fila.orden_compra_id,
+            numero_oc=fila.orden.numero_oc if fila.orden else None,
+            estado_orden=fila.orden.estado if fila.orden else "",
+            producto_id=fila.producto_id,
+            producto_nombre=fila.producto.nombre if fila.producto else "",
+            cantidad_asignada=fila.cantidad_asignada,
+            cantidad_faltante=fila.cantidad_faltante,
+            fecha_asignacion=fila.fecha_asignacion,
+        )
+        for fila in asignaciones_db
+        if fila.orden is not None
+    ]
+
+    comprado: dict[int, int] = {}
+    recibido: dict[int, int] = {}
+    for fila in asignaciones_db:
+        estado_orden = fila.orden.estado if fila.orden else None
+        if estado_orden not in _ESTADOS_ORDEN_COMPRADO:
+            continue
+        comprado[fila.producto_id] = (
+            comprado.get(fila.producto_id, 0) + fila.cantidad_asignada
+        )
+        if estado_orden == _ESTADO_ORDEN_RECIBIDA:
+            recibido[fila.producto_id] = (
+                recibido.get(fila.producto_id, 0) + fila.cantidad_asignada
+            )
+
+    estado_nombre = ticket.estado.nombre if ticket.estado else None
+    es_terminal = estado_nombre in _ESTADOS_TERMINALES
+    cubierto_stock: dict[int, int] = {}
+    if not es_terminal and ticket.sede_id is not None:
+        productos_del_ticket = {detalle.producto_id for detalle in ticket.detalles}
+        claves = {
+            (ticket.sede_id, producto_id)
+            for producto_id in productos_del_ticket
+        }
+        for clave, simulaciones in compra_service._simular_claves(
+            db, ticket.institucion_id, claves
+        ).items():
+            for simulacion in simulaciones:
+                if simulacion.ticket_id == ticket_id:
+                    cubierto_stock[clave[1]] = simulacion.cubierto_stock
+
+    orden_productos: list[int] = []
+    solicitado: dict[int, int] = {}
+    entregado: dict[int, int] = {}
+    nombres_producto: dict[int, str] = {}
+    for detalle in ticket.detalles:
+        producto_id = detalle.producto_id
+        if producto_id not in solicitado:
+            orden_productos.append(producto_id)
+            solicitado[producto_id] = 0
+            entregado[producto_id] = 0
+            nombres_producto[producto_id] = (
+                detalle.producto.nombre if detalle.producto else ""
+            )
+        solicitado[producto_id] += detalle.cantidad_solicitada
+        entregado[producto_id] += detalle.cantidad_entregada or 0
+
+    respuesta.cadena_productos = []
+    for producto_id in orden_productos:
+        if es_terminal:
+            faltante = 0
+        else:
+            pendiente = comprado.get(producto_id, 0) - recibido.get(
+                producto_id, 0
+            )
+            base = max(0, solicitado[producto_id] - entregado[producto_id])
+            faltante = max(
+                0,
+                base - pendiente - cubierto_stock.get(producto_id, 0),
+            )
+        respuesta.cadena_productos.append(
+            CadenaProductoTicketRespuesta(
+                producto_id=producto_id,
+                producto_nombre=nombres_producto[producto_id],
+                solicitado=solicitado[producto_id],
+                comprado=comprado.get(producto_id, 0),
+                recibido=recibido.get(producto_id, 0),
+                entregado=entregado[producto_id],
+                faltante=faltante,
+            )
+        )
     return respuesta
 
 
@@ -1436,6 +1549,10 @@ def _fila_historial_a_respuesta(
     estado_origen = fila.estado_origen
     estado_destino = fila.estado_destino
     usuario = fila.usuario
+    # Feature 021 (AC-6): la OC de desbloqueo se expone con su numero resuelto;
+    # el resto de las transiciones la dejan nula. Se conserva aunque la OC se
+    # cancele despues: es auditoria, no cobertura viva.
+    orden_compra = fila.orden_compra
     return HistorialTransicionRespuesta(
         historial_transicion_id=fila.historial_transicion_id,
         ticket_id=fila.ticket_id,
@@ -1448,6 +1565,8 @@ def _fila_historial_a_respuesta(
         estado_destino_nombre=estado_destino.nombre if estado_destino else None,
         usuario_nombre=usuario.nombre if usuario else None,
         usuario_apellido=usuario.apellido if usuario else None,
+        orden_compra_id=fila.orden_compra_id,
+        numero_oc=orden_compra.numero_oc if orden_compra else None,
     )
 
 
@@ -1480,6 +1599,7 @@ def obtener_historial_ticket(
             selectinload(HistorialTransicionTicket.estado_origen),
             selectinload(HistorialTransicionTicket.estado_destino),
             selectinload(HistorialTransicionTicket.usuario),
+            selectinload(HistorialTransicionTicket.orden_compra),
         )
         .where(HistorialTransicionTicket.ticket_id == ticket_id)
         .order_by(

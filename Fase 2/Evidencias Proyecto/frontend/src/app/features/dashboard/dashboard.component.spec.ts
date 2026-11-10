@@ -29,7 +29,7 @@ import { DashboardComponent } from './dashboard.component';
  * suite (`dashboard.service.spec.ts`).
  *
  * Contrato de template que fija esta spec:
- *   - cuatro KPI con las etiquetas exactas «Unidades en Stock», «Tickets Activos»,
+ *   - cuatro KPI con las etiquetas exactas «Unidades en Stock», «Pedidos Activos»,
  *     «Departamentos» y «Alertas de Stock», con los valores del DTO;
  *   - sin el placeholder «Estado de Sedes Descentralizadas» ni cifras de ejemplo;
  *   - un listado de alertas con producto, sede, stock actual y minimo;
@@ -246,7 +246,7 @@ describe('DashboardComponent', () => {
 
     const etiquetas = [
       'Unidades en Stock',
-      'Tickets Activos',
+      'Pedidos Activos',
       'Departamentos',
       'Alertas de Stock',
     ];

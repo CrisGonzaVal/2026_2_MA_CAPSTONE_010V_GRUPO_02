@@ -26,7 +26,7 @@ def datos_catalogo_ticket(motor, datos_base):
     """Amplia `datos_base` con varias prioridades y estados.
 
     Los estados se insertan en orden **descendente** a proposito: si el endpoint
-    ordenara por nombre, "INGRESADO" (agregado por `datos_base`) quedaria en
+    ordenara por nombre, "Pendiente" (agregado por `datos_base`) quedaria en
     ultima posicion y el test de orden del flujo fallaria. Asi el test distingue
     "ordena por id" de "ordena alfabeticamente" sin depender del azar.
 
@@ -138,7 +138,7 @@ def test_openapi_declara_catalogos_y_conserva_las_tres_rutas(cliente, datos_cata
 
 def test_estados_salen_en_el_orden_del_flujo(cliente, datos_catalogo_ticket):
     """La fixture inserta los estados en orden descendente: ordenarlos por
-    nombre pondria "CERRADO_TEST" primero y "INGRESADO" al final."""
+    nombre pondria "CERRADO_TEST" primero y "Pendiente" al final."""
     respuesta = cliente.get("/api/v1/tickets/catalogos")
 
     ids = [estado["estado_id"] for estado in respuesta.json()["estados"]]
@@ -147,7 +147,7 @@ def test_estados_salen_en_el_orden_del_flujo(cliente, datos_catalogo_ticket):
     assert ids == sorted(ids), "los estados deben salir por estado_id ascendente"
     assert ids == datos_catalogo_ticket["estados_ids"]
     assert nombres == datos_catalogo_ticket["estados_nombres"]
-    assert nombres[0] == "INGRESADO", "el primer estado del catalogo debe ser el de ingreso"
+    assert nombres[0] == "Pendiente", "el primer estado del catalogo debe ser el inicial"
     assert nombres[-1] != "CERRADO_TEST", "un orden alfabetico habria puesto CERRADO primero"
 
 

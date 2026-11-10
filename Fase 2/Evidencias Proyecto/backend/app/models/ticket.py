@@ -166,6 +166,12 @@ class HistorialTransicionTicket(Base):
     #: el rechazo lo exigen no vacio, pero esa validacion es del servicio (T7),
     #: no del esquema.
     motivo: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    #: Feature 021: enlace de auditoria de la recepcion de compras. Se llena
+    #: solo en la fila `EnCurso -> EnCurso` que desbloquea el pedido; el resto
+    #: de las transiciones lo dejan nulo.
+    orden_compra_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("orden_compra.orden_compra_id"), nullable=True
+    )
 
     # Las relaciones se fijan a los ids simples con `primaryjoin` explicito,
     # igual que en `Ticket`/`DetalleTicket` (Feature 008), para no depender del
@@ -194,4 +200,12 @@ class HistorialTransicionTicket(Base):
         "Usuario",
         primaryjoin="HistorialTransicionTicket.usuario_id == Usuario.usuario_id",
         foreign_keys="HistorialTransicionTicket.usuario_id",
+    )
+    #: Feature 021: OC que desbloqueo el pedido en la recepcion (opcional).
+    orden_compra = relationship(
+        "OrdenCompra",
+        primaryjoin=(
+            "HistorialTransicionTicket.orden_compra_id == OrdenCompra.orden_compra_id"
+        ),
+        foreign_keys="HistorialTransicionTicket.orden_compra_id",
     )

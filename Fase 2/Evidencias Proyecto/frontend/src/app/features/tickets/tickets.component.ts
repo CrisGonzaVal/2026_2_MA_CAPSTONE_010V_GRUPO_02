@@ -23,12 +23,16 @@ import {
   Ticket,
   TicketCrear,
 } from '../../shared/interfaces';
+import { etiquetaEstado } from '../../shared/utils/etiqueta-estado';
 import { TicketService } from './services/ticket.service';
 
 /** Encabezado de una columna del tablero, una por estado del catalogo. */
 interface ColumnaKanban {
   estado_id: number;
+  /** Nombre canonico: la logica (roles, estados) nunca lee la etiqueta. */
   estado: string;
+  /** Feature 021 (V-3): rotulo visible, con las palabras separadas. */
+  etiqueta: string;
   tarjetas: TarjetaKanban[];
 }
 
@@ -38,8 +42,8 @@ interface ColumnaKanban {
  * del `computed` de columnas, que es el unico lugar que conoce los catalogos.
  *
  * Es **informativa** (Feature 013, D-14): no resuelve controles de mutacion.
- * La unica accion de la tarjeta, «Gestionar», es un enlace al detalle en el
- * template; el gating por estado y rol vive en esa vista, no aqui.
+ * La tarjeta entera es un enlace al detalle en el template; el gating por
+ * estado y rol vive en esa vista, no aqui.
  */
 interface TarjetaKanban {
   ticket: Ticket;
@@ -75,10 +79,23 @@ const CLASE_PRIORIDAD_NEUTRA = 'text-slate-600 bg-slate-100';
 const NOMBRE_ESTADO_ANULADO = 'anulado';
 
 /**
+ * Nombre canonico del estado inicial del alta (enmienda AC-27): todo ticket
+ * nuevo nace en `Pendiente`, resuelto por nombre normalizado y no por la
+ * primera entrada del catalogo.
+ */
+const NOMBRE_ESTADO_PENDIENTE = 'pendiente';
+
+/**
+ * Nombre canonico de la prioridad predeterminada del alta (enmienda AC-27):
+ * `Media` viene preseleccionada, pero el usuario puede cambiarla.
+ */
+const NOMBRE_PRIORIDAD_MEDIA = 'media';
+
+/**
  * Tablero Kanban de **solo lectura**, mas el modal de alta (Feature 013,
  * D-14/AC-24): los botones avanzar/retroceder de la Feature 004 quedaron
  * derogados en su capa de UI y toda mutacion del ciclo de vida se opera en la
- * vista de detalle. La unica accion por tarjeta es «Gestionar», que navega a
+ * vista de detalle. Cada tarjeta completa es un enlace que navega a
  * `tickets/:ticketId`.
  *
  * **El tablero es real**: se arma con `GET /tickets/catalogos` (estados ya
@@ -149,6 +166,7 @@ export class TicketsComponent {
     return this.estados().map((estado) => ({
       estado_id: estado.estado_id,
       estado: estado.nombre,
+      etiqueta: etiquetaEstado(estado.nombre),
       tarjetas: filtrados
         .filter((ticket) => ticket.estado_id === estado.estado_id)
         .sort(
@@ -344,16 +362,57 @@ export class TicketsComponent {
   );
 
   /**
-   * El estado inicial es **la primera entrada del catálogo elegible**, no una
-   * constante.
-   *
-   * El orden de `estadosAlta` es el del flujo (Pendiente → EnRevision → ...),
-   * asi que el primero es el correcto sin que el componente sepa ningun
-   * nombre. Una constante tipo `'Pendiente'` seria una comparacion de strings
-   * que depende de que el catalogo se llame asi en otra parte.
+   * Estado inicial del alta: `Pendiente` resuelto por **nombre canonico**
+   * (enmienda AC-27), no la primera entrada del catalogo. Un catalogo
+   * degenerado no puede cambiar el estado de nacimiento; sin `Pendiente` el
+   * formulario queda invalido (fail-closed, espejo del 409 del backend).
    */
+  readonly estadoPendiente = computed(
+    () =>
+      this.estadosAlta().find(
+        (estado) => this.normalizar(estado.nombre) === NOMBRE_ESTADO_PENDIENTE
+      ) ?? null
+  );
+
+  /** Nombre visible del estado inicial en el campo fijo del modal (V-3). */
+  readonly nombreEstadoInicial = computed(() =>
+    etiquetaEstado(this.estadoPendiente()?.nombre ?? 'Pendiente')
+  );
+
   estadoInicial(): number | null {
-    return this.estadosAlta()[0]?.estado_id ?? null;
+    return this.estadoPendiente()?.estado_id ?? null;
+  }
+
+  /**
+   * Prioridad predeterminada del alta: `Media` por nombre canonico (enmienda
+   * AC-27). Sigue siendo editable; sin `Media` en el catalogo el desplegable
+   * conserva su marcador y la validacion obliga a elegir.
+   */
+  readonly prioridadMedia = computed(
+    () =>
+      this.prioridades().find(
+        (prioridad) => this.normalizar(prioridad.nombre) === NOMBRE_PRIORIDAD_MEDIA
+      ) ?? null
+  );
+
+  prioridadInicial(): number | null {
+    return this.prioridadMedia()?.prioridad_id ?? null;
+  }
+
+  /**
+   * Fija los valores por defecto del alta (`Pendiente` y `Media`). Se aplica
+   * al cargar los catalogos y despues de cada alta exitosa, para que el
+   * formulario no arrastre el ticket anterior.
+   */
+  private aplicarValoresPorDefecto(): void {
+    const estado = this.estadoInicial();
+    if (estado !== null) {
+      this.formulario.controls.estado_id.setValue(estado);
+    }
+    const prioridad = this.prioridadInicial();
+    if (prioridad !== null) {
+      this.formulario.controls.prioridad_id.setValue(prioridad);
+    }
   }
 
   // --- Carga del tablero ---
@@ -383,10 +442,7 @@ export class TicketsComponent {
         }
         this.catalogos.set(catalogos);
         this.tickets.set(tickets);
-        const inicial = this.estadoInicial();
-        if (inicial !== null) {
-          this.formulario.controls.estado_id.setValue(inicial);
-        }
+        this.aplicarValoresPorDefecto();
         this.cargandoTablero.set(false);
       },
       error: () => {
@@ -424,10 +480,7 @@ export class TicketsComponent {
       next: (catalogos) => {
         this.catalogos.set(catalogos);
         this.cargandoCatalogos.set(false);
-        const inicial = this.estadoInicial();
-        if (inicial !== null) {
-          this.formulario.controls.estado_id.setValue(inicial);
-        }
+        this.aplicarValoresPorDefecto();
       },
       error: () => {
         this.cargandoCatalogos.set(false);
@@ -578,6 +631,7 @@ export class TicketsComponent {
         this.tickets.update((lista) => [ticket, ...lista]);
         this.cerrarModal();
         this.formulario.reset({ asunto: '', descripcion: '' });
+        this.aplicarValoresPorDefecto();
         this.detalles.clear();
         this.detalles.push(this.crearFilaDetalle());
       },
@@ -594,7 +648,7 @@ export class TicketsComponent {
           // adivinar seria peor que mostrar el mensaje del backend.
           this.errorGuardado.set(detalle);
         } else {
-          this.errorGuardado.set('No se pudo crear el ticket. Inténtalo de nuevo.');
+          this.errorGuardado.set('No se pudo crear el pedido. Inténtalo de nuevo.');
         }
       },
     });

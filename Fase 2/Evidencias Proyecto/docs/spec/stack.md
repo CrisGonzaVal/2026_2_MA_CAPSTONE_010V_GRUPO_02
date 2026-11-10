@@ -21,17 +21,17 @@ Todo lo que sigue es norma. Si el código actual no la cumple, la norma gana: se
 
 > **Nota de migración**: el código actual está en fase de migración a esta estructura, que es la normativa desde hoy (AGENTS.md describe la nueva estructura).
 
-> **Nota de vigencia — base consolidada (03/Nov/2026):** `database/` se mantiene en
-> dos scripts puros. `01_esquema.sql` crea `control` (26 tablas) y un esquema
-> `tenant_<slug>_<hash>` por institución (23 tablas de negocio) y siembra la
+> **Nota de vigencia — base consolidada (07/Nov/2026):** `database/` se mantiene en
+> dos scripts puros. `01_esquema.sql` crea `control` (27 tablas) y un esquema
+> `tenant_<slug>_<hash>` por institución (24 tablas de negocio) y siembra la
 > topología; `02_datos_semilla.sql` llena la semilla QA, la reparte a los tenants,
-> puebla `control.mapa_usuario_esquema` y fija la versión `020.1` con guardia
+> puebla `control.mapa_usuario_esquema` y fija la versión `021.1` con guardia
 > fail-closed. **No hay migraciones**: los cambios de esquema se resuelven
 > recreando el volumen (`docker compose down -v` + `up -d`), nunca actualizando in
 > situ. Las menciones a migraciones, constructores de tenants, a los conteos
 > anteriores (22/19 tablas) y al «modelo de 12 entidades» que aparecen más abajo son
-> **históricas** de las features 008–019 y quedan superadas por esta nota y por la
-> sección de la Feature 020.
+> **históricas** de las features 008–019 y quedan superadas por esta nota y por las
+> secciones de las Features 020 y 021.
 
 Para lograr un proyecto verdaderamente modular, escalable y mantenible, la estructura de carpetas debe seguir principios de arquitectura limpia (Clean Architecture) en el backend y diseño guiado por el dominio (Domain-Driven Design - DDD) en el frontend.
 
@@ -175,8 +175,12 @@ el patrón anterior se abre en dos:
 - **`outerjoin` + `func.coalesce(func.sum(...), 0)`** cuando el DTO declara `NOT NULL` y la
   fila puede no existir: un producto sin filas en `inventario` sale en `0`, no en `None`.
 - **El orden de las listas es parte del contrato**, no un detalle: los desplegables del
-  frontend toman `estados[0]` como estado inicial (D-4 de la 003). Ordenar por
+  frontend muestran los estados en el orden del flujo (D-4 de la 003). Ordenar por
   `estado_id` da el primero del flujo; ordenar por nombre daría otro.
+  *Enmienda 05/Nov/2026 (013, AC-27):* el **estado inicial del alta ya no se deriva de
+  `estados[0]`**. Backend y frontend lo resuelven por **nombre canónico** (`Pendiente`) y el
+  backend responde **409** si el `estado_id` recibido no es ese; el orden del catálogo
+  conserva su papel de presentación, no de regla.
 
 #### Variante: dashboard consolidado con secciones por rol (Feature 009)
 
@@ -535,6 +539,8 @@ La Feature 012 agrega además un estado lógico `activo` a las tablas tenant `se
 
 La Feature 013 añade a cada catálogo `estado_ticket` replicado por tenant (sección «Multi-tenant por esquemas PostgreSQL: control y tenants (Feature 010)», punto 3 de este §2) una quinta fila canónica, `Anulado`, alcanzable **solo** por anulación (dueño Solicitante o Administrador de la institución) o rechazo (Bodeguero o Administrador), ambos con motivo obligatorio. `Cerrado` y `Anulado` pasan a ser los dos estados terminales, reconocidos por su **nombre canónico** y no por su posición ordinal: el cambio de estado del flujo lineal no puede llevar **a** `Anulado` ni salir **de** él; `Anulado` queda fuera de la secuencia lineal de la Feature 004 y un ticket nacido en ese estado se rechaza en el alta. El estado es de **presencia obligatoria en toda instalación**: la semilla de instalación nueva lo siembra, el constructor de tenants lo replica en cada esquema y una migración operacional idempotente bajo `database/migraciones/` lo añade a las bases existentes junto con el resto de cambios de esta sección, elevando el token de versión de control y de cada tenant a `013.1` (mismo procedimiento de las 011/012). El catálogo permanece sin CRUD, como el resto de estados.
 
+**Enmienda 05/Nov/2026 (AC-27 de la 013): el alta nace siempre en `Pendiente`.** El estado inicial ya no lo elige el cliente: `POST /tickets/` conserva `estado_id` obligatorio y debe transportar el id del estado `Pendiente` —resuelto por **nombre canónico**, nunca por posición del catálogo—, y cualquier otro estado (o un catálogo sin `Pendiente`) responde **409** antes de escribir. Queda derogada la admisión de `Cerrado` en el alta y su sellado de `fecha_cierre` (004 AC-17): `Cerrado` solo se alcanza por el despacho transaccional de la 005, de modo que `fecha_cierre` conserva un único significado. En la interfaz el estado se muestra como dato fijo y la prioridad arranca en `Media` por nombre canónico, editable. La regla no añade DDL, semilla, migración ni operaciones a la matriz.
+
 La Feature 013 crea además `historial_transicion_ticket`, una tabla de historial **por esquema tenant** (y, por paridad estructural del DDL canónico, también en el esquema de control, que conserva sus tablas de ticket vacías como el resto del modelo 3NF): una fila por transición del ciclo de vida, con `historial_transicion_id` (PK), `ticket_id` (FK local a `ticket`), `estado_origen_id` (FK a `estado_ticket`, **nulo solo en la fila de creación**), `estado_destino_id` (FK a `estado_ticket`), `usuario_id` (FK a `usuario`, el actor), `fecha_transicion` (marca de tiempo) y `motivo` (`VARCHAR(500)` nullable — la escala de la descripción del ticket; la anulación y el rechazo lo exigen no vacío). Es **inmutable y de solo lectura por API**: no existe operación pública de creación, edición ni borrado fuera de las transiciones mismas, y cada fila se escribe en **la misma transacción** que el cambio de estado que representa (`constitucion.md` §3). No lleva columna `institucion_id`: su aislamiento es el de su esquema tenant, con la misma defensa que `movimiento_inventario` (anclado por su ticket, que ya porta la institución), sin duplicar un ancla que la composición local ya garantiza.
 
 **El historial es la 15.ª entidad de dominio, no una estructura auxiliar.** El modelo pasa de **14 a 15 entidades de dominio** (más `departamento_encargado`, que sigue siendo el único puente auxiliar). El criterio que lo separa de las auxiliares es el mismo con que la 011 contó `movimiento_inventario` como entidad: el historial **es un hecho de negocio** (quién movió un ticket, cuándo, de qué estado a qué estado y por qué), sostiene la Trazabilidad Absoluta del `constitucion.md` §2 sobre el ciclo de vida del ticket, participa en relaciones reales (FK a `ticket`, `usuario` y `estado_ticket`) y es **visible para el usuario** a través de una operación pública de la API. Las auxiliares existentes no cumplen ninguno de esos rasgos: `departamento_encargado` es un puente de asociación sin atributos propios, `mapa_usuario_esquema` y `version_esquema` son infraestructura de enrutamiento y control de versión invisibles al negocio, y `funcion_institucion` es una bandera de disponibilidad. Clasificarla como auxiliar obligaría a justificar por qué una tabla de negocio consultable por API queda fuera del modelo de dominio, y a explicar el doble rasero con `movimiento_inventario`.
@@ -623,6 +629,39 @@ El DDL pasa de **22 a 26 tablas en `control`** y de **19 a 23 tablas por tenant*
 La versión objetivo sube de `014.1` a **`020.1`** porque el DDL cambia de forma observable en `control` y en cada tenant (cuatro tablas nuevas y una séptima fila de capacidad). La comparación de enrutamiento sigue siendo de igualdad exacta y deniega cerrado ante versión ausente, distinta, duplicada o ilegible. La instalación limpia materializa todo en `database/01_esquema.sql` y `database/02_datos_semilla.sql`; conforme a AGENTS.md §8.8 la base se reconstruye recreando el volumen y no se crean migraciones. Las pruebas gated de PostgreSQL 16 verifican los conteos 26/23, las 28 filas de capacidad, los tres proveedores por esquema, la versión `020.1`, las FK compuestas y la concurrencia de la recepción; la suite SQLite no acredita esquemas ni concurrencia.
 
 **Por qué:** el flujo de compras cierra el ciclo que hoy termina en el despacho y que no tenía forma de reponer stock, y lo hace sin romper el aislamiento multi-tenant ni el modelo canónico. El proveedor es un catálogo realmente global —una institución no debe duplicar RUT ni datos de contacto— y la réplica con el mismo ID evita una FK cross-schema prohibida sin inventar una segunda identidad. `stock_disponible` como propiedad calculada evita una columna derivada que se desincronice y un estado nuevo que rompa el tablero Kanban de la 004/005; la fila de historial con el mismo estado origen y destino es el único registro posible del desbloqueo sin deformar el ciclo de vida. La excepción de producto inactivo es deliberadamente estrecha: la mercadería ya recibida no puede desaparecer de la auditoría, pero el endpoint genérico conserva la regla de la 014. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y la aprobación de este apartado es el prerrequisito de implementación de la Feature 020. La aprobación eleva el conteo de `AGENTS.md` §7 a **21 entidades de dominio**, el DDL a **26/23 tablas** y el token a **`020.1`**; sincronizar esas cifras en `AGENTS.md` y `MEMORY.md` corresponde al cierre de la feature (AGENTS.md §8.7).
+
+#### Cobertura automática de pedidos por órdenes de compra (Feature 021)
+
+La Feature 021 cierra el eslabón que la 020 dejaba implícito: una necesidad agregada por `(sede, producto)` no decía **qué pedidos** la componían ni qué pedido quedaba cubierto por cada orden de compra. Añade **una entidad de dominio** y el modelo canónico pasa de **21 a 22 entidades de dominio** (más `departamento_encargado`, que sigue siendo el único puente auxiliar):
+
+- **`orden_compra_ticket`** — plan congelado de cobertura. `orden_compra_ticket_id` identity, `institucion_id`, `orden_compra_id`, `ticket_id`, `producto_id`, `cantidad_asignada > 0`, `cantidad_faltante >= 0` y `fecha_asignacion`. Declara `UNIQUE (orden_compra_id, ticket_id, producto_id)`, FK compuesta `(institucion_id, orden_compra_id) → orden_compra`, FK compuesta `(orden_compra_id, producto_id) → detalle_orden_compra`, FK compuesta `(institucion_id, ticket_id) → ticket` y FK compuesta `(institucion_id, producto_id) → producto`. Una fila por `(OC, pedido, producto)` con unidades asignadas; varias OC pueden cubrir el mismo pedido/producto y un pedido puede quedar cubierto solo parcialmente.
+
+El DDL pasa de **26 a 27 tablas en `control`** y de **23 a 24 tablas por tenant**. La tabla existe en `control` por paridad estructural y permanece vacía; la Fase 3 de la semilla la vacía antes de `detalle_orden_compra`, `ticket` y `producto`. `historial_transicion_ticket` gana la columna nullable `orden_compra_id INTEGER` con FK a `orden_compra`, agregada por `ALTER TABLE` después de crear la OC porque el historial se crea antes en el DDL. La versión objetivo sube de `020.1` a **`021.1`**.
+
+**Necesidad neta parcial, sin reserva de stock.** Para cada `(sede, producto)` y cada pedido `EnCurso`, ordenados por `prioridad_id ASC`, `fecha_creacion ASC` y `ticket_id ASC`, el cálculo es:
+
+```
+plan_previo      = Σ cantidad_asignada de OC Emitida + Facturada
+base             = max(0, solicitado - plan_previo - entregado)
+stock_cubierto   = min(base, stock_restante)
+necesidad_neta   = base - stock_cubierto
+asignada         = min(necesidad_neta, cantidad_oc_restante)
+faltante         = necesidad_neta - asignada
+```
+
+El stock físico se reparte **parcialmente** entre pedidos, a diferencia de la simulación todo-o-nada de `stock_disponible` de la 020, que no se modifica. Las OC `Recibida` **no** se restan como `plan_previo` porque su cantidad ya está en `stock_actual`; las `Cancelada` se excluyen de la cobertura activa y el pedido vuelve a ser asignable. La compra que excede la necesidad neta es reposición de stock mínimo y no genera fila. La simulación no reserva stock y es idempotente.
+
+**Plan congelado al emitir.** Al emitir una OC, el servicio bloquea los pedidos `EnCurso` de la sede que demandan los productos de la OC (`SELECT ... FOR UPDATE`, solo PostgreSQL), ejecuta la simulación y persiste una fila por pedido con `cantidad_asignada > 0` en la misma transacción que asigna `numero_oc`, `fecha_emision` y el estado `Emitida`. El plan **no se recalcula** al facturar, recepcionar, cerrar o cancelar: es una foto de la intención al emitir, y la lectura viva de la cadena del pedido usa las asignaciones activas. `GET /compras/ordenes` expone el plan; `GET /compras/necesidades` anida los pedidos de cada necesidad y agrega `stock_comprometido` (OC `Emitida` + `Facturada`) y `stock_borrador` (OC `Borrador`, que no descuenta), con `sugerido = max(0, stock_minimo + demanda_tickets - stock_actual - stock_comprometido)`.
+
+**Matriz 72 → 73, sin capacidad nueva.** Se añade una sola operación, `POST /api/v1/compras/cobertura/preview`, autorizada solo al Administrador Institucional y gateada por la capacidad `compras` ya existente; el conjunto cerrado de siete capacidades de la 012/020 no cambia. El preview simula la asignación sin persistir ni reservar, responde 404 para sede o producto ajeno, 409 para producto inactivo o repetido y 422 para cuerpo inválido, y con el mismo estado devuelve exactamente las cantidades que persistiría la emisión. La matriz central (`backend/app/core/permisos.py`) pasa de **72 a 73**; las 72 previas conservan sus roles.
+
+**Auditoría de la recepción sin estado nuevo.** La recepción de la 020 conserva su lógica ACID: incrementa `stock_sede`, escribe movimientos `ENTRADA` y, por cada pedido que pasa a cubierto, inserta una fila `EnCurso → EnCurso`. La Feature 021 llena `orden_compra_id` **solo** en esas filas de desbloqueo y lo expone junto con `numero_oc` en el historial. El pedido sigue en `EnCurso` con su badge de stock; `Cerrado` sigue siendo el estado del despacho y no se agrega un estado de «recibido». La cadena por producto del detalle (`Solicitado → Comprado → Recibido → Entregado → Faltante`) es una lectura derivada, no una tabla nueva.
+
+**Una sede por OC.** Cada orden de compra pertenece a una sola sede y solo cubre pedidos `EnCurso` de esa sede; los traspasos entre sedes quedan fuera de alcance. Un pedido sin sede o de otra sede no participa en la simulación y no recibe filas de plan.
+
+**Renombrado de copia visible (V-1…V-4).** La SPA deja de mostrar «ticket» en su copia visible: el menú `Tickets` pasa a **Pedidos**, el título «Sistema de Tickets» a **Estados de pedidos**, la opción «Necesidades» a **Compras** y la capacidad `Tickets` de Control a **Pedidos**. Los estados se presentan con palabras separadas (`EnCurso → En Curso`, `EnRevision → En Revisión`) mediante el helper `frontend/src/app/shared/utils/etiqueta-estado.ts`. Es un cambio **solo de presentación**: no toca rutas (`/tickets`), API, tablas, columnas, permisos, capacidades ni el valor persistido `tickets`; los mensajes canónicos del backend se conservan como contrato.
+
+**Por qué:** el Administrador no puede decidir una compra mirando solo la demanda agregada; necesita saber qué pedidos la componen, asignarlos al emitir y seguir el avance por producto sin inventar un estado nuevo que rompa el Kanban. Una sola tabla puente con la cantidad asignada y el faltante congela la intención para auditar «planificado vs real», permite cobertura parcial y conserva la cancelación como historia sin replanificar en silencio. Reutilizar la capacidad `compras` y una única operación de lectura mantiene el contrato acotado, y el renombrado visible alinea el lenguaje del negocio con «pedido» sin romper ninguna ruta ni identificador. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y su aprobación eleva el conteo de `AGENTS.md` §7 a **22 entidades de dominio**, el DDL a **27/24 tablas** y el token a **`021.1`**; sincronizar esas cifras en `AGENTS.md` y `MEMORY.md` corresponde al cierre de la feature (AGENTS.md §8.7).
 
 ### 3. Estructura del Frontend (Angular 18 Standalone)
 En Angular moderno (sin NgModules), la clave es el agrupamiento por Características (Features). Esto facilita el Lazy Loading (carga perezosa) y hace que la aplicación escale sin que el código se enrede.

@@ -1,10 +1,12 @@
-"""Modelos del reabastecimiento externo y compras (Feature 020).
+"""Modelos del reabastecimiento externo y compras (Features 020 y 021).
 
-Cuatro entidades de dominio nuevas: `Proveedor`, `OrdenCompra`,
-`DetalleOrdenCompra` y `FacturaCompra`. La justificacion aprobada vive en
-`docs/spec/stack.md`, seccion "Reabastecimiento externo y compras (Feature 020)",
-y el diseno en `docs/spec/features/020-reabastecimiento-compras/plan.md`
-(DT-1, DT-3, DT-10 y DT-12).
+La Feature 020 agrega cuatro entidades de dominio: `Proveedor`, `OrdenCompra`,
+`DetalleOrdenCompra` y `FacturaCompra`. La Feature 021 agrega una quinta,
+`OrdenCompraTicket`, que congela que pedidos cubre cada OC al emitir. La
+justificacion aprobada vive en `docs/spec/stack.md`, secciones
+"Reabastecimiento externo y compras (Feature 020)" y "Cobertura automatica de
+pedidos por ordenes de compra (Feature 021)", y el diseno en los `plan.md`
+respectivos (020: DT-1, DT-3, DT-10 y DT-12; 021: DT-1, DT-2 y DT-5).
 
 `Proveedor` es un caso especial: el catalogo **global** vive en
 `control.proveedor` y lo mapea `ProveedorControl` (`app/models/control_canonico.py`).
@@ -31,6 +33,7 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     String,
@@ -195,6 +198,18 @@ class OrdenCompra(Base):
         primaryjoin="OrdenCompra.orden_compra_id == FacturaCompra.orden_compra_id",
         foreign_keys="FacturaCompra.orden_compra_id",
     )
+    #: Feature 021: plan congelado de cobertura. Se escribe solo al emitir y no
+    #: se recalcula despues; el pedido no se borra en cascada.
+    plan = relationship(
+        "OrdenCompraTicket",
+        back_populates="orden",
+        cascade="all, delete-orphan",
+        order_by="OrdenCompraTicket.orden_compra_ticket_id",
+        primaryjoin=(
+            "OrdenCompra.orden_compra_id == OrdenCompraTicket.orden_compra_id"
+        ),
+        foreign_keys="OrdenCompraTicket.orden_compra_id",
+    )
 
 
 class DetalleOrdenCompra(Base):
@@ -309,4 +324,101 @@ class FacturaCompra(Base):
         back_populates="facturas",
         primaryjoin="FacturaCompra.proveedor_id == Proveedor.proveedor_id",
         foreign_keys="FacturaCompra.proveedor_id",
+    )
+
+
+class OrdenCompraTicket(Base):
+    """Plan congelado de cobertura de una OC sobre un pedido (Feature 021).
+
+    Una fila por `(OC, pedido, producto)` con las unidades que la OC asigna a ese
+    pedido al emitir y el faltante que deja. La clave unica impide duplicar el
+    tramo; la FK a `detalle_orden_compra` impide asignar un producto que no esta
+    en la OC y las FK compuestas con `institucion_id` impiden cruzar pedidos o
+    productos de otra institucion. Varias OC pueden cubrir el mismo
+    pedido/producto: el saldo vivo se calcula sumando las asignaciones activas.
+
+    Es una tabla de negocio por esquema tenant; `control` la crea por paridad
+    estructural y permanece vacia. No se recalcula al facturar, recepcionar o
+    cancelar: es una foto del instante de la emision.
+    """
+
+    __tablename__ = "orden_compra_ticket"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["institucion_id", "orden_compra_id"],
+            ["orden_compra.institucion_id", "orden_compra.orden_compra_id"],
+            name="orden_compra_ticket_orden_institucion_fk",
+        ),
+        ForeignKeyConstraint(
+            ["orden_compra_id", "producto_id"],
+            [
+                "detalle_orden_compra.orden_compra_id",
+                "detalle_orden_compra.producto_id",
+            ],
+            name="orden_compra_ticket_orden_producto_fk",
+        ),
+        ForeignKeyConstraint(
+            ["institucion_id", "ticket_id"],
+            ["ticket.institucion_id", "ticket.ticket_id"],
+            name="orden_compra_ticket_ticket_institucion_fk",
+        ),
+        ForeignKeyConstraint(
+            ["institucion_id", "producto_id"],
+            ["producto.institucion_id", "producto.producto_id"],
+            name="orden_compra_ticket_producto_institucion_fk",
+        ),
+        UniqueConstraint(
+            "orden_compra_id",
+            "ticket_id",
+            "producto_id",
+            name="orden_compra_ticket_clave_uk",
+        ),
+        CheckConstraint(
+            "cantidad_asignada > 0", name="orden_compra_ticket_asignada_ck"
+        ),
+        CheckConstraint(
+            "cantidad_faltante >= 0", name="orden_compra_ticket_faltante_ck"
+        ),
+        Index(
+            "orden_compra_ticket_ticket_idx", "institucion_id", "ticket_id"
+        ),
+        Index(
+            "orden_compra_ticket_producto_idx", "institucion_id", "producto_id"
+        ),
+    )
+
+    orden_compra_ticket_id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, index=True, autoincrement=True
+    )
+    institucion_id: Mapped[str] = mapped_column(
+        String(20), ForeignKey("institucion.institucion_id"), nullable=False
+    )
+    orden_compra_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ticket_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    producto_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Unidades de la OC asignadas a este pedido; siempre > 0.
+    cantidad_asignada: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Foto del hueco que dejo esta OC, no un saldo vivo; siempre >= 0.
+    cantidad_faltante: Mapped[int] = mapped_column(Integer, nullable=False)
+    fecha_asignacion: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.current_timestamp()
+    )
+
+    orden = relationship(
+        "OrdenCompra",
+        back_populates="plan",
+        primaryjoin=(
+            "OrdenCompraTicket.orden_compra_id == OrdenCompra.orden_compra_id"
+        ),
+        foreign_keys="OrdenCompraTicket.orden_compra_id",
+    )
+    ticket = relationship(
+        "Ticket",
+        primaryjoin="OrdenCompraTicket.ticket_id == Ticket.ticket_id",
+        foreign_keys="OrdenCompraTicket.ticket_id",
+    )
+    producto = relationship(
+        "Producto",
+        primaryjoin="OrdenCompraTicket.producto_id == Producto.producto_id",
+        foreign_keys="OrdenCompraTicket.producto_id",
     )

@@ -70,4 +70,4 @@ Resultado esperado: 12/12 sin fallos. Los PNG se verificaron a 2400 × 1120 px.
 
 - El despacho de pedidos (`POST /api/v1/tickets/{id}/despacho`), el registro de movimientos (`POST /api/v1/inventario/movimientos`) y el catálogo global de proveedores del Superadmin existen en la API, pero no tienen una pantalla dedicada en el frontend.
 - El informe los marca como `API` para no prometer una interfaz que no existe.
-- Los diagramas reflejan el estado del código en la rama local `ricardo`; no se generaron capturas nuevas ni se modificó el producto.
+- Los diagramas reflejan el estado del código en la rama `ricardo`, publicada en GitHub; no se generaron capturas nuevas ni se modificó el producto.

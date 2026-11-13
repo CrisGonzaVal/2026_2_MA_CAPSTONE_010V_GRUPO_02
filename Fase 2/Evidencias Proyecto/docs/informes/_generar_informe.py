@@ -715,7 +715,7 @@ def add_cover(doc: Document):
     rows = [
         ("Versión", "1.0"),
         ("Fecha", "11 de noviembre de 2026"),
-        ("Rama", "`ricardo` (trabajo local; sin publicación)"),
+        ("Rama", "`ricardo` (publicada en GitHub)"),
         ("Entorno", "http://localhost:4200 (dev server con el código actual)"),
         ("Alcance", "Funciones principales de Superadmin, Administrador, Bodeguero y Solicitante"),
         ("Fuente", "Rutas, roles, componentes y evidencias del repositorio"),
@@ -749,7 +749,7 @@ def add_document_map(doc: Document):
         ("Título", "CompuStock ERP — Flujos de uso por actor"),
         ("Versión", "1.0"),
         ("Fecha", "11/11/2026"),
-        ("Rama", "`ricardo` (local)"),
+        ("Rama", "`ricardo` (GitHub)"),
         ("Base de código", "Rutas, roles y componentes del frontend; matriz de permisos del backend."),
         ("Cobertura", "12 flujos: 1 transversal, 2 de Superadmin, 4 de Administrador, 3 de Bodeguero y 2 de Solicitante."),
         ("Formato", "A4 horizontal, con diagramas a ancho completo y tablas de pasos."),
@@ -1148,7 +1148,7 @@ def add_cierre(doc: Document):
     add_h3(doc, "Observaciones")
     para(doc, "El sistema cubre el ciclo completo de abastecimiento: el Solicitante pide, el Administrador decide y compra, el Bodeguero recibe y despacha, y el Superadmin gobierna el SaaS. La documentación separa lo que ya tiene interfaz de lo que hoy solo existe en la API, para que la revisión funcional sea honesta y accionable.", 10, False, False, MUTED, space_after=4)
 
-    add_note(doc, "Trabajo realizado en la rama local `ricardo`. No se publicó en GitHub ni se modificó el código de producto; el cambio se limita a documentación y diagramas.")
+    add_note(doc, "Trabajo realizado en la rama `ricardo` y publicado en `origin/main` y `origin/ricardo`. No se modificó el código de producto; el cambio se limita a documentación y diagramas.")
 
 
 def main():

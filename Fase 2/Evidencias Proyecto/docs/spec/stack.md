@@ -105,6 +105,39 @@ backend/
 
 **Regla de oro del Backend**: El router en `api/v1/endpoints/tickets.py` solo recibe la petición HTTP, valida con schemas y llama a `services/ticket_service.py`. Todo el procesamiento complejo y las consultas a la base de datos se hacen en el servicio.
 
+#### Servicios grandes: paquete con fachada (Feature 023)
+
+Un servicio de `backend/app/services/` se convierte en **paquete con fachada** solo cuando su tamaño
+deja de ser mantenible en un archivo y sus casos de uso ya están separados con claridad. El patrón
+se estrenó con `compra_service` y no autoriza a partir servicios pequeños ni a introducir capas
+nuevas:
+
+```text
+backend/app/services/compra_service/
+├── __init__.py      # fachada: reexporta la API y declara __all__
+├── _comun.py        # constantes, DTO, helpers, carga y proyección de OC
+├── necesidades.py   # simulación y consolidado de necesidades
+├── cobertura.py     # preview y cobertura greedy de pedidos
+├── proveedores.py   # catálogo global y réplica tenant
+├── ordenes.py       # ciclo de la OC
+└── recepcion.py     # recepción ACID y desbloqueo
+```
+
+- **La ruta de import no cambia.** Los consumidores siguen usando
+  `from app.services import compra_service`; `__init__.py` reexporta los 14 símbolos públicos,
+  `SimulacionTicketProducto` y `_simular_claves`, y `__all__` los enumera.
+- **El grafo interno es acíclico y la fachada es la única raíz.** `_comun` no importa módulos de
+  flujo; `proveedores` y `necesidades` dependen de `_comun`; `cobertura` de `necesidades`;
+  `ordenes` de `_comun`, `necesidades` y `proveedores`; `recepcion` de `_comun` y `cobertura`.
+  Ningún módulo importa la fachada.
+- **Sin cambio de comportamiento.** Los cuerpos se mueven verbatim y la deduplicación posterior
+  se limita a helpers internos (`_opciones_orden`, `_validar_entrada_orden`). La suite de
+  caracterización y el contrato HTTP son la garantía.
+- **Costura privada excepcional.** `_simular_claves` se conserva en
+  `necesidades.py` y se reexporta porque `ticket_service` y
+  `tests/api/test_cobertura_021.py` lo consumen como `compra_service._simular_claves`; es una
+  excepción documentada, no una invitación a exportar privados nuevos.
+
 #### Autorización por rol (Feature 007)
 
 La autorización por rol es **norma** desde la Feature 007 y separa la frontera de seguridad

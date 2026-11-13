@@ -17,6 +17,10 @@ import {
   ProductoExistencia,
   SedeFiltro,
 } from '../../shared/interfaces';
+import {
+  MensajesDeErrorHttp,
+  mensajeDeErrorHttp,
+} from '../../shared/utils/errores-http';
 import { InventarioService } from './services/inventario.service';
 
 /**
@@ -67,34 +71,23 @@ interface FilaHistorial {
   motivo: string;
 }
 
+const MENSAJES_CATALOGO: MensajesDeErrorHttp = {
+  401: 'Tu sesión no es válida. Vuelve a iniciar sesión.',
+  403: 'Tu rol no tiene permiso para gestionar el catálogo.',
+  404: 'El recurso indicado no existe o no está en tu alcance.',
+  409: 'La operación entra en conflicto con el estado actual del catálogo.',
+  422: 'Los datos enviados no son válidos: revisa el motivo.',
+  predeterminado: (estado) => `No se pudo completar la operación (HTTP ${estado}).`,
+};
+
 /**
  * Mensaje legible de un fallo del ciclo de vida del catálogo (Feature 014).
  *
- * Prefiere el `detail` textual del backend —404 oculto, 409 de precondición y
- * 422 de motivo— y, si no hay texto, recurre al código de estado. Es el mismo
- * patrón que usa el detalle de ticket de la 013.
+ * Delega la estructura común —`detail` textual, status 0 y fallback— en
+ * `mensajeDeErrorHttp`; aquí solo viven los textos de este dominio.
  */
 export function mensajeDeErrorCatalogo(error: HttpErrorResponse): string {
-  const detalle = (error.error as { detail?: unknown } | null)?.detail;
-  if (typeof detalle === 'string' && detalle.trim() !== '') {
-    return detalle;
-  }
-  switch (error.status) {
-    case 401:
-      return 'Tu sesión no es válida. Vuelve a iniciar sesión.';
-    case 403:
-      return 'Tu rol no tiene permiso para gestionar el catálogo.';
-    case 404:
-      return 'El recurso indicado no existe o no está en tu alcance.';
-    case 409:
-      return 'La operación entra en conflicto con el estado actual del catálogo.';
-    case 422:
-      return 'Los datos enviados no son válidos: revisa el motivo.';
-    case 0:
-      return 'No se pudo contactar al servidor. Verifica la conexión e inténtalo de nuevo.';
-    default:
-      return `No se pudo completar la operación (HTTP ${error.status}).`;
-  }
+  return mensajeDeErrorHttp(error, MENSAJES_CATALOGO);
 }
 
 /**

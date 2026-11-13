@@ -33,6 +33,10 @@ import {
 } from '../../shared/interfaces';
 // Feature 021 (V-3): presentacion de estados, con las palabras separadas.
 import { etiquetaEstado as etiquetaVisible } from '../../shared/utils/etiqueta-estado';
+import {
+  MensajesDeErrorHttp,
+  mensajeDeErrorHttp,
+} from '../../shared/utils/errores-http';
 import { TicketService } from './services/ticket.service';
 
 /** Fila resuelta del historial para el template (sin ids que el template no conozca). */
@@ -76,34 +80,23 @@ const CLASES_PRIORIDAD: Record<string, string> = {
   BAJA: 'text-amber-600 bg-amber-50',
 };
 
+const MENSAJES_TICKETS: MensajesDeErrorHttp = {
+  401: 'Tu sesión no es válida. Vuelve a iniciar sesión.',
+  403: 'Tu rol no tiene permiso para esta operación sobre el pedido.',
+  404: 'El pedido indicado no existe o no está en tu alcance.',
+  409: 'La operación entra en conflicto con el estado actual del pedido.',
+  422: 'Los datos enviados no son válidos: revisa el motivo y los campos del pedido.',
+  predeterminado: (estado) => `No se pudo completar la operación (HTTP ${estado}).`,
+};
+
 /**
  * Mensaje legible de un fallo del ciclo de vida (Feature 013).
  *
- * Prefiere el `detail` textual del backend —404 oculto, 409 de flujo y 422 de
- * motivo/edición del contrato §6— y, si no hay texto (500 sin cuerpo, red
- * caída, lista de validación de Pydantic), recurre al código de estado.
+ * Delega la estructura común —`detail` textual, status 0 y fallback— en
+ * `mensajeDeErrorHttp`; aquí solo viven los textos de este dominio.
  */
 export function mensajeDeErrorTickets(error: HttpErrorResponse): string {
-  const detalle = (error.error as { detail?: unknown } | null)?.detail;
-  if (typeof detalle === 'string' && detalle.trim() !== '') {
-    return detalle;
-  }
-  switch (error.status) {
-    case 401:
-      return 'Tu sesión no es válida. Vuelve a iniciar sesión.';
-    case 403:
-      return 'Tu rol no tiene permiso para esta operación sobre el pedido.';
-    case 404:
-      return 'El pedido indicado no existe o no está en tu alcance.';
-    case 409:
-      return 'La operación entra en conflicto con el estado actual del pedido.';
-    case 422:
-      return 'Los datos enviados no son válidos: revisa el motivo y los campos del pedido.';
-    case 0:
-      return 'No se pudo contactar al servidor. Verifica la conexión e inténtalo de nuevo.';
-    default:
-      return `No se pudo completar la operación (HTTP ${error.status}).`;
-  }
+  return mensajeDeErrorHttp(error, MENSAJES_TICKETS);
 }
 
 /**

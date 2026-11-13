@@ -1,27 +1,58 @@
-# FrontendApp
+# CompuStock ERP — Frontend
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 18.2.12.
+Aplicación Angular 18 standalone del proyecto CompuStock ERP. Consume la API
+FastAPI en `/api/v1` y usa Clerk para la sesión.
 
-## Development server
+## Requisitos
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+- Node.js 20+ y npm.
+- Backend levantado en `http://localhost:8000`.
+- Variables de Clerk configuradas en el `.env` de la raíz (no se versionan).
 
-## Code scaffolding
+## Arranque
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+```bash
+npm install
+npm start
+```
+
+Dev server: <http://localhost:4200>. Se recarga al cambiar el código.
 
 ## Build
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+```bash
+npm run build
+```
 
-## Running unit tests
+El resultado queda en `dist/frontend-app/`. La imagen de producción lo sirve con
+nginx en <http://localhost:8080>. **No hay volumen montado**: para que 8080
+refleje un cambio hay que reconstruir la imagen:
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+```bash
+docker compose -f docker-compose.yml build frontend
+docker compose -f docker-compose.yml up -d frontend
+```
 
-## Running end-to-end tests
+## Tests
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+```powershell
+$env:CHROME_BIN = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+npx ng test --watch=false --browsers=ChromeHeadless
+```
 
-## Further help
+No usar `npm test` a secas: arranca Karma en modo watch y el comando no termina.
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+## Estructura
+
+```text
+public/                  # Assets estáticos (favicon, imágenes, íconos)
+src/app/core/            # Guards, interceptors y servicios singleton
+src/app/shared/          # Componentes, config, interfaces y utils reutilizables
+src/app/features/        # dashboard, inventario, tickets, administracion,
+                         # compras, control, auth y acceso-denegado
+src/styles.scss          # Tailwind CSS global
+```
+
+Cada feature de negocio se carga con `loadChildren` desde `app.routes.ts` y
+expone su `<feature>.routes.ts`. Los componentes usan `inject()`, `signal()` y
+`computed()`; no hay `NgModule` ni CSS quemado fuera de Tailwind.

@@ -43,6 +43,18 @@ class IdentidadAutenticada:
     sub: str
 
 
+def correo_del_actor(identidad: IdentidadAutenticada | None) -> str:
+    """Correo normalizado del actor; ``sistema`` si no hay identidad.
+
+    Regla unica de auditoria compartida por los servicios que registran
+    `actor_correo`: la ausencia de identidad o de usuario se representa como
+    ``sistema`` y el correo presente pasa por `security.normalizar_correo`.
+    """
+    if identidad is None or identidad.usuario is None:
+        return "sistema"
+    return security.normalizar_correo(str(identidad.usuario.correo))
+
+
 def aceptar_invitacion_en_primer_login(db: Session, correo: str) -> bool:
     """Escritura **condicional** `pendiente -> aceptada` del mapa de control (D-3).
 

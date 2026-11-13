@@ -32,7 +32,7 @@ from app.models import (
 )
 from app.schemas.usuario_schema import UsuarioCrear, proyectar_estado_invitacion
 from app.services import ambito_service, motivo_service
-from app.services.auth_service import IdentidadAutenticada
+from app.services.auth_service import IdentidadAutenticada, correo_del_actor
 
 #: Costuras inyectables de la frontera Clerk de invitaciones (Feature 017).
 ConsultorIdentidad = Callable[[str], security.EstadoIdentidadClerk]
@@ -309,7 +309,7 @@ def crear_usuario(
             sesion_control,
             invitacion=invitacion,
             correo=correo,
-            actor_correo=_correo_actor(identidad),
+            actor_correo=correo_del_actor(identidad),
             institucion_id=institucion_para_evidencia,
             revocar_invitacion_fn=revocar_invitacion_fn,
         )
@@ -323,7 +323,7 @@ def crear_usuario(
             sesion_control,
             invitacion=invitacion,
             correo=correo,
-            actor_correo=_correo_actor(identidad),
+            actor_correo=correo_del_actor(identidad),
             institucion_id=institucion_para_evidencia,
             revocar_invitacion_fn=revocar_invitacion_fn,
         )
@@ -350,7 +350,7 @@ def crear_usuario(
             usuario=nuevo_usuario,
             correo=correo,
             institucion_id=institucion_para_evidencia,
-            actor_correo=_correo_actor(identidad),
+            actor_correo=correo_del_actor(identidad),
             invitacion_id=invitacion_id,
         )
         raise HTTPException(
@@ -396,12 +396,6 @@ def _exigir_usuario_en_institucion(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuario inexistente o fuera de la institucion",
         )
-
-
-def _correo_actor(identidad: IdentidadAutenticada | None) -> str:
-    if identidad is None or identidad.usuario is None:
-        return "sistema"
-    return security.normalizar_correo(str(identidad.usuario.correo))
 
 
 def _consultar_estado_clerk(

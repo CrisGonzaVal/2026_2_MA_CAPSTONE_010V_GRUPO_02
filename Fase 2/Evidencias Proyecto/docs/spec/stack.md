@@ -671,49 +671,83 @@ frontend/
 ├── package.json
 ├── tailwind.config.js         # Configuración de Tailwind CSS
 ├── angular.json
+├── public/                    # Assets estáticos (favicon, imágenes, íconos)
 └── src/
     ├── main.ts                # Inicialización de Angular Standalone
     ├── index.html
     ├── styles.scss            # Estilos globales y capas de Tailwind
-    ├── assets/                # Imágenes, íconos y logos
     └── app/
         ├── app.component.ts   # Componente raíz (<router-outlet>)
         ├── app.routes.ts      # Enrutador principal (Lazy loading de features)
         ├── app.config.ts      # Proveedores globales (HttpClient, Router)
         │
-├── core/              # ⚙️ Cosas de un solo uso (Singletons)
+        ├── core/              # ⚙️ Cosas de un solo uso (Singletons)
         │   ├── guards/        # Protección de rutas (auth.guard.ts, role.guard.ts)
         │   ├── interceptors/  # Interceptores HTTP (token.interceptor.ts inyecta el Bearer de Clerk)
         │   └── services/      # Servicios globales puros (auth.service.ts → AutenticacionService)
         │
         ├── shared/            # 🧩 Tipos y piezas reutilizables por cualquier feature
-        │   ├── config/        # url-api.ts → URL_API (constante de la API, sin dependencia de dominio)
-        │   └── interfaces/    # Tipos TypeScript que reflejan los schemas del backend
+        │   ├── components/    # Componentes compartidos (enlace-invitacion, motivo-selector)
+        │   ├── config/        # url-api.ts, motivos-mutacion.ts
+        │   ├── interfaces/    # Tipos TypeScript que reflejan los schemas del backend
+        │   └── utils/         # Helpers transversales (etiqueta-estado, idempotencia, portapapeles, errores-http)
         │
         └── features/          # 🚀 Dominios de Negocio (Smart Components)
             ├── dashboard/
+            │   ├── services/               # dashboard.service.ts
             │   ├── dashboard.component.ts
             │   └── dashboard.routes.ts
             │
             ├── inventario/
-            │   ├── services/               # inventario.service.ts (importa URL_API de shared/config)
-            │   ├── inventario.component.ts # Vista principal
+            │   ├── services/               # inventario.service.ts
+            │   ├── inventario.component.ts
+            │   ├── producto-detalle.component.ts
             │   └── inventario.routes.ts
             │
             ├── tickets/
             │   ├── services/               # ticket.service.ts
             │   ├── tickets.component.ts
+            │   ├── ticket-detalle.component.ts
             │   └── tickets.routes.ts
             │
-            └── administracion/
-                ├── services/               # usuario.service.ts
-                ├── administracion.component.ts
-                └── administracion.routes.ts
+            ├── administracion/
+            │   ├── services/               # administracion.service.ts
+            │   ├── administracion.component.ts
+            │   ├── administracion-nav.component.ts
+            │   ├── usuarios.component.ts
+            │   ├── sedes.component.ts
+            │   ├── departamentos.component.ts
+            │   ├── encargados.component.ts
+            │   └── administracion.routes.ts
+            │
+            ├── compras/
+            │   ├── services/               # compras.service.ts
+            │   ├── ...
+            │   └── compras.routes.ts
+            │
+            ├── control/
+            │   ├── services/               # control.service.ts
+            │   ├── ...
+            │   └── control.routes.ts
+            │
+            ├── auth/                       # Login; sin routes.ts propio
+            └── acceso-denegado/            # Estado dedicado; sin routes.ts propio
 ```
 
-**Nota 1**: existe además una cuarta feature, `features/administracion/`, que agrupa la gestión de usuarios, roles e instituciones. No figura en el diagrama original pero forma parte del sistema (`AGENTS.md` §2) y se documenta aquí para que la estructura real y la norma no diverjan.
+**Nota 1 — seis features de negocio.** `dashboard`, `inventario`, `tickets`,
+`administracion`, `compras` y `control` agrupan las áreas funcionales del sistema
+(`AGENTS.md` §2). `auth` y `acceso-denegado` son piezas de soporte de la sesión y
+del control de acceso; no tienen `routes.ts` propio. La estructura real y esta
+norma deben permanecer sincronizadas.
 
-**Nota 2 — `shared/components/` y `shared/pipes/` están planificados pero vacíos.** Los diagramas los preveen; la Feature 001 no los creó porque ningún componente actual tendría un consumidor real, y un componente sin uso es código muerto. **La Feature 002 vuelve a revisar la pregunta y vuelve a no crearlos**: la barra de filtros y el panel de categorías de la vista de inventario son específicos de ese dominio, y su lógica (los conteos por categoría antes del filtro) no le sirve a otra feature tal cual. Se crean en la feature que agregue **el segundo** consumidor; mientras haya uno, la regla es "código de la feature".
+**Nota 2 — `shared/components/` existe; `shared/pipes/` no.** Los diagramas
+originales preveían ambas carpetas, pero solo se creó la primera cuando apareció
+un segundo consumidor real: `enlace-invitacion.component` y
+`motivo-selector.component` se usan en más de una vista administrativa. Los
+helpers transversales sin estado viven en `shared/utils/` (etiqueta de estados,
+idempotencia, portapapeles y errores HTTP). `shared/pipes/` sigue sin existir:
+se creará cuando haya un pipe con al menos dos consumidores; mientras tanto, la
+regla es "código de la feature".
 
 **Nota 3 — sin subcarpeta `components/` en las features.** Los componentes viven en la raíz de su feature. `plan.md` de la Feature 001 los situaba en `features/*/components/`; prevalece este documento.
 

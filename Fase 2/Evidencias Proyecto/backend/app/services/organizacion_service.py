@@ -48,7 +48,7 @@ from app.schemas.organizacion_schema import (
 )
 from app.schemas.usuario_schema import UsuarioEdicion
 from app.services import ambito_service, motivo_service
-from app.services.auth_service import IdentidadAutenticada
+from app.services.auth_service import IdentidadAutenticada, correo_del_actor
 
 _ADMINISTRADOR = permisos.RolConocido.ADMINISTRADOR.value
 
@@ -506,12 +506,6 @@ def _dependencias_departamento(db: Session, departamento_id: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _correo_actor(identidad: IdentidadAutenticada | None) -> str:
-    if identidad is None or identidad.usuario is None:
-        return "sistema"
-    return security.normalizar_correo(str(identidad.usuario.correo))
-
-
 def _motivo_de(datos) -> object | None:
     """Motivo opcional del DTO (subclases de la Feature 017)."""
     return getattr(datos, "motivo", None)
@@ -694,7 +688,7 @@ def editar_usuario(
             )
     motivo = _motivo_de(datos)
     clave = _idempotencia_de(datos)
-    actor = _correo_actor(identidad)
+    actor = correo_del_actor(identidad)
     accion = "edicion_usuario"
 
     if not cambio_efectivo:
@@ -795,7 +789,7 @@ def cambiar_estado_usuario(
     institucion = _institucion_de_mutacion(db, usuario, identidad, institucion_id)
 
     mapa = _mapa_por_correo(db_control, usuario.correo)
-    actor = _correo_actor(identidad)
+    actor = correo_del_actor(identidad)
     accion = "reactivacion_usuario" if activo else "baja_usuario"
     clave = idempotencia
 

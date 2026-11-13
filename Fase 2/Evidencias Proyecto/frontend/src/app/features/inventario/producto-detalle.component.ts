@@ -9,41 +9,34 @@ import {
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { ProductoDetalle } from '../../shared/interfaces';
+import {
+  MensajesDeErrorHttp,
+  mensajeDeErrorHttp,
+} from '../../shared/utils/errores-http';
 import { InventarioService } from './services/inventario.service';
 
 /** Pestaña del inventario desde la que se abrió el detalle (§6.6 / AC-9). */
 type PestanaInventario = 'existencias' | 'gestion';
 
+const MENSAJES_PRODUCTO: MensajesDeErrorHttp = {
+  401: 'Tu sesión no es válida. Vuelve a iniciar sesión.',
+  403: 'No tienes permiso para consultar este producto, o la capacidad inventario está deshabilitada para tu institución.',
+  404: 'El producto indicado no existe o no está en tu alcance.',
+  409: 'No se pudo resolver tu sede operativa: tu usuario no tiene una sede asignada.',
+  422: 'El identificador del producto no es válido: debe ser un entero positivo.',
+  predeterminado: (estado) => `No se pudo cargar el detalle del producto (HTTP ${estado}).`,
+};
+
 /**
  * Mensaje legible de un fallo de la consulta de detalle (Feature 019, AC-10).
  *
- * Prefiere el `detail` textual del backend —404 oculto, 409 de sede no
- * resoluble, 403 de capacidad— y, si no hay texto (500 sin cuerpo, red caída,
- * lista de validación de Pydantic), recurre al código de estado. El 422 se
- * explica como identificador no válido (mismo texto que la validación local,
- * §6.5) y el status 0 como servidor inalcanzable.
+ * Delega la estructura común —`detail` textual, status 0 y fallback propio de la
+ * vista— en `mensajeDeErrorHttp`; aquí solo viven los textos de este dominio. El
+ * 422 se explica como identificador no válido (mismo texto que la validación
+ * local, §6.5) y el status 0 como servidor inalcanzable.
  */
 export function mensajeDeErrorProducto(error: HttpErrorResponse): string {
-  const detalle = (error.error as { detail?: unknown } | null)?.detail;
-  if (typeof detalle === 'string' && detalle.trim() !== '') {
-    return detalle;
-  }
-  switch (error.status) {
-    case 401:
-      return 'Tu sesión no es válida. Vuelve a iniciar sesión.';
-    case 403:
-      return 'No tienes permiso para consultar este producto, o la capacidad inventario está deshabilitada para tu institución.';
-    case 404:
-      return 'El producto indicado no existe o no está en tu alcance.';
-    case 409:
-      return 'No se pudo resolver tu sede operativa: tu usuario no tiene una sede asignada.';
-    case 422:
-      return 'El identificador del producto no es válido: debe ser un entero positivo.';
-    case 0:
-      return 'No se pudo contactar al servidor. Verifica la conexión e inténtalo de nuevo.';
-    default:
-      return `No se pudo cargar el detalle del producto (HTTP ${error.status}).`;
-  }
+  return mensajeDeErrorHttp(error, MENSAJES_PRODUCTO);
 }
 
 /** Texto compartido por la validación local y el 422 del servidor (§6.5). */

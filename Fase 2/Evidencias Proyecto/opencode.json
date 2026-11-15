@@ -1,5 +1,19 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/deepseek-v4.1-flash-free",
+  "agents": {
+    "build": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "plan": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "general": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "explore": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "coordinator": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "planner": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "implementer": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "reviewer": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "compaction": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "title": { "model": "opencode/deepseek-v4.1-flash-free" },
+    "summary": { "model": "opencode/deepseek-v4.1-flash-free" }
+  },
   "mcp": {
     "context7": {
       "type": "local",

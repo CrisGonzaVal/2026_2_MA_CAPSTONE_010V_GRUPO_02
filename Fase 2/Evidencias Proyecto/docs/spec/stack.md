@@ -17,6 +17,36 @@ Todo lo que sigue es norma. Si el código actual no la cumple, la norma gana: se
   aceptación de JWT local HS256.
 - **Entorno de Contenedores**: Docker Compose levanta `db`, `backend` (puerto 8000) y `frontend` (puerto 8080). pgAdmin no está implementado.
 
+### 1.1 Frontera operativa (Feature 024)
+
+La superficie operativa del backend es deliberadamente pequeña y separada del contrato de
+negocio. Norma desde la Feature 024:
+
+- **`/health` es *liveness*.** Responde 200 `{"status": "healthy"}` aunque la base esté
+  detenida, no exige Bearer y sigue documentado en `/openapi.json` sin `security`.
+- **`/ready` es *readiness*.** Responde 200 `{"status": "ready"}` o 503
+  `{"status": "not_ready"}`; el 503 no filtra detalles del motor ni el nombre de la base. Usa
+  un motor dedicado con `NullPool`, `connect_timeout=1` y `statement_timeout=1500 ms`.
+  Queda fuera de OpenAPI (`include_in_schema=False`) y de `MATRIZ_PERMISOS`.
+- **`/metrics` es de Prometheus, no de la aplicación.** Expone cinco familias con
+  `prometheus-client` y un `CollectorRegistry` propio, no se autoinstrumenta, no lleva PII
+  (etiqueta `route` como plantilla, nunca el id real) y queda fuera de OpenAPI, de la matriz
+  y del borde. Se protege **por red**, no por rol: nginx responde 404 en `/metrics`.
+- **Logging de petición.** Formato JSON con la biblioteca estándar (`LOG_FORMAT=json|text`,
+  `LOG_LEVEL`); cada petición emite una sola línea con `X-Request-ID` correlacionado y la
+  plantilla de ruta, sin token, correo, query string ni `set-cookie`. uvicorn arranca con
+  `--no-access-log` para no duplicar la línea.
+- **CORS por entorno.** `ALLOWED_ORIGINS` (default `http://localhost:4200` y
+  `http://localhost:8080`) con credenciales; métodos exactos `GET, POST, PUT, PATCH, DELETE,
+  OPTIONS` y cabeceras exactas `Authorization, Content-Type, Accept`. Sin comodines y sin
+  arranque con la lista vacía.
+- **Borde nginx.** Proxy de `/api/` al backend, `limit_req` 10 r/s con `burst=20 nodelay`,
+  `limit_conn` 20 y 429 JSON con `detail`; `Access-Control-Allow-Origin` solo se refleja en
+  esa respuesta de límite, nunca en el resto.
+- **API por mismo origen.** `URL_API` vale `/api/v1`: en desarrollo `npm start` proxifica
+  `/api` con `frontend/proxy.conf.json` (`angular.json` → `serve.options.proxyConfig`) y en
+  8080 el tráfico pasa por nginx. `localhost:8000` no es URL base de la SPA.
+
 ## 2. Estructura de Directorios (Definitiva)
 
 > **Nota de migración**: el código actual está en fase de migración a esta estructura, que es la normativa desde hoy (AGENTS.md describe la nueva estructura).

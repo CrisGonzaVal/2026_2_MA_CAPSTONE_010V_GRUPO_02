@@ -6,11 +6,11 @@ una base vacia, tal como lo hace el volumen de `docker compose`
 ni el DDL por esquema, asi que lo que la instalacion limpia exige solo se
 acredita contra PostgreSQL 16 real:
 
-  * `control` con las 26 tablas globales (Feature 017 anade
+  * `control` con las 27 tablas globales (Feature 017 anade
     `registro_motivo_constancia`; la 014, los dos historiales de transicion del
-    catalogo; la 020, el catalogo de proveedores y las tres tablas de compras) y
-    **un esquema tenant por institucion** con las 23 tablas de negocio
-    replicadas;
+    catalogo; la 020, el catalogo de proveedores y las tres tablas de compras;
+    la 021, el puente orden de compra-ticket) y **un esquema tenant por
+    institucion** con las 24 tablas de negocio replicadas;
   * reparto deterministico de sedes (2/3/4/2 para INST-001..004) y de
     departamentos por round-robin sobre `departamento_id` ascendente;
   * cuadre por producto dentro de cada tenant: la suma departamental de
@@ -19,8 +19,8 @@ acredita contra PostgreSQL 16 real:
     topologia (4 instituciones + 28 capacidades), el catalogo de roles, el
     estado `Anulado` y los 3 proveedores del catalogo global, y el mapa
     `correo -> esquema` con las 12 identidades;
-  * version objetivo `020.1` en `control` y en cada tenant (expectativa
-    planificada de la Feature 020: se fija como literal, no se sigue del token),
+  * version objetivo `021.1` en `control` y en cada tenant (expectativa
+    planificada de la Feature 021: se fija como literal, no se sigue del token),
     con el catalogo sembrado activo por tenant y el routing exigiendo esa misma
     version (una version menor no se enruta);
   * guardia fail-closed: una segunda ejecucion de `02_` aborta sin cambios.
@@ -74,12 +74,12 @@ SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 #: Reparto fijo de sedes por institucion (Feature 011, D-7).
 SEDES_ESPERADAS = {"INST-001": 2, "INST-002": 3, "INST-003": 4, "INST-004": 2}
 
-#: Version objetivo vigente (Feature 020). Se fija como literal para que la
+#: Version objetivo vigente (Feature 021). Se fija como literal para que la
 #: expectativa no siga automaticamente al token del codigo: T1 crea el DDL y sube
 #: `VERSION_ESQUEMA_OBJETIVO` a este mismo valor.
-VERSION_OBJETIVO_VIGENTE = "020.1"
+VERSION_OBJETIVO_VIGENTE = "021.1"
 
-#: Las 26 tablas globales de `control`.
+#: Las 27 tablas globales de `control`.
 TABLAS_CONTROL = {
     "institucion",
     "sede",
@@ -110,9 +110,11 @@ TABLAS_CONTROL = {
     "orden_compra",
     "detalle_orden_compra",
     "factura_compra",
+    # Feature 021: puente orden de compra-ticket (paridad de DDL).
+    "orden_compra_ticket",
 }
 
-#: Las 23 tablas de negocio que cada tenant replica. Las tres auxiliares de
+#: Las 24 tablas de negocio que cada tenant replica. Las tres auxiliares de
 #: control (capacidades, mapa y motivos/constancias) nunca viajan al tenant.
 TABLAS_TENANT = TABLAS_CONTROL - {
     "funcion_institucion",
@@ -299,8 +301,8 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
     with _base_temporal() as conexion:
         _instalar(conexion)
 
-        assert len(TABLAS_CONTROL) == 26, len(TABLAS_CONTROL)
-        assert len(TABLAS_TENANT) == 23, len(TABLAS_TENANT)
+        assert len(TABLAS_CONTROL) == 27, len(TABLAS_CONTROL)
+        assert len(TABLAS_TENANT) == 24, len(TABLAS_TENANT)
         assert _tablas_del_esquema(conexion, "control") == TABLAS_CONTROL
         instituciones = _instituciones(conexion)
         assert instituciones == list(SEDES_ESPERADAS)
@@ -314,8 +316,8 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
         assert _conteo_tabla(conexion, "control", "version_esquema") == 1
 
 
-def test_el_token_de_codigo_apunta_a_la_version_014_1():
-    """AC-14: el objetivo del despliegue es `020.1` (lo sube T1 con el DDL)."""
+def test_el_token_de_codigo_apunta_a_la_version_vigente():
+    """AC-14: el objetivo del despliegue es `021.1` (lo sube T1 con el DDL)."""
     assert VERSION_ESQUEMA_OBJETIVO == VERSION_OBJETIVO_VIGENTE, VERSION_ESQUEMA_OBJETIVO
 
 
@@ -596,11 +598,11 @@ def _sesion_control(conexion):
         motor.dispose()
 
 
-def test_instalacion_limpia_enruta_en_014_1_y_deniega_una_version_menor():
+def test_instalacion_limpia_enruta_en_la_version_vigente_y_deniega_una_version_menor():
     """AC-14: la version instalada es la unica, compatible y exigida por routing.
 
     Con la instalacion limpia (`01_` + `02_`) el token del codigo y el de los
-    esquemas coinciden (`020.1`) y la identidad mapeada se enruta; bajada la
+    esquemas coinciden (`021.1`) y la identidad mapeada se enruta; bajada la
     version del tenant a una menor, el routing la deniega en cerrado (mismo
     patron que la regresion de cadena de la Feature 013).
     """

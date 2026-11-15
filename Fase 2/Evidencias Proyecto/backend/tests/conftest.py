@@ -127,6 +127,9 @@ def _cliente_de_prueba(motor, **opciones):
 
     app.dependency_overrides[dependencies.get_db] = obtener_db_de_prueba
     app.dependency_overrides[dependencies.get_current_user] = identidad_de_prueba
+    # Feature 024 (T6): `/ready` usa SQLite en la suite, no el motor dedicado a
+    # PostgreSQL que se crea en `app.db.database`.
+    app.dependency_overrides[dependencies.obtener_motor_readiness] = lambda: motor
     # Feature 012 (D-3/AC-8): el alta local verifica el correo contra Clerk. La
     # costura se overridea para no invocar la red (el alta no crea identidades).
     app.dependency_overrides[dependencies.obtener_verificador_correo_clerk] = (

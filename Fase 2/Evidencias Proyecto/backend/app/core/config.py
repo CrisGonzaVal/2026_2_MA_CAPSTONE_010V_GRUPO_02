@@ -1,4 +1,9 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Version de la aplicacion publicada en OpenAPI y en la metrica
+#: `compustock_app_info`. Conserva el valor que `main.py` ya declaraba.
+VERSION_APLICACION = "1.0.0"
 
 #: Version objetivo del DDL de tenant (stack §5). Es la constante
 #: de despliegue compartida por el codigo que resuelve el tenant y por la
@@ -35,6 +40,39 @@ class Settings(BaseSettings):
     CLERK_PUBLISHABLE_KEY: str = ""
     CLERK_SECRET_KEY: str = ""
     CLERK_ISSUER: str = ""
+
+    # Feature 024 (D-6): CORS por entorno con lista explicita y sin comodines.
+    # Default solo para desarrollo local (4200 dev server, 8080 nginx).
+    ALLOWED_ORIGINS: str = "http://localhost:4200,http://localhost:8080"
+    # Feature 024 (R-2): nivel y formato del logging estructurado. Un valor
+    # desconocido no rompe el arranque: `core/observabilidad.py` lo normaliza.
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "json"
+
+    @field_validator("ALLOWED_ORIGINS")
+    @classmethod
+    def validar_origenes(cls, valor: str) -> str:
+        """Recorta espacios y descarta entradas vacias; exige al menos un origen.
+
+        Un `ALLOWED_ORIGINS=""` dejaria la SPA rota con un error de CORS en el
+        navegador y un 200 del backend, el diagnostico mas caro de encontrar.
+        Fallar al arrancar es mas barato que un fallback silencioso.
+        """
+        origenes = [origen.strip() for origen in valor.split(",") if origen.strip()]
+        if not origenes:
+            raise ValueError(
+                "ALLOWED_ORIGINS no puede quedar vacio: declare al menos un "
+                "origen explicito separado por comas."
+            )
+        return ",".join(origenes)
+
+    @property
+    def origenes_permitidos(self) -> list[str]:
+        return [
+            origen.strip()
+            for origen in self.ALLOWED_ORIGINS.split(",")
+            if origen.strip()
+        ]
 
     @property
     def DATABASE_URL(self) -> str:

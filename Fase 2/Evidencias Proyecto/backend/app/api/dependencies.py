@@ -17,12 +17,17 @@ from collections.abc import Callable, Generator
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.core import capacidades, permisos, security
 from app.core.config import settings
 from app.core.security import FuenteJWKS
-from app.db.database import crear_sesion_control, crear_sesion_esquema
+from app.db.database import (
+    crear_sesion_control,
+    crear_sesion_esquema,
+    motor_readiness,
+)
 from app.services import auth_service, capacidad_service, tenant_service
 from app.services.auth_service import IdentidadAutenticada
 from app.services.tenant_service import ContextoSolicitud
@@ -52,6 +57,15 @@ def get_db() -> Generator[Session, None, None]:
 def obtener_fuente_jwks() -> FuenteJWKS:
     """Costura inyectable: fuente del documento JWKS (`fuente(issuer) -> dict`)."""
     return security.descargar_jwks
+
+
+def obtener_motor_readiness() -> Engine:
+    """Costura inyectable del motor de `/ready` (Feature 024).
+
+    La suite la overridea con su motor SQLite en memoria; en ejecucion devuelve
+    el motor dedicado con `NullPool` y timeouts acotados.
+    """
+    return motor_readiness
 
 
 def obtener_transporte_clerk() -> httpx.BaseTransport:

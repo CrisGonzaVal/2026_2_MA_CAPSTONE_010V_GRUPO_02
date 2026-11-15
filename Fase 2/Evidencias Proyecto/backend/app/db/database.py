@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
@@ -11,6 +12,37 @@ engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+
+def opciones_motor_readiness(url: str) -> dict:
+    """Opciones del motor dedicado a sondas de disponibilidad (Feature 024).
+
+    `NullPool` evita conservar una conexion muerta entre sondas. En PostgreSQL
+    se acota la espera a 1 s en conexion y 1500 ms en sentencia; en SQLite
+    (suite) solo se aplica `NullPool`. El motor de negocio y su pool no se
+    tocan.
+
+    Los 2 s iniciales los consumia el driver completo y el overhead del handler
+    empujaba `/ready` por encima de los 2 s de AC-10 (medido en T12: 2.3 s con
+    un host que no responde). El plan contempla el descenso y la constancia en
+    la evidencia.
+    """
+    opciones: dict = {"poolclass": NullPool}
+    if url.startswith("postgresql"):
+        opciones["connect_args"] = {
+            "connect_timeout": 1,
+            "options": "-c statement_timeout=1500",
+        }
+    return opciones
+
+
+def crear_motor_readiness(url: str | None = None) -> Engine:
+    """Motor efimero para `/ready`, independiente del pool de negocio."""
+    cadena = url or settings.DATABASE_URL
+    return create_engine(cadena, **opciones_motor_readiness(cadena))
+
+
+motor_readiness = crear_motor_readiness()
 
 #: Esquema del contexto global de control (stack §1/§7). Es la unica disposicion
 #: en la que vive el registro institucional canonico, el mapa `correo -> esquema`,

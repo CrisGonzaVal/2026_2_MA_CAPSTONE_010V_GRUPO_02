@@ -40,7 +40,7 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 - **Autoría del ticket = identidad de sesión:** no validar `usuario_id` del alta; la sede sale de `departamento.sede_id`. **Carreras gated:** `Barrier` no fija el orden del lock; la poseedora confirma con `threading.Event`.
 
 ## Próximos pasos
-- **Sprint 7 (03/Nov/2026 – 11/Dic/2026):** 020, 021, 022, 023 y 024 cerradas; siguen **015** informes PDF/Excel y **016** notificaciones in-app. Orden acordado: **025** (hardening operativo II) antes de 015/016; 026–029 después. **Hito 2** el **11/Dic/2026**.
-- **Siguiente trabajo:** abrir la 025 con su spec; no reabrir la limpieza de 022 ni el refactor de 023 sin una spec propia.
+- **Sprint 7 (03/Nov/2026 - 11/Dic/2026):** 020, 021, 022, 023 y 024 cerradas; siguen **015** informes PDF/Excel y **016** notificaciones in-app. Orden acordado: **025** (continuación del hardening operativo) antes de 015/016; 026-029 después. **Hito 2** el **11/Dic/2026**.
+- **Siguiente trabajo:** abrir la 025 (continuación del hardening operativo) con su spec; no reabrir la limpieza de 022 ni el refactor de 023 sin una spec propia.
 - **Diagramas:** 5 HTML + 5 PNG de casos de uso en `docs/diagramas/`, 8 diagramas 4+1 en `docs/diagramas/4+1-kruchten/` y 12 flujos por actor en `docs/diagramas/flujos-actores/`.
 - Hallazgo abierto: la semilla no trae Administrador `+clerk_test`; aviso de accesibilidad en el buscador operativo de inventario. `/ready` con `db` detenido tarda 3–7 s por DNS de Docker Desktop (no es la cota de AC-10).

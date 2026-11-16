@@ -25,6 +25,7 @@ Compustock ERP es un sistema web para la administración centralizada, trazabili
 - **Frontend**: Angular 18.2+ (Standalone Components, Signals, TypeScript 5.5, Tailwind CSS 3.4).
 - **Backend**: FastAPI + Uvicorn (Python 3.10+, Pydantic v2, SQLAlchemy 2.0 con psycopg2 — síncrono, pydantic-settings).
 - **Base de Datos**: PostgreSQL 16 (Docker Compose: puerto local 5433, contenedor expone 5432; base por defecto `apt_erp`).
+- **Límite de tasa distribuido**: Redis 7.2-alpine (Feature 025), efímero (`--save ""`, `--appendonly no`), `--maxmemory 64mb` con `allkeys-lru` y puerto publicado solo en `127.0.0.1:6380`. El backend lo consume con `redis==8.1.0` asíncrono: ventana fija de 60 s y 120 peticiones por IP sobre `/api/v1/*`, **fail-open** con aviso cada 10 s y métrica `compustock_rate_limit_requests_total{resultado}`. Config en `backend/app/core/config.py` (`REDIS_URL`, `LIMITE_TASA_HABILITADO`, `LIMITE_TASA_MAX_PETICIONES`, `LIMITE_TASA_VENTANA_SEGUNDOS`, `LIMITE_TASA_CONFIAR_PROXY`). Es complementario al borde nginx de la 024, no lo reemplaza.
 - **Autenticación**: Clerk (Feature 006, Release 2.0). La sesión la administra Angular con `@clerk/clerk-js` (UI prebuilt) y presenta el token vigente como Bearer; FastAPI valida el JWT de sesión contra el JWKS de `CLERK_ISSUER` y obtiene el correo primario verificado del Backend API de Clerk con `CLERK_SECRET_KEY`. No existe emisión ni aceptación de JWT local HS256. Config en `backend/app/core/config.py` (`CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_ISSUER`).
 - **Entorno local**: Docker Compose levanta `db`, `backend` (puerto 8000) y `frontend` (puerto 8080).
 
@@ -43,7 +44,7 @@ Las rutas son relativas a la raíz de `Fase 2/Evidencias Proyecto/` (donde vive 
 > **Nota de migración**: el código actual está en fase de migración a esta estructura, que es la normativa desde hoy.
 
 ## 5. Comandos de Operación
-- Levantar infraestructura local: `docker compose -f docker-compose.yml up -d`
+- Levantar infraestructura local: `docker compose -f docker-compose.yml up -d` (levanta `db`, `redis`, `backend` y `frontend`)
 - Reset de la base QA (borra el volumen y vuelve a sembrar): `docker compose -f docker-compose.yml down -v` y luego `up -d`. En Windows hay atajos `reset-db.cmd` / `reset-db.ps1` en la raíz.
 - Backend dev server: `cd backend && uvicorn app.main:app --reload --port 8000`
 - Frontend dev server: `cd frontend && npm start` (puerto 4200)
@@ -67,6 +68,12 @@ Las rutas son relativas a la raíz de `Fase 2/Evidencias Proyecto/` (donde vive 
   Los tests gated de PostgreSQL 16 corren con
   `$env:POSTGRES_TEST_URL = "postgresql://postgres:postgres@localhost:5433/postgres"`;
   crean bases temporales desechables, nunca tocan `apt_erp`.
+  Los tests gated de Redis (Feature 025) corren con
+  `$env:REDIS_TEST_URL = "redis://127.0.0.1:6380/15"` y exigen que la URL termine en
+  `/15`: vacían esa base al empezar y al terminar, nunca tocan la base 0. Sin la
+  variable se omiten.
+  Ojo con Redis en Windows: el puerto se publica solo en IPv4 y `localhost` resuelve
+  primero `::1`, así que hay que usar `127.0.0.1:6380`, no `localhost:6380`.
 - Frontend tests (configurado):
   ```
   cd frontend

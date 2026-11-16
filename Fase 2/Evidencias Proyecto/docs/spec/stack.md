@@ -28,7 +28,7 @@ negocio. Norma desde la Feature 024:
   `{"status": "not_ready"}`; el 503 no filtra detalles del motor ni el nombre de la base. Usa
   un motor dedicado con `NullPool`, `connect_timeout=1` y `statement_timeout=1500 ms`.
   Queda fuera de OpenAPI (`include_in_schema=False`) y de `MATRIZ_PERMISOS`.
-- **`/metrics` es de Prometheus, no de la aplicación.** Expone cinco familias con
+- **`/metrics` es de Prometheus, no de la aplicación.** Expone seis familias con
   `prometheus-client` y un `CollectorRegistry` propio, no se autoinstrumenta, no lleva PII
   (etiqueta `route` como plantilla, nunca el id real) y queda fuera de OpenAPI, de la matriz
   y del borde. Se protege **por red**, no por rol: nginx responde 404 en `/metrics`.
@@ -46,6 +46,47 @@ negocio. Norma desde la Feature 024:
 - **API por mismo origen.** `URL_API` vale `/api/v1`: en desarrollo `npm start` proxifica
   `/api` con `frontend/proxy.conf.json` (`angular.json` → `serve.options.proxyConfig`) y en
   8080 el tráfico pasa por nginx. `localhost:8000` no es URL base de la SPA.
+
+### 1.2 Límite de tasa distribuido (Feature 025)
+
+El borde nginx de la 024 corta ráfagas por conexión, pero no conoce la identidad del cliente
+ni comparte estado entre réplicas del backend. La 025 añade un límite **por IP** dentro de la
+aplicación, con estado en Redis y **fail-open**. Norma desde la Feature 025:
+
+- **Alcance.** Todo `/api/v1/*` por IP de cliente. Detrás de nginx la IP real llega en
+  `X-Real-IP` y solo se acepta con `LIMITE_TASA_CONFIAR_PROXY=true` (true en Compose); en
+  desarrollo se usa el par TCP del `scope`. `X-Forwarded-For` **no** se lee nunca.
+- **Ventana fija** de `LIMITE_TASA_VENTANA_SEGUNDOS` (default 60) anclada al primer acierto,
+  con `LIMITE_TASA_MAX_PETICIONES` (default 120) por IP. El script Lua hace `INCR`, `PTTL` y
+  `PEXPIRE` en una sola operación atómica, así que varios procesos comparten el contador sin
+  carreras; la clave es `compustock:limite:<ip>` y la IP **solo** vive ahí (no se registra, no
+  se etiqueta y no viaja en la respuesta).
+- **429 propio.** JSON con el mismo `detail` que nginx, más `Retry-After`, `X-RateLimit-Limit`,
+  `X-RateLimit-Remaining: 0` y `X-RateLimit-Reset`. Conserva `X-Request-ID` (observabilidad
+  por fuera) y `Access-Control-Allow-Origin` cuando el origen está permitido (CORS por
+  fuera). Un 429 de nginx **no** lleva `X-RateLimit-*`: eso distingue el origen del rechazo.
+- **Preflight fuera del presupuesto.** Un `OPTIONS` con `Origin` y
+  `Access-Control-Request-Method` lo corta CORS antes del limitador.
+- **Fail-open con alerta.** Cualquier error de Redis (conexión, tiempo, respuesta inesperada o
+  cota dura de 0,5 s con `asyncio.wait_for`) deja pasar la petición, incrementa
+  `resultado="error"` y emite un `WARNING` `limite_tasa_degradado` como máximo cada 10 s con
+  `request_id` y `error_type`, sin IP, host, mensaje ni traza. `/ready` sigue midiendo solo la
+  base: Redis caído no saca la API de rotación.
+- **Métrica.** `compustock_rate_limit_requests_total{resultado}` con `permitida`, `limitada` y
+  `error`; los 429 se registran como `route="rate_limited"`. Es la sexta familia de `/metrics`.
+  Las métricas son **por proceso**: el estado del límite es compartido, los contadores no.
+- **Configuración.** `REDIS_URL` (default `redis://127.0.0.1:6380/0`; en Compose
+  `redis://redis:6379/0`), `LIMITE_TASA_HABILITADO` (default `true`),
+  `LIMITE_TASA_MAX_PETICIONES`, `LIMITE_TASA_VENTANA_SEGUNDOS` y
+  `LIMITE_TASA_CONFIAR_PROXY` (default `false`). Un máximo o una ventana ≤ 0, o una URL que no
+  sea `redis://`/`rediss://` con el limitador encendido, impiden arrancar.
+- **Redis efímero.** `redis:7.2-alpine` en Compose, sin persistencia (`--save ""`,
+  `--appendonly no`), `--maxmemory 64mb` con `allkeys-lru`, `/data` en tmpfs y puerto publicado
+  solo en `127.0.0.1:6380`. El backend no declara `depends_on` hacia Redis: el fail-open exige
+  arrancar aunque Redis no esté.
+- **Frontera con nginx.** Son capas complementarias y se suman: nginx limita 10 r/s *antes* de
+  tocar el backend y la app limita 120/min por IP. El límite de la app no reemplaza al borde ni
+  al revés; el texto del 429 es idéntico para que el cliente no distinga la capa.
 
 ## 2. Estructura de Directorios (Definitiva)
 

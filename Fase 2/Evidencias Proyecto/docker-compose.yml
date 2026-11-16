@@ -26,6 +26,35 @@ services:
       - compustock_network
 
   # ============================================
+  # REDIS: almacen efimero del limite de tasa
+  # ============================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: compustock_redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+    tmpfs:
+      - /data:size=64m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - compustock_network
+
+  # ============================================
   # BACKEND: FastAPI
   # ============================================
   backend:
@@ -46,6 +75,11 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:8080}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      LIMITE_TASA_HABILITADO: ${LIMITE_TASA_HABILITADO:-true}
+      LIMITE_TASA_MAX_PETICIONES: ${LIMITE_TASA_MAX_PETICIONES:-120}
+      LIMITE_TASA_VENTANA_SEGUNDOS: ${LIMITE_TASA_VENTANA_SEGUNDOS:-60}
+      LIMITE_TASA_CONFIAR_PROXY: ${LIMITE_TASA_CONFIAR_PROXY:-true}
     ports:
       - "8000:8000"
     depends_on:

@@ -56,6 +56,10 @@ Servicios tras `up -d`:
 - Frontend (dev server, `cd frontend && npm start`): <http://localhost:4200>
 - Backend (FastAPI): <http://localhost:8000> — documentación en `/docs` y contrato en `/openapi.json`
 - PostgreSQL: `localhost:5433` (contenedor `compustock_db`)
+- Redis: `127.0.0.1:6380` (contenedor `compustock_redis`) — límite de tasa distribuido de la
+  Feature 025; **efímero** (sin persistencia ni volumen) y accesible solo en loopback. Usa
+  `127.0.0.1`, no `localhost`: en Windows `localhost` resuelve `::1` y el puerto está
+  publicado en IPv4.
 
 > **No hay migraciones.** `database/` es intencionalmente de dos archivos: la base
 > se reconstruye desde cero (entorno de QA sin datos reales), no se actualiza in

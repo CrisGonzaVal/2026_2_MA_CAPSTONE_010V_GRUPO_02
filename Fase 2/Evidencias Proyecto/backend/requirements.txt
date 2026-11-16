@@ -8,3 +8,4 @@ python-dotenv==1.2.3
 PyJWT[crypto]==2.15.1
 httpx==0.28.1
 prometheus-client==0.26.0
+redis==8.1.0

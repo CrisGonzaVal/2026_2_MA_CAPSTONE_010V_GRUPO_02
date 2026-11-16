@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: Version de la aplicacion publicada en OpenAPI y en la metrica
@@ -48,6 +48,36 @@ class Settings(BaseSettings):
     # desconocido no rompe el arranque: `core/observabilidad.py` lo normaliza.
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"
+
+    # Feature 025 (D-8): limite de tasa distribuido con Redis.
+    REDIS_URL: str = "redis://127.0.0.1:6380/0"
+    LIMITE_TASA_HABILITADO: bool = True
+    LIMITE_TASA_MAX_PETICIONES: int = 120
+    LIMITE_TASA_VENTANA_SEGUNDOS: int = 60
+    LIMITE_TASA_CONFIAR_PROXY: bool = False
+
+    @field_validator("LIMITE_TASA_MAX_PETICIONES", "LIMITE_TASA_VENTANA_SEGUNDOS")
+    @classmethod
+    def validar_limite_positivo(cls, valor: int) -> int:
+        """Un maximo o una ventana no positivos romperian el limitador."""
+        if valor < 1:
+            raise ValueError(
+                "LIMITE_TASA_MAX_PETICIONES y LIMITE_TASA_VENTANA_SEGUNDOS "
+                "deben ser enteros mayores o iguales a 1."
+            )
+        return valor
+
+    @model_validator(mode="after")
+    def validar_url_redis(self):
+        """Solo exige esquema Redis cuando el limitador va a conectarse."""
+        if self.LIMITE_TASA_HABILITADO and not self.REDIS_URL.startswith(
+            ("redis://", "rediss://")
+        ):
+            raise ValueError(
+                "REDIS_URL debe empezar por redis:// o rediss:// cuando "
+                "LIMITE_TASA_HABILITADO esta activo."
+            )
+        return self
 
     @field_validator("ALLOWED_ORIGINS")
     @classmethod

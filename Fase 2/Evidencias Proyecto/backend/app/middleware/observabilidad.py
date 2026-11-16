@@ -18,6 +18,7 @@ import time
 from starlette.datastructures import MutableHeaders
 
 from app.core.metricas import (
+    RUTA_LIMITADA,
     RUTA_NO_RESUELTA,
     compustock_http_requests_in_flight,
     registrar_peticion,
@@ -53,6 +54,8 @@ def _ruta_plantilla(scope: dict) -> str:
     ruta = scope.get("route")
     plantilla = getattr(ruta, "path", None)
     if not plantilla:
+        if scope.get("state", {}).get("rate_limited"):
+            return RUTA_LIMITADA
         return RUTA_NO_RESUELTA
 
     camino = scope.get("path") or ""

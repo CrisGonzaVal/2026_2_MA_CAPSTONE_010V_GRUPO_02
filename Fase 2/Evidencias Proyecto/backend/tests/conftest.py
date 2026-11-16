@@ -18,6 +18,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api import dependencies
+from app.core.config import settings as configuracion
+
+# Feature 025: la suite heredada no debe abrir conexiones a Redis ni pagar
+# timeouts. El apagado se hace sobre el singleton y no con una variable de
+# entorno, para que `Settings()` siga exponiendo los defaults reales.
+configuracion.LIMITE_TASA_HABILITADO = False
+
 from app.db.database import Base
 from app.main import app
 from app.models import (

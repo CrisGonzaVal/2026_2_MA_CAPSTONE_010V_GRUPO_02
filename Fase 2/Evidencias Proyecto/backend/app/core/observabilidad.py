@@ -25,6 +25,7 @@ from app.core.config import settings
 LOGGER_RAIZ = "compustock"
 LOGGER_ACCESO = "compustock.acceso"
 LOGGER_SALUD = "compustock.salud"
+LOGGER_LIMITE = "compustock.limite"
 
 #: UUID canonico con guiones (8-4-4-4-12). Se valida con regex y no con
 #: `uuid.UUID` porque el constructor acepta formas sin guiones que la spec

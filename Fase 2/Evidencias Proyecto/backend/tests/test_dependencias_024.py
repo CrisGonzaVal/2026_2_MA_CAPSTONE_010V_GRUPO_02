@@ -1,9 +1,10 @@
-"""AC-22: reproducibilidad del nivel directo de dependencias del backend.
+"""Reproducibilidad del nivel directo de dependencias del backend.
 
-El test lee `backend/requirements.txt` y fija el contrato de la Feature 024:
-diez dependencias directas, todas con `==`, sin duplicados y con las versiones
-que el proyecto ejecuta y verifica. No consulta el entorno instalado ni la red;
-`pip check` cubre la resolucion real en la tarea de cierre.
+El test lee `backend/requirements.txt` y fija el contrato heredado de la Feature
+024, ampliado por la Feature 025: once dependencias directas, todas con `==`,
+sin duplicados y con las versiones que el proyecto ejecuta y verifica. No
+consulta el entorno instalado ni la red; `pip check` cubre la resolucion real en
+la tarea de cierre.
 """
 
 import re
@@ -11,7 +12,7 @@ from pathlib import Path
 
 REQUISITOS = Path(__file__).resolve().parents[1] / "requirements.txt"
 
-#: D-8 de la spec 024 mas la unica dependencia nueva (D-9).
+#: D-8 de la spec 024, `prometheus-client` (D-9 de la 024) y `redis` (D-9 de la 025).
 VERSIONES_ESPERADAS = {
     "fastapi": "0.142.2",
     "uvicorn": "0.54.0",
@@ -23,6 +24,7 @@ VERSIONES_ESPERADAS = {
     "pyjwt": "2.15.1",
     "httpx": "0.28.1",
     "prometheus-client": "0.26.0",
+    "redis": "8.1.0",
 }
 
 _PATRON_DEPENDENCIA = re.compile(
@@ -43,11 +45,11 @@ def _nombre_normalizado(nombre: str) -> str:
     return nombre.split("[", 1)[0].lower().replace("_", "-")
 
 
-def test_requirements_declara_exactamente_diez_dependencias_directas():
+def test_requirements_declara_exactamente_once_dependencias_directas():
     lineas = _lineas_de_dependencias()
-    assert len(lineas) == 10, (
-        "AC-22 exige diez dependencias directas (nueve existentes + "
-        f"prometheus-client); requirements.txt declara {len(lineas)}"
+    assert len(lineas) == 11, (
+        "AC-22 exige once dependencias directas (diez de la 024 + redis); "
+        f"requirements.txt declara {len(lineas)}"
     )
     assert len(set(lineas)) == len(lineas), "requirements.txt no debe repetir lineas"
 
@@ -59,7 +61,7 @@ def test_todas_las_dependencias_estan_pineadas_con_igualdad_exacta():
         )
 
 
-def test_versiones_y_nombres_coinciden_con_d8_y_d9():
+def test_versiones_y_nombres_coinciden_con_d8_y_las_dependencias_nuevas():
     obtenidas: dict[str, str] = {}
     for linea in _lineas_de_dependencias():
         coincidencia = _PATRON_DEPENDENCIA.fullmatch(linea)
@@ -69,16 +71,18 @@ def test_versiones_y_nombres_coinciden_con_d8_y_d9():
         obtenidas[nombre] = coincidencia.group("version")
 
     assert obtenidas == VERSIONES_ESPERADAS, (
-        "las versiones directas deben ser las de D-8 mas prometheus-client==0.26.0; "
+        "las versiones directas deben ser las de D-8 mas "
+        "prometheus-client==0.26.0 y redis==8.1.0; "
         f"se obtuvo {obtenidas}"
     )
 
 
-def test_prometheus_client_es_la_unica_dependencia_nueva():
+def test_prometheus_client_y_redis_son_las_dos_dependencias_nuevas():
     nombres = {
         _nombre_normalizado(_PATRON_DEPENDENCIA.fullmatch(linea).group("nombre"))
         for linea in _lineas_de_dependencias()
     }
     assert "prometheus-client" in nombres
-    assert len(nombres) == 10
+    assert "redis" in nombres
+    assert len(nombres) == 11
     assert nombres == set(VERSIONES_ESPERADAS)

@@ -1,9 +1,10 @@
-"""Metricas Prometheus de la Feature 024 (R-4).
+"""Metricas Prometheus de las Features 024 y 025.
 
 Se usa un `CollectorRegistry` propio, nunca el registro global, para que la
 suite y cualquier import de terceros no interfieran. `route` es siempre la
 plantilla de la ruta (o el valor reservado `unmatched`): ninguna etiqueta lleva
-identificadores reales, correos, usuarios, instituciones ni tenants.
+identificadores reales, correos, usuarios, instituciones ni tenants. La familia
+del limitador solo distingue el resultado, nunca la IP.
 """
 
 from prometheus_client import (
@@ -20,6 +21,9 @@ from app.core.config import VERSION_APLICACION, VERSION_ESQUEMA_OBJETIVO
 #: Valor fijo para peticiones sin ruta resuelta. Evita una serie por URL
 #: escaneada y lo comparten el middleware y la exposicion.
 RUTA_NO_RESUELTA = "unmatched"
+
+#: Valor reservado para el 429 del limitador: no existe una ruta enrutada.
+RUTA_LIMITADA = "rate_limited"
 
 TIPO_CONTENIDO = CONTENT_TYPE_LATEST
 
@@ -59,6 +63,13 @@ compustock_app_info = Gauge(
     registry=REGISTRO,
 )
 
+compustock_rate_limit_requests_total = Counter(
+    "compustock_rate_limit_requests_total",
+    "Peticiones evaluadas por el limitador de tasa por resultado.",
+    ["resultado"],
+    registry=REGISTRO,
+)
+
 compustock_app_info.labels(
     version=VERSION_APLICACION,
     schema_version=VERSION_ESQUEMA_OBJETIVO,
@@ -82,3 +93,8 @@ def registrar_peticion(
 def generar_exposicion() -> str:
     """Exposicion en formato texto de Prometheus."""
     return generate_latest(REGISTRO).decode("utf-8")
+
+
+def registrar_limite(resultado: str) -> None:
+    """Cuenta una evaluacion del limitador: `permitida`, `limitada` o `error`."""
+    compustock_rate_limit_requests_total.labels(resultado=resultado).inc()

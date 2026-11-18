@@ -145,7 +145,7 @@ describe('LoginComponent', () => {
     expect(router.navigateByUrl).toHaveBeenCalledWith('/dashboard');
   });
 
-  it('un Superadmin sin ruta de retorno aterriza en /control (AC-18)', async () => {
+  it('un Superadmin sin ruta de retorno aterriza en /control/dashboard (AC-18)', async () => {
     const fixture = await montar(null);
 
     clerk.firmarSesion();
@@ -153,7 +153,7 @@ describe('LoginComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(router.navigateByUrl).toHaveBeenCalledWith('/control');
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/control/dashboard');
     expect(router.navigateByUrl).not.toHaveBeenCalledWith('/dashboard');
   });
 
@@ -202,9 +202,9 @@ describe('LoginComponent', () => {
       expect(resolverDestinoRetorno('/login')).toBe('/dashboard');
     });
 
-    it('sin retorno, el Superadmin va a /control y el resto a /dashboard', () => {
-      expect(resolverDestinoRetorno(null, 'Superadmin')).toBe('/control');
-      expect(resolverDestinoRetorno('', 'Superadmin')).toBe('/control');
+    it('sin retorno, el Superadmin va a /control/dashboard y el resto a /dashboard', () => {
+      expect(resolverDestinoRetorno(null, 'Superadmin')).toBe('/control/dashboard');
+      expect(resolverDestinoRetorno('', 'Superadmin')).toBe('/control/dashboard');
       expect(resolverDestinoRetorno(null, 'Administrador')).toBe('/dashboard');
       expect(resolverDestinoRetorno(null, 'Bodeguero')).toBe('/dashboard');
       expect(resolverDestinoRetorno(null, 'Solicitante')).toBe('/dashboard');

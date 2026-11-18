@@ -20,7 +20,6 @@ import {
 } from '../../shared/config/motivos-mutacion';
 import { AdministradorListadoControl } from '../../shared/interfaces';
 import { nuevaClaveIdempotencia } from '../../shared/utils/idempotencia';
-import { ControlNavComponent } from './control-nav.component';
 import { mensajeDeErrorControl } from './control-errores';
 import { ControlService } from './services/control.service';
 
@@ -45,7 +44,6 @@ import { ControlService } from './services/control.service';
   imports: [
     ReactiveFormsModule,
     RouterLink,
-    ControlNavComponent,
     MotivoSelectorComponent,
     EnlaceInvitacionComponent,
   ],

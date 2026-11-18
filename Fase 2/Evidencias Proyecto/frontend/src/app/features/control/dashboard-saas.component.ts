@@ -5,7 +5,6 @@ import {
   DashboardSaaS,
   InstitucionMetricas,
 } from '../../shared/interfaces';
-import { ControlNavComponent } from './control-nav.component';
 import { mensajeDeErrorControl } from './control-errores';
 import { ControlService } from './services/control.service';
 
@@ -38,7 +37,7 @@ const ETIQUETAS_DETALLE: Record<string, string> = {
 @Component({
   selector: 'app-control-dashboard-saas',
   standalone: true,
-  imports: [ControlNavComponent],
+  imports: [],
   templateUrl: './dashboard-saas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

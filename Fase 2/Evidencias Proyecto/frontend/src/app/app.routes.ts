@@ -8,6 +8,7 @@ import {
   ROLES_TICKETS,
 } from './core/auth/roles';
 import { AutenticacionGuard } from './core/guards/auth.guard';
+import { InicioGuard } from './core/guards/inicio.guard';
 import { RolGuard } from './core/guards/role.guard';
 
 /**
@@ -37,7 +38,15 @@ function seccionProtegida(
 }
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+  {
+    path: '',
+    canActivate: [InicioGuard],
+    loadComponent: () =>
+      import('./shared/components/ruta-inicial.component').then(
+        (m) => m.RutaInicialComponent,
+      ),
+    pathMatch: 'full',
+  },
   {
     path: 'login',
     loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent),

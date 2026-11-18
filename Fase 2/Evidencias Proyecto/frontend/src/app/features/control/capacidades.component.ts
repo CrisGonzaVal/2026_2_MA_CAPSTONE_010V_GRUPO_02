@@ -10,7 +10,6 @@ import { ActivatedRoute } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { CapacidadRespuesta, InstitucionControl } from '../../shared/interfaces';
-import { ControlNavComponent } from './control-nav.component';
 import { mensajeDeErrorControl } from './control-errores';
 import { ControlService } from './services/control.service';
 
@@ -41,7 +40,7 @@ const ETIQUETAS_CAPACIDAD: Record<string, string> = {
 @Component({
   selector: 'app-control-capacidades',
   standalone: true,
-  imports: [ControlNavComponent],
+  imports: [],
   templateUrl: './capacidades.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

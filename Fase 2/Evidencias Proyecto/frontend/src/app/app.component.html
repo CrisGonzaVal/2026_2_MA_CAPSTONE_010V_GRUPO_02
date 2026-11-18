@@ -118,13 +118,25 @@
       }
       @if (puedeControl()) {
         <a
-          routerLink="/control"
+          routerLink="/control/dashboard"
           routerLinkActive="bg-blue-600 text-white"
+          [routerLinkActiveOptions]="{ exact: true }"
+          class="flex items-center px-3 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <span class="text-xl" aria-hidden="true">📊</span>
+          @if (sidebarAbierto()) {
+            <span class="ml-3 font-medium">Dashboard SaaS</span>
+          }
+        </a>
+        <a
+          routerLink="/control/instituciones"
+          routerLinkActive="bg-blue-600 text-white"
+          [routerLinkActiveOptions]="{ exact: false }"
           class="flex items-center px-3 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
         >
           <span class="text-xl" aria-hidden="true">🛰️</span>
           @if (sidebarAbierto()) {
-            <span class="ml-3 font-medium">Control de instituciones</span>
+            <span class="ml-3 font-medium">Instituciones</span>
           }
         </a>
       }

@@ -28,7 +28,7 @@ verificación fijo `424242`):
 
 | Vista / acción | Resultado observado | AC |
 |---|---|---|
-| Login Clerk | nav sin enlace `/tickets`; con `/control` y `/administracion` (`02-dashboard-superadmin-nav.png`) | AC-3 |
+| Login Clerk | sin enlace `/tickets`; el destino inicial es `/control/dashboard`; el sidebar ofrece Dashboard SaaS e Instituciones (`02-dashboard-superadmin-nav.png`) | AC-3 |
 | Dashboard SaaS | 4 instituciones activas, atribución nombre+id, sedes y usuarios por rol (`03`) | AC-4 |
 | Instituciones | listado con RUT/dirección canónicos y estado (`04`) | AC-1 |
 | Editar INST-004 | nombre `Municipalidad de Talagante (verif 012)` persistido en `control.institucion` **y** en el espejo tenant (2 columnas); recargado (`05`) | AC-1 |
@@ -82,10 +82,13 @@ verificación fijo `424242`):
    `tests/test_gestion_administrativa_http_postgres_012.py::test_auth_me_resuelve_identidad_de_tenant`
    (rojo sin el fix, verde con él).
 
-## Hallazgos no resueltos (reportados)
+## Correcciones posteriores al recorrido original
 
-1. **`/control` aterriza en `/control/alta`** para un Superadmin autenticado (de
-   Feature 010), no en el dashboard SaaS. Es decisión previa, no una regresión.
+1. La raíz y el login sin retorno ahora llevan al Superadmin a
+   `/control/dashboard`; el acceso a `/control/alta` queda como acción contextual
+   `Nueva institución` dentro de la vista `/control/instituciones`.
+2. Se retiró la barra interna duplicada del portal de control. La navegación
+   principal queda en el sidebar global, sin cambiar rutas ni permisos.
 
 > **Corregido tras T13:** `POST /api/v1/usuarios/` usaba la sesión de **control** (`get_db`) y
 > sobre PostgreSQL un Administrador de tenant recibía **403** al dar de alta un usuario local.

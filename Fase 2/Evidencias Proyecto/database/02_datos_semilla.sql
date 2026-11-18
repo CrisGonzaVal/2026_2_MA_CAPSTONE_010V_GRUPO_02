@@ -48,8 +48,8 @@
 --   DELIBERADOS: filas independientes con ids y stock distintos.
 --   El reparto de sedes es el de la Feature 011: INST-001 -> 2, INST-002 -> 3,
 --   INST-003 -> 4, INST-004 -> 2; cada departamento va a UNA sede por
---   round-robin sobre ids ascendentes. `stock_sede` es el saldo vigente;
---   `inventario` queda como registro legado.
+--   round-robin sobre ids ascendentes. `stock_sede` es el unico saldo vigente
+--   desde la Feature 026: la antigua tabla `inventario` ya no existe.
 --
 -- CONVENCION DE IDs
 --   Los INSERT declaran el id de forma explicita (`OVERRIDING SYSTEM VALUE`)
@@ -63,7 +63,7 @@
 --   secuencia lineal y solo se alcanza por anulacion o rechazo con motivo.
 --
 -- VERSION OBJETIVO DEL DDL
---   021.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
+--   026.0 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
 -- =====================================================
 
 BEGIN;
@@ -124,7 +124,7 @@ BEGIN
 
     FOREACH v_tabla IN ARRAY ARRAY[
         'funcion_institucion', 'sede', 'departamento', 'rol', 'usuario',
-        'departamento_encargado', 'categoria', 'producto', 'inventario',
+        'departamento_encargado', 'categoria', 'producto',
         'stock_sede', 'movimiento_inventario', 'prioridad', 'estado_ticket',
         'ticket', 'detalle_ticket', 'historial_transicion_ticket',
         'historial_transicion_producto', 'historial_transicion_categoria',
@@ -144,7 +144,7 @@ BEGIN
 
         FOREACH v_tabla IN ARRAY ARRAY[
             'institucion', 'sede', 'departamento', 'rol', 'usuario',
-            'departamento_encargado', 'categoria', 'producto', 'inventario',
+            'departamento_encargado', 'categoria', 'producto',
             'stock_sede', 'movimiento_inventario', 'prioridad', 'estado_ticket',
             'ticket', 'detalle_ticket', 'historial_transicion_ticket',
             'historial_transicion_producto', 'historial_transicion_categoria',
@@ -258,7 +258,7 @@ INSERT INTO rol (rol_id, nombre_rol, descripcion) OVERRIDING SYSTEM VALUE VALUES
 (4, 'Solicitante',       'Funcionario que consulta stock y emite tickets');
 
 -- =====================================================
--- 4. USUARIO  (12 filas)
+-- 4. USUARIO  (13 filas)
 -- =====================================================
 -- Clerk es la unica autoridad de autenticacion (Feature 006): el usuario local
 -- no guarda credencial alguna. El vinculo con Clerk se resuelve por `correo`
@@ -274,6 +274,7 @@ INSERT INTO rol (rol_id, nombre_rol, descripcion) OVERRIDING SYSTEM VALUE VALUES
 -- el circuito Solicitante -> Bodeguero sin crear usuarios a mano. Ambos estan
 -- en el departamento 6 (Biblioteca, Sede 2) para que el ticket emitido por el
 -- Solicitante se despache desde la misma sede que opera el Bodeguero.
+-- El usuario 13 es la cuenta QA del Administrador institucional en INST-001.
 
 INSERT INTO usuario (usuario_id, nombre, apellido, correo, departamento_id, rol_id, sede_id) OVERRIDING SYSTEM VALUE VALUES
 (1,  'Camila',   'Fernandez', 'camila.fernandez@losalpes.cl',   1, 2, NULL),
@@ -286,8 +287,9 @@ INSERT INTO usuario (usuario_id, nombre, apellido, correo, departamento_id, rol_
 (8,  'Felipe',   'Soto',      'felipe.soto@cfsnorte.cl',       8, 4, NULL),
 (9,  'Carla',    'Mancilla',  'carla.mancilla@cordillera.cl',  9, 4, NULL),
 (10, 'Andres',   'Pino',      'andres.pino@talagante.cl',      10, 2, NULL),
-(11, 'Paula',    'Rojas',     'solicitante.test+clerk_test@example.com', 6, 4, NULL),
-(12, 'Roberto',  'Diaz',      'bodeguero.test+clerk_test@example.com',   6, 3, 2);
+(11, 'Paula',    'Rojas',     'solicitante.test+clerk_test@example.com', 6, 4, 2),
+(12, 'Roberto',  'Diaz',      'bodeguero.test+clerk_test@example.com',   6, 3, 2),
+(13, 'Admin',    'QA',        'admin020.test+clerk_test@example.com',     1, 2, NULL);
 
 -- =====================================================
 -- 4b. DEPARTAMENTO_ENCARGADO  (5 filas)  [Feature 011, auxiliar]
@@ -368,47 +370,17 @@ INSERT INTO producto (producto_id, nombre, descripcion, unidad_medida, stock_min
 (14, 'Folder Manila Carta',     'Carpeta de cartulina tamano carta',        'UNIDAD', 25, 10, 'INST-002', TRUE);
 
 -- =====================================================
--- 7. INVENTARIO  (14 filas)
--- =====================================================
--- `institucion_id` se deriva del departamento (D-2) y el producto debe ser de
--- esa misma institucion (FK compuesta). UNIQUE (departamento_id, producto_id):
--- cada producto va en un departamento distinto.
---   INST-001 -> inventarios 1..10, departamentos 1,2,5,6,7
---   INST-002 -> inventarios 11..14, departamento 8
--- Stock diferenciable entre homonimos: prod 1 (INST-001) = 50 vs
--- prod 11 (INST-002) = 12; prod 2 = 18 vs prod 12 = 9; prod 3 = 200 vs
--- prod 14 = 60. El stock de una institucion nunca se usa para la otra (AC-1).
-
-INSERT INTO inventario (inventario_id, stock_actual, ubicacion, departamento_id, producto_id, institucion_id) OVERRIDING SYSTEM VALUE VALUES
-(1,   50, 'Bodega Central - Estante A1', 7,  1,  'INST-001'),
-(2,   18, 'Bodega Central - Estante A2', 7,  2,  'INST-001'),
-(3,  200, 'Bodega Central - Estante C1', 6,  3,  'INST-001'),
-(4,  150, 'Bodega Central - Estante C2', 6,  4,  'INST-001'),
-(5,   35, 'Bodega Central - Estante D1', 6,  5,  'INST-001'),
-(6,   48, 'Bodega Central - Estante D2', 1,  6,  'INST-001'),
-(7,    3, 'Bodega Central - Estante B2', 7,  7,  'INST-001'),
-(8,    1, 'Bodega Central - Estante E1', 5,  8,  'INST-001'),
-(9,    6, 'Bodega Central - Estante E2', 2,  9,  'INST-001'),
-(10,  45, 'Bodega Central - Estante F1', 2,  10, 'INST-001'),
-(11,  12, 'Bodega CFS Norte - Estante N1', 8, 11, 'INST-002'),
-(12,   9, 'Bodega CFS Norte - Estante N2', 8, 12, 'INST-002'),
-(13,   8, 'Bodega CFS Norte - Estante N3', 8, 13, 'INST-002'),
-(14,  60, 'Bodega CFS Norte - Estante N4', 8, 14, 'INST-002');
-
--- =====================================================
--- 7b. STOCK_SEDE  (14 filas)  [Feature 011]
+-- 7. STOCK_SEDE  (14 filas)  [Feature 011; unico saldo desde la 026]
 -- =====================================================
 -- Saldo vigente por (sede, producto): UNIQUE (sede_id, producto_id) y
 -- CHECK (stock_actual >= 0). `institucion_id` es la de la sede y el producto, que
 -- las FK compuestas obligan a que coincida.
--- Consolidacion integra (spec D-7/AC-10): el saldo de cada fila departamental de
--- `inventario` se traslada tal cual a la sede de ESE departamento, sin repartir
--- ni duplicar. Como cada producto de la semilla vive en una sola fila
--- departamental, el total por producto coincide exactamente con el legado:
+-- Saldos por sede (la antigua tabla `inventario` ya no existe):
 --   sede 1 (deps 1,3,5,7): prods 1 (50), 2 (18), 6 (48), 7 (3), 8 (1)
---   sede 2 (deps 2,4,6):   prods 3 (200), 4 (150), 5 (35), 9 (6), 10 (45)
+--   sede 2 (deps 2,4,6):   prods 3 (200), 4 (150), 5 (45), 9 (12), 10 (45)
 --   sede 3 (dep 8):        prods 11 (12), 12 (9), 13 (8), 14 (60)
--- `departamento_id` deja de ser parte de la identidad del saldo vigente.
+-- Los saldos 8 y 9 (45 y 12) incorporan los movimientos 1..3 de la seccion 8;
+-- su base antes de esos movimientos era 35 y 6, respectivamente.
 
 INSERT INTO stock_sede (stock_sede_id, stock_actual, sede_id, producto_id, institucion_id) OVERRIDING SYSTEM VALUE VALUES
 (1,  50,  1, 1,  'INST-001'),
@@ -418,8 +390,8 @@ INSERT INTO stock_sede (stock_sede_id, stock_actual, sede_id, producto_id, insti
 (5,  1,   1, 8,  'INST-001'),
 (6,  200, 2, 3,  'INST-001'),
 (7,  150, 2, 4,  'INST-001'),
-(8,  35,  2, 5,  'INST-001'),
-(9,  6,   2, 9,  'INST-001'),
+(8,  45,  2, 5,  'INST-001'),
+(9,  12,  2, 9,  'INST-001'),
 (10, 45,  2, 10, 'INST-001'),
 (11, 12,  3, 11, 'INST-002'),
 (12, 9,   3, 12, 'INST-002'),
@@ -427,27 +399,20 @@ INSERT INTO stock_sede (stock_sede_id, stock_actual, sede_id, producto_id, insti
 (14, 60,  3, 14, 'INST-002');
 
 -- =====================================================
--- 8. MOVIMIENTO_INVENTARIO  (14 filas)
+-- 8. MOVIMIENTO_INVENTARIO  (3 filas)
 -- =====================================================
--- CHECK (cantidad > 0) respetado en todas las filas. Mezcla entradas y salidas.
--- La institucion del movimiento se hereda del inventario (auditoria inmutable).
---   INST-001 -> movimientos 1..10 ; INST-002 -> movimientos 11..14.
+-- CHECK (cantidad > 0) y CHECK (tipo_movimiento IN ('ENTRADA','SALIDA')).
+-- `stock_sede_id` es obligatorio desde la 026 y solo los saldos 8 y 9 tienen
+-- historial. Cuadre: saldo 8 = 35 + 10 = 45; saldo 9 = 6 + 21 - 15 = 12.
+-- INST-002 conserva 4 saldos sin movimientos: es el resultado esperado de
+-- descartar los 14 movimientos legados.
 
-INSERT INTO movimiento_inventario (movimiento_id, tipo_movimiento, cantidad, fecha_movimiento, observacion, inventario_id) OVERRIDING SYSTEM VALUE VALUES
-(1,  'ENTRADA', 50,  CURRENT_TIMESTAMP - INTERVAL '20 days', 'Compra a proveedor LICENSE-001', 1),
-(2,  'SALIDA',  5,  CURRENT_TIMESTAMP - INTERVAL '18 days', 'Retiro por stock minimo',            2),
-(3,  'ENTRADA', 10,  CURRENT_TIMESTAMP - INTERVAL '15 days', 'Compra urgente de toner',            3),
-(4,  'SALIDA',  8,  CURRENT_TIMESTAMP - INTERVAL '12 days', 'Consumo interno mensual',              4),
-(5,  'ENTRADA', 100, CURRENT_TIMESTAMP - INTERVAL '10 days', 'Compra trimestral de folders',        5),
-(6,  'SALIDA',  3,  CURRENT_TIMESTAMP - INTERVAL '8 days',  'Entrega a biblioteca',                 6),
-(7,  'SALIDA',  7,  CURRENT_TIMESTAMP - INTERVAL '6 days',  'Reposicion por merma detectada',       7),
-(8,  'ENTRADA', 25,  CURRENT_TIMESTAMP - INTERVAL '5 days',  'Compra de grapadoras',                8),
-(9,  'SALIDA',  4,  CURRENT_TIMESTAMP - INTERVAL '3 days',  'Prestamo a sala de clases',            9),
-(10, 'SALIDA',  4,  CURRENT_TIMESTAMP - INTERVAL '1 day',   'Reposicion por stock bajo',           10),
-(11, 'ENTRADA', 20,  CURRENT_TIMESTAMP - INTERVAL '9 days',  'Compra a proveedor LICENSE-014',      11),
-(12, 'SALIDA',  3,  CURRENT_TIMESTAMP - INTERVAL '7 days',  'Consumo en box de atencion',          12),
-(13, 'ENTRADA', 40,  CURRENT_TIMESTAMP - INTERVAL '4 days',  'Compra de insumos clinicos',          13),
-(14, 'SALIDA',  5,  CURRENT_TIMESTAMP - INTERVAL '2 days',  'Reposicion de archivadores',          14);
+INSERT INTO movimiento_inventario (
+    movimiento_id, tipo_movimiento, cantidad, fecha_movimiento, observacion, stock_sede_id
+) OVERRIDING SYSTEM VALUE VALUES
+(1, 'ENTRADA', 10, CURRENT_TIMESTAMP - INTERVAL '12 days', 'Compra de resmas para bodega', 8),
+(2, 'ENTRADA', 21, CURRENT_TIMESTAMP - INTERVAL '9 days',  'Compra de toner para bodega',  9),
+(3, 'SALIDA',  15, CURRENT_TIMESTAMP - INTERVAL '7 days',  'Entrega parcial de toner',     9);
 
 -- =====================================================
 -- 9. PRIORIDAD  (3 filas)  [GLOBAL, sin institucion - D-5/AC-3]
@@ -538,7 +503,6 @@ SELECT setval(pg_get_serial_sequence('rol',                    'rol_id'),       
 SELECT setval(pg_get_serial_sequence('usuario',                'usuario_id'),                COALESCE((SELECT MAX(usuario_id)                FROM usuario),                1));
 SELECT setval(pg_get_serial_sequence('categoria',              'categoria_id'),              COALESCE((SELECT MAX(categoria_id)              FROM categoria),              1));
 SELECT setval(pg_get_serial_sequence('producto',               'producto_id'),               COALESCE((SELECT MAX(producto_id)               FROM producto),               1));
-SELECT setval(pg_get_serial_sequence('inventario',             'inventario_id'),             COALESCE((SELECT MAX(inventario_id)             FROM inventario),             1));
 SELECT setval(pg_get_serial_sequence('movimiento_inventario', 'movimiento_id'),             COALESCE((SELECT MAX(movimiento_id)             FROM movimiento_inventario), 1));
 SELECT setval(pg_get_serial_sequence('prioridad',              'prioridad_id'),              COALESCE((SELECT MAX(prioridad_id)              FROM prioridad),              1));
 SELECT setval(pg_get_serial_sequence('estado_ticket',          'estado_id'),                 COALESCE((SELECT MAX(estado_id)                 FROM estado_ticket),          1));
@@ -571,7 +535,6 @@ DECLARE
         'usuario:usuario_id',
         'categoria:categoria_id',
         'producto:producto_id',
-        'inventario:inventario_id',
         'movimiento_inventario:movimiento_id',
         'prioridad:prioridad_id',
         'estado_ticket:estado_id',
@@ -608,7 +571,7 @@ $reset$;
 
 DO $construccion$
 DECLARE
-    v_version_objetivo constant text := '021.1';
+    v_version_objetivo constant text := '026.0';
     v_institucion_id text;
     v_esquema text;
     v_plantilla text;
@@ -679,7 +642,7 @@ BEGIN
         ) USING v_institucion_id;
 
         -- (1.4) Catalogo y stock, con institucion_id directo.
-        FOREACH v_plantilla IN ARRAY ARRAY['categoria', 'producto', 'inventario', 'stock_sede'] LOOP
+        FOREACH v_plantilla IN ARRAY ARRAY['categoria', 'producto', 'stock_sede'] LOOP
             EXECUTE format(
                 'INSERT INTO %I.%I OVERRIDING SYSTEM VALUE '
                 'SELECT * FROM control.%I WHERE institucion_id = $1',
@@ -687,12 +650,14 @@ BEGIN
             ) USING v_institucion_id;
         END LOOP;
 
-        -- (1.5) Movimientos (por el inventario) y tickets/detalles (institucion directa).
+        -- (1.5) Movimientos por el saldo de su sede y tickets/detalles
+        --       (institucion directa). `stock_sede_id` es obligatorio desde la
+        --       Feature 026: ya no existe el enlace por `inventario`.
         EXECUTE format(
             'INSERT INTO %I.movimiento_inventario OVERRIDING SYSTEM VALUE '
             'SELECT m.* FROM control.movimiento_inventario m '
-            'JOIN control.inventario i ON i.inventario_id = m.inventario_id '
-            'WHERE i.institucion_id = $1', v_esquema
+            'JOIN control.stock_sede s ON s.stock_sede_id = m.stock_sede_id '
+            'WHERE s.institucion_id = $1', v_esquema
         ) USING v_institucion_id;
         FOREACH v_plantilla IN ARRAY ARRAY['ticket', 'detalle_ticket'] LOOP
             EXECUTE format(
@@ -761,19 +726,141 @@ BEGIN
         IF v_obtenido <> 0 THEN
             RAISE EXCEPTION '02: % usuario(s) huerfano(s) en %.', v_obtenido, v_esquema;
         END IF;
-        --       (1.8.5) Cuadre de stock por producto entre inventario y stock_sede.
+        --       (1.8.5) Stock: el tenant replica exactamente los saldos de su
+        --       institucion y todo movimiento apunta a un saldo copiado.
+        EXECUTE format('SELECT count(*) FROM control.stock_sede WHERE institucion_id = $1', v_esquema)
+            INTO v_esperado USING v_institucion_id;
+        EXECUTE format('SELECT count(*) FROM %I.stock_sede', v_esquema) INTO v_obtenido;
+        IF v_esperado <> v_obtenido THEN
+            RAISE EXCEPTION '02: % saldo(s) esperados en %, obtenidos %.', v_esperado, v_esquema, v_obtenido;
+        END IF;
         EXECUTE format(
-            'SELECT count(*) FROM ('
-            '  SELECT i.producto_id, sum(i.stock_actual) AS departamental, '
-            '         coalesce((SELECT sum(s.stock_actual) FROM %1$I.stock_sede s '
-            '                   WHERE s.producto_id = i.producto_id), 0) AS por_sede '
-            '  FROM %1$I.inventario i GROUP BY i.producto_id'
-            ') t WHERE t.departamental <> t.por_sede', v_esquema
+            'SELECT count(*) FROM control.movimiento_inventario m '
+            'JOIN control.stock_sede s ON s.stock_sede_id = m.stock_sede_id '
+            'WHERE s.institucion_id = $1', v_esquema
+        ) INTO v_esperado USING v_institucion_id;
+        EXECUTE format('SELECT count(*) FROM %I.movimiento_inventario', v_esquema) INTO v_obtenido;
+        IF v_esperado <> v_obtenido THEN
+            RAISE EXCEPTION '02: % movimiento(s) esperados en %, obtenidos %.', v_esperado, v_esquema, v_obtenido;
+        END IF;
+        EXECUTE format(
+            'SELECT count(*) FROM %I.movimiento_inventario WHERE stock_sede_id IS NULL', v_esquema
         ) INTO v_obtenido;
         IF v_obtenido <> 0 THEN
-            RAISE EXCEPTION '02: % producto(s) no cuadran entre inventario y stock_sede en %.', v_obtenido, v_esquema;
+            RAISE EXCEPTION '02: % movimiento(s) sin stock_sede en %.', v_obtenido, v_esquema;
+        END IF;
+
+        --       (1.8.6) La tabla legada `inventario` ya no existe en el tenant.
+        IF to_regclass(format('%I.inventario', v_esquema)) IS NOT NULL THEN
+            RAISE EXCEPTION '02: la tabla legada inventario sigue en %.', v_esquema;
         END IF;
     END LOOP;
+
+    -------------------------------------------------------------------------
+    -- IDENTIDAD GLOBAL DE PRUEBA (Superadmin)
+    -------------------------------------------------------------------------
+    -- El Superadmin no pertenece a un tenant de negocio: vive en `control` y
+    -- se enruta mediante el esquema reservado `control`. La institucion y el
+    -- departamento administrativos satisfacen las FK NOT NULL sin contaminar
+    -- ninguno de los tenants institucionales.
+    INSERT INTO control.institucion (
+        institucion_id, nombre, rut, direccion, activo
+    ) VALUES (
+        'CTRL-SAAS', 'CompuStock SaaS', NULL, 'Esquema de control', TRUE
+    )
+    ON CONFLICT (institucion_id) DO NOTHING;
+
+    INSERT INTO control.departamento (
+        nombre_dep, descripcion, institucion_id, sede_id, activo
+    )
+    SELECT
+        'Administracion SaaS',
+        'Departamento administrativo del esquema de control',
+        'CTRL-SAAS',
+        NULL,
+        TRUE
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM control.departamento
+        WHERE institucion_id = 'CTRL-SAAS'
+    );
+
+    INSERT INTO control.usuario (
+        usuario_id, nombre, apellido, correo, departamento_id, rol_id, sede_id
+    ) OVERRIDING SYSTEM VALUE
+    SELECT
+        COALESCE((SELECT max(usuario_id) FROM control.usuario), 0) + 1,
+        'Superadmin',
+        'Sistema',
+        'superadmin.test+clerk_test@example.com',
+        d.departamento_id,
+        r.rol_id,
+        NULL
+    FROM control.departamento d
+    JOIN control.rol r ON r.nombre_rol = 'Superadmin'
+    WHERE d.institucion_id = 'CTRL-SAAS'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM control.usuario
+          WHERE correo = 'superadmin.test+clerk_test@example.com'
+      );
+
+    -------------------------------------------------------------------------
+    -- GUARDAS GLOBALES DE STOCK (Feature 026), antes de vaciar `control`
+    -------------------------------------------------------------------------
+    SELECT count(*) INTO v_obtenido FROM control.stock_sede;
+    IF v_obtenido <> 14 THEN
+        RAISE EXCEPTION '02: control.stock_sede tiene % fila(s) (esperadas 14).', v_obtenido;
+    END IF;
+    SELECT count(*) INTO v_obtenido FROM control.stock_sede WHERE institucion_id = 'INST-001';
+    IF v_obtenido <> 10 THEN
+        RAISE EXCEPTION '02: INST-001 tiene % saldo(s) (esperados 10).', v_obtenido;
+    END IF;
+    SELECT count(*) INTO v_obtenido FROM control.stock_sede WHERE institucion_id = 'INST-002';
+    IF v_obtenido <> 4 THEN
+        RAISE EXCEPTION '02: INST-002 tiene % saldo(s) (esperados 4).', v_obtenido;
+    END IF;
+
+    SELECT count(*) INTO v_obtenido FROM control.movimiento_inventario;
+    IF v_obtenido <> 3 THEN
+        RAISE EXCEPTION '02: control.movimiento_inventario tiene % fila(s) (esperadas 3).', v_obtenido;
+    END IF;
+    SELECT count(*) INTO v_obtenido FROM control.movimiento_inventario WHERE stock_sede_id IS NULL;
+    IF v_obtenido <> 0 THEN
+        RAISE EXCEPTION '02: % movimiento(s) sin stock_sede en control.', v_obtenido;
+    END IF;
+
+    SELECT stock_actual INTO v_obtenido FROM control.stock_sede WHERE stock_sede_id = 8;
+    IF v_obtenido <> 45 THEN
+        RAISE EXCEPTION '02: saldo 8 tiene % (esperado 45).', v_obtenido;
+    END IF;
+    SELECT stock_actual INTO v_obtenido FROM control.stock_sede WHERE stock_sede_id = 9;
+    IF v_obtenido <> 12 THEN
+        RAISE EXCEPTION '02: saldo 9 tiene % (esperado 12).', v_obtenido;
+    END IF;
+
+    SELECT s.stock_actual - coalesce(sum(
+               CASE m.tipo_movimiento WHEN 'ENTRADA' THEN m.cantidad ELSE -m.cantidad END
+           ), 0)
+      INTO v_obtenido
+      FROM control.stock_sede s
+      LEFT JOIN control.movimiento_inventario m ON m.stock_sede_id = s.stock_sede_id
+     WHERE s.stock_sede_id = 8
+     GROUP BY s.stock_actual;
+    IF v_obtenido <> 35 THEN
+        RAISE EXCEPTION '02: apertura del saldo 8 = % (esperada 35).', v_obtenido;
+    END IF;
+    SELECT s.stock_actual - coalesce(sum(
+               CASE m.tipo_movimiento WHEN 'ENTRADA' THEN m.cantidad ELSE -m.cantidad END
+           ), 0)
+      INTO v_obtenido
+      FROM control.stock_sede s
+      LEFT JOIN control.movimiento_inventario m ON m.stock_sede_id = s.stock_sede_id
+     WHERE s.stock_sede_id = 9
+     GROUP BY s.stock_actual;
+    IF v_obtenido <> 6 THEN
+        RAISE EXCEPTION '02: apertura del saldo 9 = % (esperada 6).', v_obtenido;
+    END IF;
     -------------------------------------------------------------------------
     -- FASE 2: MAPA `correo -> esquema` DE TODOS LOS USUARIOS LOCALES
     -------------------------------------------------------------------------
@@ -823,12 +910,17 @@ BEGIN
     DELETE FROM control.movimiento_inventario;
     DELETE FROM control.stock_sede;
     DELETE FROM control.ticket;
-    DELETE FROM control.inventario;
     DELETE FROM control.departamento_encargado;
     DELETE FROM control.producto;
     DELETE FROM control.categoria;
-    DELETE FROM control.usuario;
-    DELETE FROM control.departamento;
+    -- Se conserva exclusivamente la identidad global de prueba; los usuarios
+    -- institucionales ya fueron copiados a su tenant correspondiente.
+    DELETE FROM control.usuario
+    WHERE rol_id NOT IN (
+        SELECT rol_id FROM control.rol WHERE nombre_rol = 'Superadmin'
+    );
+    DELETE FROM control.departamento
+    WHERE institucion_id <> 'CTRL-SAAS';
     DELETE FROM control.sede;
     DELETE FROM control.prioridad;
     DELETE FROM control.estado_ticket WHERE nombre <> 'Anulado';
@@ -850,7 +942,12 @@ BEGIN
         RAISE EXCEPTION '02: control no tiene una unica fila de version %.', v_version_objetivo;
     END IF;
 
-    FOR v_institucion_id IN SELECT institucion_id FROM control.institucion ORDER BY institucion_id LOOP
+    FOR v_institucion_id IN
+        SELECT institucion_id
+        FROM control.institucion
+        WHERE institucion_id <> 'CTRL-SAAS'
+        ORDER BY institucion_id
+    LOOP
         v_esquema := pg_temp.nombre_esquema_tenant(v_institucion_id);
         IF to_regclass(format('%I.version_esquema', v_esquema)) IS NULL THEN
             RAISE EXCEPTION '02: el tenant % no existe.', v_esquema;
@@ -865,9 +962,15 @@ BEGIN
 
     RAISE NOTICE '02: semilla y tenants completados. control + tenants en version %; datos distribuidos por institucion.', v_version_objetivo;
 
-    -- Chequeo final de control: contexto global sin negocio.
-    IF (SELECT count(*) FROM control.usuario) <> 0 THEN
-        RAISE EXCEPTION '02: control.usuario no quedo vacio.';
+    -- Chequeo final de control: solo queda la identidad global Superadmin.
+    IF (
+        SELECT count(*)
+        FROM control.usuario u
+        JOIN control.rol r ON r.rol_id = u.rol_id
+        WHERE r.nombre_rol = 'Superadmin'
+    ) <> 1
+    OR (SELECT count(*) FROM control.usuario) <> 1 THEN
+        RAISE EXCEPTION '02: control.usuario debe conservar solo el Superadmin.';
     END IF;
     IF (SELECT count(*) FROM control.ticket) <> 0 OR (SELECT count(*) FROM control.detalle_ticket) <> 0 THEN
         RAISE EXCEPTION '02: quedaron tickets en control.';

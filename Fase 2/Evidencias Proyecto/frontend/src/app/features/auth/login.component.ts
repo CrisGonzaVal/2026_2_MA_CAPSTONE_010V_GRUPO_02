@@ -27,7 +27,7 @@ export function esRetornoLocalValido(retorno: string | null): retorno is string 
 
 /**
  * Destino tras iniciar sesión: la ruta local solicitada si es válida; si no hay
- * retorno, `/control` para el Superadmin —cuya única superficie es el portal de
+ * retorno, `/control/dashboard` para el Superadmin —cuya única superficie es el portal de
  * control— y `/dashboard` para los roles de negocio (Feature 017, T12).
  *
  * El fallback por rol evita que un Superadmin recién autenticado aterrice en
@@ -40,7 +40,7 @@ export function resolverDestinoRetorno(
   if (esRetornoLocalValido(retorno)) {
     return retorno;
   }
-  return rol === 'Superadmin' ? '/control' : '/dashboard';
+  return rol === 'Superadmin' ? '/control/dashboard' : '/dashboard';
 }
 
 /**
@@ -85,7 +85,7 @@ export class LoginComponent implements OnDestroy {
   /**
    * Destino vigente. Un retorno local válido se sigue de inmediato; sin él hay
    * que esperar a que la identidad local deje de estar `cargando` para elegir
-   * entre `/control` (Superadmin) y `/dashboard` (resto). `null` = aún no se
+   * entre `/control/dashboard` (Superadmin) y `/dashboard` (resto). `null` = aún no se
    * puede decidir.
    */
   private calcularDestino(): string | null {

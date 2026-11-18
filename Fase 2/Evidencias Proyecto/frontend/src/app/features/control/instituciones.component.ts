@@ -7,10 +7,9 @@ import {
   signal,
 } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { InstitucionControl } from '../../shared/interfaces';
-import { ControlNavComponent } from './control-nav.component';
 import { mensajeDeErrorControl } from './control-errores';
 import { ControlService } from './services/control.service';
 
@@ -27,7 +26,7 @@ import { ControlService } from './services/control.service';
 @Component({
   selector: 'app-control-instituciones',
   standalone: true,
-  imports: [ControlNavComponent, ReactiveFormsModule],
+  imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './instituciones.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

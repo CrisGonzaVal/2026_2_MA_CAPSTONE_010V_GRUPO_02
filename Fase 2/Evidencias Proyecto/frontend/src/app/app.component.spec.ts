@@ -252,7 +252,7 @@ describe('AppComponent', () => {
      * administración se retiran de la navegación; las rutas siguen protegidas
      * por el guard de rol.
      */
-    it('deja al Superadmin únicamente /control en la navegación', () => {
+    it('deja al Superadmin únicamente el portal /control en la navegación', () => {
       autenticacionFalsa.identidad.set({
         ...IDENTIDAD_RESUELTA,
         rol: 'Superadmin',
@@ -271,7 +271,8 @@ describe('AppComponent', () => {
       ]) {
         expect(destinos(compilado)).withContext(retirada).not.toContain(retirada);
       }
-      expect(destinos(compilado)).toContain('/control');
+      expect(destinos(compilado)).toContain('/control/dashboard');
+      expect(destinos(compilado)).toContain('/control/instituciones');
     });
 
     /**

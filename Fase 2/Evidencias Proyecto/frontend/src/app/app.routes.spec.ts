@@ -1,5 +1,6 @@
 import { routes } from './app.routes';
 import { AutenticacionGuard } from './core/guards/auth.guard';
+import { InicioGuard } from './core/guards/inicio.guard';
 import {
   ROLES_ADMINISTRATIVOS,
   ROLES_DASHBOARD,
@@ -75,9 +76,10 @@ describe('app.routes', () => {
     expect(ROLES_NEGOCIO as readonly string[]).not.toContain('Superadmin');
   });
 
-  it('conserva la redirección de la raíz a dashboard (AC-5)', () => {
+  it('resuelve la raíz con el guard de inicio según el rol', () => {
     const raiz = ruta('');
-    expect(raiz?.redirectTo).toBe('dashboard');
+    expect(raiz?.canActivate).toContain(InicioGuard);
+    expect(raiz?.redirectTo).toBeUndefined();
     expect(raiz?.pathMatch).toBe('full');
   });
 

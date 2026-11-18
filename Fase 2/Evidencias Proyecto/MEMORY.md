@@ -44,7 +44,10 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 - **Autoría del ticket = identidad de sesión:** no validar `usuario_id` del alta; la sede sale de `departamento.sede_id`. **Carreras gated:** `Barrier` no fija el orden del lock; la poseedora confirma con `threading.Event`.
 
 ## Próximos pasos
-- **Sprint 7 (03/Nov/2026 - 11/Dic/2026):** 020, 021, 022, 023, 024 y **025** cerradas; siguen **015** informes PDF/Excel y **016** notificaciones in-app. 026-029 después. **Hito 2** el **11/Dic/2026**.
+- **Sprint 7 (03/Nov/2026 - 11/Dic/2026):** 020, 021, 022, 023, 024 y **025** cerradas; siguen **015** informes PDF/Excel y **016** notificaciones in-app. La **026** (salud del esquema: índices, constraints y retiro del legado `inventario`) tiene spec/plan/tasks en `docs/spec/features/026-salud-esquema-bd/` y espera aprobación; 027-029 después. **Hito 2** el **11/Dic/2026**.
 - **Siguiente trabajo:** abrir la 015/016 con su spec; la caché de lecturas queda sin feature asignada; no reabrir la limpieza de 022, el refactor de 023 ni la 024/025 sin una spec propia.
 - **Diagramas:** 5 HTML + 5 PNG de casos de uso en `docs/diagramas/`, 8 diagramas 4+1 en `docs/diagramas/4+1-kruchten/` y 12 flujos por actor en `docs/diagramas/flujos-actores/`.
+- **Inicio por rol:** la ruta raíz ahora resuelve mediante `InicioGuard`: Superadmin entra a `/control/dashboard`; los roles institucionales conservan `/dashboard`; sesión ausente va a `/login`.
+- **Menú Superadmin:** el sidebar separa `Dashboard SaaS` (`/control/dashboard`) de `Instituciones` (`/control/instituciones`); el enlace dashboard usa activación exacta.
+- **UX portal de control:** se retiró la barra interna duplicada y el botón azul de alta de instituciones; las acciones quedan en el sidebar global.
 - Hallazgo abierto: `admin017.test+clerk_test@example.com` existe en Clerk pero no está mapeado en la BD actual (el Administrador mapeado es `admin020.test+clerk_test@example.com`, usuario 13 de INST-001); aviso de accesibilidad en el buscador operativo de inventario. `/ready` con `db` detenido tarda 3–7 s por DNS de Docker Desktop (no es la cota de AC-10).

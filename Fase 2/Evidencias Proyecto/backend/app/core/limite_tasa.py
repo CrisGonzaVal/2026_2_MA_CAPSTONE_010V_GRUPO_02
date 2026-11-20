@@ -40,6 +40,23 @@ MILISEGUNDOS_POR_SEGUNDO = 1000
 #: Redis en un agujero negro el fail-open sigue siendo una cota.
 TIEMPO_MAXIMO_EVALUACION = 0.5
 
+#: Tope de la **apertura** de una conexion al pool. Deliberadamente corto: un
+#: Redis inalcanzable debe caerse rapido (el fail-open no puede esperar). El
+#: costo real de abrir el pool no esta en el handshake TCP (unos milisegundos
+#: en loopback) sino en el intercambio de protocolo que hace redis-py al
+#: conectar: por eso el tope de lectura es mas holgado que este.
+TIEMPO_MAXIMO_CONEXION = 0.3
+
+#: Tope de **lectura** del socket. El handshake de redis-py (HELLO/AUTH/CLIENT)
+#: es un intercambio de varios viajes al servidor: con veinte conexiones
+#: simultaneas el servidor los serializa y cada una puede tardar mas de 200 ms
+#: en su primer viaje. Un tope de lectura ajustado ahi hace que el pool se
+#: degrade a fail-open por su propio arranque y el reparto concurrente se
+#: desbalancea. El tope duro del camino de peticion no cambia: sigue siendo
+#: `TIEMPO_MAXIMO_EVALUACION`, que envuelve toda la evaluacion con
+#: `asyncio.wait_for`.
+TIEMPO_MAXIMO_LECTURA = 2.0
+
 SCRIPT_LUA = """
 local actual = redis.call('INCR', KEYS[1])
 local ttl = redis.call('PTTL', KEYS[1])
@@ -115,8 +132,8 @@ class AlmacenRedis:
             # del *pool* la impone `asyncio.wait_for` en `LimitadorTasa.evaluar`.
             self._cliente = redis.asyncio.Redis.from_url(
                 self._url,
-                socket_connect_timeout=0.2,
-                socket_timeout=0.2,
+                socket_connect_timeout=TIEMPO_MAXIMO_CONEXION,
+                socket_timeout=TIEMPO_MAXIMO_LECTURA,
                 max_connections=20,
                 retry=Retry(NoBackoff(), 0),
             )

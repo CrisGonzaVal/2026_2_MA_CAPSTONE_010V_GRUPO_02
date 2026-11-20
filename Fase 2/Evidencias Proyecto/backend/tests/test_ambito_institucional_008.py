@@ -25,7 +25,6 @@ from app.models import (
     Categoria,
     Departamento,
     Institucion,
-    Inventario,
     Producto,
     Rol,
     Ticket,
@@ -92,16 +91,6 @@ def ambito(motor, datos_base):
         db.add(producto_ajeno)
         db.flush()
 
-        inventario_ajeno = Inventario(
-            stock_actual=7,
-            ubicacion="Bodega Sur - S1",
-            departamento_id=departamento_ajeno.departamento_id,
-            producto_id=producto_ajeno.producto_id,
-            institucion_id="INST02",
-        )
-        db.add(inventario_ajeno)
-        db.flush()
-
         ticket_propio = Ticket(
             usuario_id=datos_base["usuario_id"],
             prioridad_id=datos_base["prioridad_id"],
@@ -130,7 +119,6 @@ def ambito(motor, datos_base):
             "departamento_ajeno_id": departamento_ajeno.departamento_id,
             "categoria_ajena_id": categoria_ajena.categoria_id,
             "producto_ajeno_id": producto_ajeno.producto_id,
-            "inventario_ajeno_id": inventario_ajeno.inventario_id,
             "ticket_propio_id": ticket_propio.ticket_id,
             "ticket_ajeno_id": ticket_ajeno.ticket_id,
         }
@@ -268,18 +256,6 @@ def test_institucion_de_usuario(motor, ambito):
         assert ambito_service.institucion_de_usuario(db, propio) == "INST01"
         assert ambito_service.institucion_de_usuario(db, ajeno) == "INST02"
         assert ambito_service.institucion_de_usuario(db, None) is None
-    finally:
-        db.close()
-
-
-def test_institucion_de_inventario(motor, ambito):
-    db = _db(motor)
-    try:
-        propio = db.get(Inventario, ambito["inventario_id"])
-        ajeno = db.get(Inventario, ambito["inventario_ajeno_id"])
-        assert ambito_service.institucion_de_inventario(db, propio) == "INST01"
-        assert ambito_service.institucion_de_inventario(db, ajeno) == "INST02"
-        assert ambito_service.institucion_de_inventario(db, None) is None
     finally:
         db.close()
 

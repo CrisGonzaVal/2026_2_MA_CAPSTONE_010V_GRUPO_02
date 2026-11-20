@@ -6,8 +6,8 @@ institucion). SQLite (la suite funcional, en memoria) no acredita lo que aqui se
 comprueba:
 
   * las **claves foraneas compuestas** institucionales rechazan de verdad una
-    fila cruzada (producto/categoria, inventario/departamento, inventario/producto,
-    detalle/ticket, detalle/producto) — SQLite las declara pero su enforcement de
+    fila cruzada (producto/categoria, stock_sede/sede, stock_sede/producto,
+    detalle/ticket, detalle/producto) - SQLite las declara pero su enforcement de
     componentes compuestos no es el de PostgreSQL;
   * el **`NOT NULL`** de las columnas institucionales del DDL (el ORM de prueba
     tambien lo aplica, pero el DDL es la autoridad de datos reales);
@@ -208,6 +208,14 @@ def _sembrar_nuevo(conexion) -> dict:
         conexion,
         "INSERT INTO departamento (nombre_dep, institucion_id) VALUES ('Dep B','B') RETURNING departamento_id",
     )
+    sede_a = _un_escalar(
+        conexion,
+        "INSERT INTO sede (nombre, institucion_id) VALUES ('Sede A','A') RETURNING sede_id",
+    )
+    sede_b = _un_escalar(
+        conexion,
+        "INSERT INTO sede (nombre, institucion_id) VALUES ('Sede B','B') RETURNING sede_id",
+    )
     rol = _un_escalar(
         conexion, "INSERT INTO rol (nombre_rol) VALUES ('Administrador') RETURNING rol_id"
     )
@@ -265,6 +273,8 @@ def _sembrar_nuevo(conexion) -> dict:
     return {
         "dep_a": dep_a,
         "dep_b": dep_b,
+        "sede_a": sede_a,
+        "sede_b": sede_b,
         "cat_a": cat_a,
         "cat_b": cat_b,
         "prod_a": prod_a,
@@ -302,20 +312,20 @@ def test_esquema_nuevo_rechaza_referencias_cruzadas_entre_instituciones():
             (ids["cat_b"],),
             psycopg2.errors.ForeignKeyViolation,
         )
-        # inventario con departamento de otra institucion que su producto.
+        # stock_sede con sede de otra institucion que su producto.
         _esperar_violacion(
             conexion,
-            "INSERT INTO inventario (stock_actual, departamento_id, producto_id, institucion_id) "
+            "INSERT INTO stock_sede (stock_actual, sede_id, producto_id, institucion_id) "
             "VALUES (1,%s,%s,'A')",
-            (ids["dep_b"], ids["prod_a"]),
+            (ids["sede_b"], ids["prod_a"]),
             psycopg2.errors.ForeignKeyViolation,
         )
-        # inventario con producto de otra institucion que su departamento.
+        # stock_sede con producto de otra institucion que su sede.
         _esperar_violacion(
             conexion,
-            "INSERT INTO inventario (stock_actual, departamento_id, producto_id, institucion_id) "
+            "INSERT INTO stock_sede (stock_actual, sede_id, producto_id, institucion_id) "
             "VALUES (1,%s,%s,'A')",
-            (ids["dep_a"], ids["prod_b"]),
+            (ids["sede_a"], ids["prod_b"]),
             psycopg2.errors.ForeignKeyViolation,
         )
         # detalle de un ticket con producto de otra institucion.
@@ -329,14 +339,14 @@ def test_esquema_nuevo_rechaza_referencias_cruzadas_entre_instituciones():
 
         # Ninguna fila cruzada quedo persistida.
         assert _un_escalar(conexion, "SELECT count(*) FROM producto") == 2
-        assert _un_escalar(conexion, "SELECT count(*) FROM inventario") == 0
+        assert _un_escalar(conexion, "SELECT count(*) FROM stock_sede") == 0
         assert _un_escalar(conexion, "SELECT count(*) FROM detalle_ticket") == 0
 
         # Las constraints compuestas quedaron declaradas en el catalogo.
         for nombre in (
             "producto_categoria_institucion_fk",
-            "inventario_departamento_institucion_fk",
-            "inventario_producto_institucion_fk",
+            "stock_sede_sede_institucion_fk",
+            "stock_sede_producto_institucion_fk",
             "detalle_ticket_ticket_institucion_fk",
             "detalle_ticket_producto_institucion_fk",
             "departamento_institucion_uk",
@@ -356,7 +366,6 @@ def test_esquema_nuevo_exige_institucion_not_null():
         for tabla, columna in (
             ("categoria", "institucion_id"),
             ("producto", "institucion_id"),
-            ("inventario", "institucion_id"),
             ("ticket", "institucion_id"),
             ("detalle_ticket", "institucion_id"),
         ):

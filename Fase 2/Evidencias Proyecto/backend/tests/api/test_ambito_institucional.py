@@ -34,7 +34,6 @@ from app.models import (
     Categoria,
     Departamento,
     Institucion,
-    Inventario,
     MovimientoInventario,
     Producto,
     Rol,
@@ -64,12 +63,13 @@ RUTA_ROLES = "/api/v1/usuarios/roles"
 def ambito(motor, datos_base):
     """`datos_base` (institucion INST01) + una institucion ajena INST02 completa.
 
-    INST01 (propia): la institucion/departamento/usuario/producto/inventario de
-    `datos_base` ("Operaciones", inventario 50 del "Cuaderno linedado").
+    INST01 (propia): la institucion/departamento/usuario/producto/sede y saldo de
+    `datos_base` ("Operaciones", saldo 50 del "Cuaderno linedado").
 
     INST02 (ajena): institucion, departamento "Bodega Sur", usuario persistido,
-    inventario 7 del mismo producto, un producto y categoria propios, y sendos
-    movimientos (propio y ajeno) para aislar el historial.
+    producto y categoria propios, su sede con saldo 7 y sendos movimientos
+    (propio y ajeno) para aislar el historial. Desde la Feature 026 el unico
+    origen de un movimiento es `stock_sede_id`.
     """
     db = sessionmaker(bind=motor)()
     try:
@@ -99,7 +99,7 @@ def ambito(motor, datos_base):
         db.flush()
 
         # Feature 008 (D-1/D-2): el catalogo es institucional. INST02 tiene su
-        # propio producto, y su inventario solo puede referenciar ese producto.
+        # propio producto, y su saldo solo puede referenciar ese producto.
         categoria_ajena = Categoria(
             nombre_cat="Solo Ajeno",
             descripcion_cat="Catalogo de la institucion ajena",
@@ -119,36 +119,9 @@ def ambito(motor, datos_base):
         db.add(producto_ajeno)
         db.flush()
 
-        inventario_ajeno = Inventario(
-            stock_actual=7,
-            ubicacion="Bodega Sur - S1",
-            departamento_id=departamento_ajeno.departamento_id,
-            producto_id=producto_ajeno.producto_id,
-            institucion_id="INST02",
-        )
-        db.add(inventario_ajeno)
-        db.flush()
-
-        movimiento_ajeno = MovimientoInventario(
-            tipo_movimiento="ENTRADA",
-            cantidad=7,
-            observacion="Ingreso ajeno",
-            inventario_id=inventario_ajeno.inventario_id,
-        )
-        db.add(movimiento_ajeno)
-
-        movimiento_propio = MovimientoInventario(
-            tipo_movimiento="ENTRADA",
-            cantidad=50,
-            observacion="Ingreso propio",
-            inventario_id=datos_base["inventario_id"],
-        )
-        db.add(movimiento_propio)
-
         # Feature 011 (T8): el saldo vigente vive por sede (`stock_sede`), no en
-        # `inventario`. Se siembra una sede por institucion con el saldo del
-        # producto, y se asigna cada departamento a su sede para resolver el
-        # ambito operativo (Solicitante/Bodeguero).
+        # `inventario`. Cada institucion siembra su sede y su saldo; INST01 usa el
+        # nombre "Operaciones", el mismo de su departamento.
         sede_propia = Sede(nombre="Operaciones", institucion_id="INST01")
         sede_ajena = Sede(nombre="Bodega Sur", institucion_id="INST02")
         db.add_all([sede_propia, sede_ajena])
@@ -156,22 +129,36 @@ def ambito(motor, datos_base):
         departamento_propio = db.get(Departamento, datos_base["departamento_id"])
         departamento_propio.sede_id = sede_propia.sede_id
         departamento_ajeno.sede_id = sede_ajena.sede_id
-        db.add_all(
-            [
-                StockSede(
-                    sede_id=sede_propia.sede_id,
-                    producto_id=datos_base["producto_id"],
-                    stock_actual=50,
-                    institucion_id="INST01",
-                ),
-                StockSede(
-                    sede_id=sede_ajena.sede_id,
-                    producto_id=producto_ajeno.producto_id,
-                    stock_actual=7,
-                    institucion_id="INST02",
-                ),
-            ]
+        stock_propio = StockSede(
+            sede_id=sede_propia.sede_id,
+            producto_id=datos_base["producto_id"],
+            stock_actual=50,
+            institucion_id="INST01",
         )
+        stock_ajeno = StockSede(
+            sede_id=sede_ajena.sede_id,
+            producto_id=producto_ajeno.producto_id,
+            stock_actual=7,
+            institucion_id="INST02",
+        )
+        db.add_all([stock_propio, stock_ajeno])
+        db.flush()
+
+        movimiento_ajeno = MovimientoInventario(
+            tipo_movimiento="ENTRADA",
+            cantidad=7,
+            observacion="Ingreso ajeno",
+            stock_sede_id=stock_ajeno.stock_sede_id,
+        )
+        db.add(movimiento_ajeno)
+
+        movimiento_propio = MovimientoInventario(
+            tipo_movimiento="ENTRADA",
+            cantidad=50,
+            observacion="Ingreso propio",
+            stock_sede_id=stock_propio.stock_sede_id,
+        )
+        db.add(movimiento_propio)
         db.commit()
 
         return {
@@ -180,7 +167,8 @@ def ambito(motor, datos_base):
             "inst_ajena": "INST02",
             "dep_ajeno_id": departamento_ajeno.departamento_id,
             "usuario_ajeno_id": usuario_ajeno.usuario_id,
-            "inventario_ajeno_id": inventario_ajeno.inventario_id,
+            "stock_ajeno_id": stock_ajeno.stock_sede_id,
+            "stock_propio_id": stock_propio.stock_sede_id,
             "movimiento_ajeno_id": movimiento_ajeno.movimiento_id,
             "movimiento_propio_id": movimiento_propio.movimiento_id,
             "categoria_ajena_id": categoria_ajena.categoria_id,
@@ -250,14 +238,13 @@ def _existencia(existencias, producto_id):
     return next(e for e in existencias if e["producto_id"] == producto_id)
 
 
-def _stock_inventario_legado(motor, inventario_id: int) -> int:
-    """Saldo de una fila legada de `inventario`, leido por ORM.
+def _stock_por_sede(motor, stock_sede_id: int) -> int:
+    """Saldo de una fila de `stock_sede`, leido por ORM.
 
-    Feature 011 (B1): `GET /inventario/stock` ya no expone el inventario
-    departamental legado; los casos de movimiento legado observan su fila directa.
+    Feature 026: `inventario` desaparecio; el unico saldo vivo es el de la sede.
     """
     with sessionmaker(bind=motor)() as db:
-        return db.get(Inventario, inventario_id).stock_actual
+        return db.get(StockSede, stock_sede_id).stock_actual
 
 
 # ---------------------------------------------------------------------------
@@ -412,13 +399,13 @@ def test_movimientos_superadmin_recibe_403_ac_15(motor, ambito):
     assert respuesta.status_code == 403, respuesta.text
 
 
-def test_registrar_movimiento_en_inventario_ajeno_responde_403_sin_mutar(motor, ambito):
+def test_registrar_movimiento_en_stock_ajeno_responde_404_sin_mutar(motor, ambito):
     """Un Bodeguero no puede mover stock de otra institucion ni cambia filas.
 
-    La fila legada se observa por ORM: desde la Feature 011 (B1)
-    `GET /inventario/stock` no expone el inventario departamental.
+    Feature 026: el destino unico es la fila de `stock_sede`, y un recurso ajeno
+    se oculta con 404 (mismo patron que el resto de accesos por objeto).
     """
-    antes = _stock_inventario_legado(motor, ambito["inventario_ajeno_id"])
+    antes = _stock_por_sede(motor, ambito["stock_ajeno_id"])
     with _cliente(motor, "Bodeguero", ambito["departamento_id"]) as cliente:
         respuesta = cliente.post(
             RUTA_MOVIMIENTOS,
@@ -426,24 +413,26 @@ def test_registrar_movimiento_en_inventario_ajeno_responde_403_sin_mutar(motor, 
                 "tipo_movimiento": "ENTRADA",
                 "cantidad": 5,
                 "observacion": "Intento ajeno",
-                "inventario_id": ambito["inventario_ajeno_id"],
+                "stock_sede_id": ambito["stock_ajeno_id"],
             },
         )
-    despues = _stock_inventario_legado(motor, ambito["inventario_ajeno_id"])
+    despues = _stock_por_sede(motor, ambito["stock_ajeno_id"])
 
-    assert respuesta.status_code == 403, respuesta.text
+    assert respuesta.status_code == 404, respuesta.text
     assert despues == antes
 
 
-def test_registrar_movimiento_en_inventario_propio_responde_201(motor, ambito):
-    with _cliente(motor, "Bodeguero", ambito["departamento_id"]) as cliente:
+def test_registrar_movimiento_en_stock_propio_responde_201(motor, ambito):
+    with _cliente(
+        motor, "Bodeguero", ambito["departamento_id"], ambito["sede_propia_id"]
+    ) as cliente:
         respuesta = cliente.post(
             RUTA_MOVIMIENTOS,
             json={
                 "tipo_movimiento": "ENTRADA",
                 "cantidad": 5,
                 "observacion": "Ingreso propio valido",
-                "inventario_id": ambito["inventario_id"],
+                "stock_sede_id": ambito["stock_propio_id"],
             },
         )
     assert respuesta.status_code == 201, respuesta.text

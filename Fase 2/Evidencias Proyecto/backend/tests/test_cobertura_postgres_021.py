@@ -2,8 +2,8 @@
 
 La suite SQLite no puede acreditar lo que la Feature 021 exige del motor:
 
-  * **AC-11** - el DDL instala 27 tablas en `control` y 24 por tenant, con la
-    version `021.1`, la tabla `orden_compra_ticket` y la columna
+  * **AC-11** - el DDL instala 26 tablas en `control` y 23 por tenant, con la
+    version `026.0`, la tabla `orden_compra_ticket` y la columna
     `historial_transicion_ticket.orden_compra_id`;
   * **AC-11** - las FK compuestas de `orden_compra_ticket` rechazan una OC,
     pedido, producto o detalle de otra institucion, y el `UNIQUE` rechaza
@@ -57,9 +57,9 @@ RAIZ = Path(__file__).resolve().parents[2]
 ESQUEMA_SQL = RAIZ / "database" / "01_esquema.sql"
 SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 
-_VERSION_ESPERADA = "021.1"
-_TABLAS_CONTROL = 27
-_TABLAS_TENANT = 24
+_VERSION_ESPERADA = "026.0"
+_TABLAS_CONTROL = 26
+_TABLAS_TENANT = 23
 
 
 # ---------------------------------------------------------------------------
@@ -129,10 +129,7 @@ def _instalar(conexion) -> None:
 def _esquemas(conexion) -> list[str]:
     return ["control"] + [
         nombre_esquema_para_institucion(institucion_id)
-        for (institucion_id,) in _ejecutar(
-            conexion,
-            "SELECT institucion_id FROM control.institucion ORDER BY institucion_id",
-        )
+        for institucion_id in _esquema_instituciones(conexion)
     ]
 
 
@@ -172,8 +169,8 @@ def _restricciones(conexion, esquema: str, tabla: str) -> list[tuple[str, str, s
 # ---------------------------------------------------------------------------
 
 
-def test_ddl_instala_27_tablas_en_control_y_24_por_tenant():
-    """AC-11/DT-9: el DDL crece de 26/23 a 27/24 tablas."""
+def test_ddl_instala_26_tablas_en_control_y_23_por_tenant():
+    """AC-11/DT-9: la 026 retira `inventario` y deja 26/23 tablas."""
     with _base_temporal() as conexion:
         _ejecutar_script(conexion, ESQUEMA_SQL)
 
@@ -200,17 +197,19 @@ def test_ddl_instala_27_tablas_en_control_y_24_por_tenant():
 
 
 def _esquema_instituciones(conexion) -> list[str]:
+    # `CTRL-SAAS` es la institucion administrativa de `control`: no tiene tenant.
     return [
         fila[0]
         for fila in _ejecutar(
             conexion,
-            "SELECT institucion_id FROM control.institucion ORDER BY institucion_id",
+            "SELECT institucion_id FROM control.institucion "
+            "WHERE institucion_id <> 'CTRL-SAAS' ORDER BY institucion_id",
         )
     ]
 
 
-def test_semilla_fija_version_021_1_en_control_y_tenants():
-    """AC-11/DT-9: `VERSION_ESQUEMA_OBJETIVO` y la semilla suben a `021.1`."""
+def test_semilla_fija_version_026_0_en_control_y_tenants():
+    """AC-11/DT-9: `VERSION_ESQUEMA_OBJETIVO` y la semilla suben a `026.0`."""
     with _base_temporal() as conexion:
         _instalar(conexion)
 

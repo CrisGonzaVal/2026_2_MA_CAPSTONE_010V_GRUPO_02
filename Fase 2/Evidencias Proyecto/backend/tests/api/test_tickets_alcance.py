@@ -41,7 +41,7 @@ from app.models import (
     EstadoTicket,
     HistorialTransicionTicket,
     Institucion,
-    Inventario,
+    StockSede,
     Producto,
     Rol,
     Sede,
@@ -130,6 +130,12 @@ def ambito_tickets(motor, datos_base):
         )
         db.add(departamento_ajeno)
         db.flush()
+        sede_ajena = Sede(
+            nombre="Sede Bodega Sur", institucion_id=institucion_ajena.institucion_id
+        )
+        db.add(sede_ajena)
+        db.flush()
+        departamento_ajeno.sede_id = sede_ajena.sede_id
 
         usuario_ajeno = Usuario(
             nombre="Beto",
@@ -164,15 +170,6 @@ def ambito_tickets(motor, datos_base):
         )
         db.add(producto_institucional)
         db.flush()
-        db.add(
-            Inventario(
-                stock_actual=40,
-                ubicacion="Operaciones - C1",
-                departamento_id=datos_base["departamento_id"],
-                producto_id=producto_institucional.producto_id,
-                institucion_id=datos_base["institucion_id"],
-            )
-        )
         # Feature 011 (M2): el catalogo agrega el saldo por sede, no el inventario
         # departamental legado.
         db.add(
@@ -195,11 +192,10 @@ def ambito_tickets(motor, datos_base):
         db.add(producto_homonimo_ajeno)
         db.flush()
         db.add(
-            Inventario(
-                stock_actual=7,
-                ubicacion="Bodega Sur - C1",
-                departamento_id=departamento_ajeno.departamento_id,
+            StockSede(
+                sede_id=sede_ajena.sede_id,
                 producto_id=producto_homonimo_ajeno.producto_id,
+                stock_actual=7,
                 institucion_id=institucion_ajena.institucion_id,
             )
         )

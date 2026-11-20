@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -75,7 +76,7 @@ class Producto(Base):
             ["categoria.institucion_id", "categoria.categoria_id"],
             name="producto_categoria_institucion_fk",
         ),
-        # Destino de las FK compuestas `inventario -> producto` y
+        # Destino de las FK compuestas `stock_sede -> producto` y
         # `detalle_ticket -> producto` (AC-2, AC-4).
         UniqueConstraint(
             "institucion_id", "producto_id", name="producto_institucion_uk"
@@ -102,12 +103,6 @@ class Producto(Base):
         back_populates="productos",
         primaryjoin="Producto.categoria_id == Categoria.categoria_id",
         foreign_keys="Producto.categoria_id",
-    )
-    inventarios = relationship(
-        "Inventario",
-        back_populates="producto",
-        primaryjoin="Producto.producto_id == Inventario.producto_id",
-        foreign_keys="Inventario.producto_id",
     )
     detalles = relationship(
         "DetalleTicket",
@@ -209,3 +204,28 @@ class HistorialTransicionCategoria(Base):
         primaryjoin="HistorialTransicionCategoria.usuario_id == Usuario.usuario_id",
         foreign_keys="HistorialTransicionCategoria.usuario_id",
     )
+
+
+# Feature 026: unicidad funcional de categoria y indices P0 de catalogo.
+Index(
+    "categoria_nombre_institucion_uk",
+    Categoria.institucion_id,
+    func.lower(func.trim(Categoria.nombre_cat)),
+    unique=True,
+)
+Index(
+    "producto_categoria_idx",
+    Producto.categoria_id,
+)
+Index(
+    "historial_producto_producto_fecha_idx",
+    HistorialTransicionProducto.producto_id,
+    HistorialTransicionProducto.fecha_transicion.desc(),
+    HistorialTransicionProducto.historial_producto_id.desc(),
+)
+Index(
+    "historial_categoria_categoria_fecha_idx",
+    HistorialTransicionCategoria.categoria_id,
+    HistorialTransicionCategoria.fecha_transicion.desc(),
+    HistorialTransicionCategoria.historial_categoria_id.desc(),
+)

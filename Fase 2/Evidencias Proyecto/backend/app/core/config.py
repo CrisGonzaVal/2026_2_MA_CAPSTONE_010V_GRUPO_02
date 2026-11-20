@@ -25,8 +25,10 @@ VERSION_APLICACION = "1.0.0"
 #: sube de `014.1` a `020.1` (spec 020, AC-2/AC-14). La Feature 021 agrega la tabla
 #: `orden_compra_ticket` y la columna `historial_transicion_ticket.orden_compra_id`
 #: en control y en cada tenant, de modo que el objetivo sube de `020.1` a `021.1`
-#: (spec 021, AC-6/AC-11).
-VERSION_ESQUEMA_OBJETIVO = "021.1"
+#: (spec 021, AC-6/AC-11). La Feature 026 retira la tabla `inventario` (el saldo
+#: vigente es `stock_sede`), anade indices P0 y restricciones de dominio, de modo
+#: que el objetivo sube a `026.0` (spec 026, AC-13/AC-14).
+VERSION_ESQUEMA_OBJETIVO = "026.0"
 
 
 class Settings(BaseSettings):

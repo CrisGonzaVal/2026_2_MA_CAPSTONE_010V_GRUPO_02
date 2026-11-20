@@ -420,7 +420,7 @@ def _cuerpo(metodo: str, ruta: str, datos: dict):
             "tipo_movimiento": "ENTRADA",
             "cantidad": 5,
             "observacion": "Movimiento autorizado",
-            "inventario_id": datos["inventario_id"],
+            "stock_sede_id": datos["stock_sede_id"],
         }
     if (metodo, ruta) == ("POST", "/api/v1/tickets/"):
         return {
@@ -602,14 +602,13 @@ def datos_autorizacion(motor, datos_base):
         )
         db.add(sede)
         db.flush()
-        db.add(
-            StockSede(
-                sede_id=sede.sede_id,
-                producto_id=datos_base["producto_id"],
-                stock_actual=50,
-                institucion_id=datos_base["institucion_id"],
-            )
+        stock_sede = StockSede(
+            sede_id=sede.sede_id,
+            producto_id=datos_base["producto_id"],
+            stock_actual=50,
+            institucion_id=datos_base["institucion_id"],
         )
+        db.add(stock_sede)
 
         def _ticket(estado_id: int, asunto: str) -> Ticket:
             ticket = Ticket(
@@ -727,6 +726,7 @@ def datos_autorizacion(motor, datos_base):
             "rol_bodeguero_id": rol_bodeguero.rol_id,
             "rol_solicitante_id": rol_solicitante.rol_id,
             "sede_id": sede.sede_id,
+            "stock_sede_id": stock_sede.stock_sede_id,
             "usuario_bodeguero_id": usuario_bodeguero.usuario_id,
             "usuario_reenvio_id": usuario_bodeguero.usuario_id,
             "usuario_solicitante_id": usuario_solicitante.usuario_id,

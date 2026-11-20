@@ -61,13 +61,6 @@ def institucion_de_usuario(db: Session, usuario: Usuario | None) -> str | None:
     return institucion_de_departamento(db, usuario.departamento_id)
 
 
-def institucion_de_inventario(db: Session, inventario) -> str | None:
-    """Institucion de un inventario, heredada de su departamento (D-2)."""
-    if inventario is None:
-        return None
-    return institucion_de_departamento(db, inventario.departamento_id)
-
-
 def institucion_de_ticket(db: Session, ticket) -> str | None:
     """Institucion de un ticket, heredada del departamento de su solicitante."""
     if ticket is None:

@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import Integer, String, and_, cast, null, select, union_all
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core import permisos
@@ -10,7 +10,6 @@ from app.models import (
     Departamento,
     HistorialTransicionCategoria,
     HistorialTransicionProducto,
-    Inventario,
     MovimientoInventario,
     Producto,
     Sede,
@@ -213,8 +212,8 @@ def listar_stock_sede(
     """Serie plana del saldo vigente por sede (`stock_sede`).
 
     Feature 011 (spec D-2/§7, AC-2/AC-3/AC-7): el read model lee **exclusivamente**
-    `StockSede`, nunca las filas legadas de `inventario` como saldo. Expone la
-    referencia de escritura (`stock_sede_id`) y la sede resuelta, que
+    `StockSede`; desde la Feature 026 la tabla legada `inventario` ya no existe.
+    Expone la referencia de escritura (`stock_sede_id`) y la sede resuelta, que
     `/inventario/existencias` no entrega.
 
     Ambito:
@@ -413,10 +412,10 @@ def listar_existencias(
 ) -> List[ProductoExistenciaRespuesta]:
     """Un elemento por producto del catalogo, con su stock **por sede** (Feature 011).
 
-    La fuente unica de saldo vigente es `StockSede` (spec D-2): nunca se leen las
-    filas legadas de `inventario`. La respuesta expone obligatoriamente la sede y
-    el saldo (`SedeExistenciaRespuesta`) y el `stock_total` es la suma de las
-    sedes del ambito, no un saldo departamental paralelo.
+    La fuente unica de saldo vigente es `StockSede` (spec D-2); la tabla legada
+    `inventario` se retiro en la Feature 026. La respuesta expone obligatoriamente
+    la sede y el saldo (`SedeExistenciaRespuesta`) y el `stock_total` es la suma
+    de las sedes del ambito, no un saldo departamental paralelo.
 
     Es la unica lectura que cruza varias tablas, asi que -a diferencia del resto
     del servicio- usa `select()` de SQLAlchemy 2.0 con los onclause explicitos
@@ -604,8 +603,8 @@ def obtener_detalle_producto(
       con categoría activa; cualquier otra combinación es el mismo 404.
     * Las filas de sedes **inactivas** no se excluyen: no hay predicado sobre
       `Sede.activo`, y una sede asignada inactiva sigue siendo resoluble (D-3).
-    * `stock_sede` es la única fuente de saldo: no se leen ni suman las filas
-      legadas de `inventario` (D-5).
+    * `stock_sede` es la única fuente de saldo: la tabla legada `inventario` se
+      retiró en la Feature 026 (D-5).
     * El total y la criticidad se derivan **solo** de las sedes devueltas: con
       `sedes` vacío, `_es_producto_critico` evalúa saldo cero frente al mínimo.
 
@@ -684,11 +683,12 @@ def obtener_detalle_producto(
     )
 
 
-def _historial_legados():
-    """Select del historial de movimientos historicos (por `inventario_id`).
+def _historial_movimientos():
+    """Select unico del historial: todo movimiento se atribuye por su saldo.
 
-    Proyeccion compatible con `_historial_nuevos`: atribuye producto,
-    departamento y ubicacion desde el inventario legado y deja la sede en `null`.
+    Feature 026: `stock_sede` es el unico destino. La proyeccion resuelve
+    producto, sede e institucion desde el saldo; ya no hay poblacion legada ni
+    campos departamentales.
     """
     return (
         select(
@@ -697,53 +697,11 @@ def _historial_legados():
             MovimientoInventario.cantidad,
             MovimientoInventario.fecha_movimiento,
             MovimientoInventario.observacion,
-            MovimientoInventario.inventario_id,
-            cast(null(), Integer).label("stock_sede_id"),
-            Inventario.producto_id,
-            Producto.nombre.label("producto_nombre"),
-            Inventario.departamento_id,
-            Departamento.nombre_dep.label("departamento_nombre"),
-            cast(null(), Integer).label("sede_id"),
-            cast(null(), String(100)).label("sede_nombre"),
-            Inventario.ubicacion,
-            Departamento.institucion_id,
-        )
-        .join(
-            Inventario,
-            MovimientoInventario.inventario_id == Inventario.inventario_id,
-        )
-        .join(Producto, Inventario.producto_id == Producto.producto_id)
-        .join(
-            Departamento,
-            Inventario.departamento_id == Departamento.departamento_id,
-        )
-        .where(MovimientoInventario.inventario_id.is_not(None))
-    )
-
-
-def _historial_nuevos():
-    """Select del historial de movimientos nuevos (por `stock_sede_id`).
-
-    Proyeccion compatible con `_historial_legados`: atribuye producto, sede e
-    institucion desde `stock_sede` y deja departamento/ubicacion en `null`. No
-    expone ningun saldo departamental legado.
-    """
-    return (
-        select(
-            MovimientoInventario.movimiento_id,
-            MovimientoInventario.tipo_movimiento,
-            MovimientoInventario.cantidad,
-            MovimientoInventario.fecha_movimiento,
-            MovimientoInventario.observacion,
-            cast(null(), Integer).label("inventario_id"),
             MovimientoInventario.stock_sede_id,
             StockSede.producto_id,
             Producto.nombre.label("producto_nombre"),
-            cast(null(), Integer).label("departamento_id"),
-            cast(null(), String(200)).label("departamento_nombre"),
             Sede.sede_id.label("sede_id"),
             Sede.nombre.label("sede_nombre"),
-            cast(null(), String(100)).label("ubicacion"),
             StockSede.institucion_id,
         )
         .join(
@@ -751,8 +709,7 @@ def _historial_nuevos():
             MovimientoInventario.stock_sede_id == StockSede.stock_sede_id,
         )
         .join(Producto, StockSede.producto_id == Producto.producto_id)
-        .outerjoin(Sede, StockSede.sede_id == Sede.sede_id)
-        .where(MovimientoInventario.stock_sede_id.is_not(None))
+        .join(Sede, StockSede.sede_id == Sede.sede_id)
     )
 
 
@@ -761,32 +718,27 @@ def listar_movimientos(
 ) -> List[MovimientoInventarioRespuesta]:
     """Historial de movimientos con sus datos asociados (plan §3.4, AC-17..AC-20).
 
-    Feature 011 (spec D-2/AC-11): la lectura reune **ambas** poblaciones de
-    auditoria en una **proyeccion unica** (`union_all`): los movimientos
-    historicos enlazados a `inventario_id` y los nuevos enlazados a
-    `stock_sede_id`. Asi el despacho por sede -que deja `inventario_id` nulo- no
-    desaparece del historial. Cada fila expone `departamento`/`ubicacion` (legados)
-    o `sede` (nuevos) segun su origen, y jamas un saldo departamental legado.
+    Feature 026: una sola consulta sobre `MovimientoInventario` unida a
+    `StockSede`, `Producto` y `Sede`. Cada fila expone el saldo y la sede que la
+    originaron; no existen movimientos sin destino ni campos del inventario
+    departamental legado.
 
     Como `listar_existencias`, cruza varias tablas, asi que usa `select()` de
-    columnas con los onclause explicitos y ejecuta con `.mappings()`. Las etiquetas
-    que no coinciden con el campo del DTO (`Producto.nombre` -> `producto_nombre`,
-    `Departamento.nombre_dep` -> `departamento_nombre`) se asignan con `.label()`,
-    de modo que cada mapping se convierte en `MovimientoInventarioRespuesta` con
-    `**fila`.
+    columnas con los onclause explicitos y ejecuta con `.mappings()`. La etiqueta
+    que no coincide con el campo del DTO (`Producto.nombre` -> `producto_nombre`)
+    se asigna con `.label()`, de modo que cada mapping se convierte en
+    `MovimientoInventarioRespuesta` con `**fila`.
 
     El orden `fecha_movimiento DESC, movimiento_id DESC` es determinista incluso
     ante empates de fecha (AC-19); no hay paginacion.
 
     Ambito institucional (D-4/AC-8): un rol limitado solo ve los movimientos
-    cuya institucion -heredada del inventario legado o declarada por la fila de
-    stock por sede- coincide con la suya.
+    cuya institucion -declarada por la fila de stock por sede- coincide con la
+    suya.
     """
     institucion_id = ambito_service.alcance_institucional(db, identidad)
 
-    historial = union_all(
-        _historial_legados(), _historial_nuevos()
-    ).subquery("historial")
+    historial = _historial_movimientos().subquery("historial")
     consulta = select(historial)
     consulta = ambito_service.filtrar_por_institucion(
         consulta, historial.c.institucion_id, institucion_id
@@ -916,7 +868,7 @@ def _bloquear_categoria(db: Session, categoria_id: int) -> Categoria:
 def _exigir_stock_cero(db: Session, producto_id: int) -> None:
     """Precondicion de baja de producto: saldo cero en **todas** las sedes (D-6).
 
-    Solo cuenta `stock_sede`; las filas legadas de `inventario` no son saldo
+    Solo cuenta `stock_sede`; desde la Feature 026 no existe otra tabla de saldo
     operativo. Las filas se bloquean en orden de PK y se leen en la misma
     transaccion que la transicion, de modo que un movimiento concurrente no
     puede crear saldo entre la comprobacion y el cambio de estado.
@@ -1259,69 +1211,15 @@ def registrar_movimiento(
     Trazabilidad Absoluta (`constitucion.md` §2): el registro de auditoria se
     escribe en la misma transaccion que la mutacion del stock, o no se escribe.
 
-    La Feature 011 (spec D-2/§9, AC-7) hace de `stock_sede_id` la referencia de
-    los movimientos **nuevos**: la mutacion toca `StockSede` y la auditoria enlaza
-    esa fila dejando `inventario_id` nulo. Un `sede_id` distinto al del Bodeguero
-    -de su institucion o ajeno- se oculta con **404** sin mutar; sin sede asignada
-    la operacion se deniega con **409**. El camino legado por `inventario_id` se
-    conserva para los registros historicos, acotado a la institucion del actor.
+    Feature 026: `stock_sede_id` es la unica referencia de escritura. La mutacion
+    toca `StockSede` y la auditoria enlaza esa fila. Un `sede_id` distinto al del
+    Bodeguero -de su institucion o ajeno- se oculta con **404** sin mutar; sin
+    sede asignada la operacion se deniega con **409**.
     """
     institucion_id = ambito_service.alcance_institucional(db, identidad)
-
-    if movimiento.stock_sede_id is not None:
-        return _registrar_movimiento_por_sede(
-            db, movimiento, institucion_id, identidad
-        )
-
-    if movimiento.inventario_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Debe indicar 'stock_sede_id' o 'inventario_id'",
-        )
-
-    inventario = (
-        db.query(Inventario)
-        .filter(Inventario.inventario_id == movimiento.inventario_id)
-        .first()
+    return _registrar_movimiento_por_sede(
+        db, movimiento, institucion_id, identidad
     )
-    if not inventario:
-        raise HTTPException(status_code=404, detail="Inventario no encontrado")
-
-    if institucion_id is not None:
-        ambito_service.validar_departamento_en_alcance(
-            db, inventario.departamento_id, institucion_id
-        )
-
-    # Feature 014 (AC-9): el camino legado de auditoria sigue disponible para sus
-    # filas historicas, pero tampoco admite movimientos nuevos sobre un producto
-    # retirado.
-    producto_legado = db.get(Producto, inventario.producto_id)
-    if producto_legado is not None and not producto_legado.activo:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No se puede registrar un movimiento sobre un producto inactivo",
-        )
-
-    tipo = movimiento.tipo_movimiento.upper()
-    if tipo == TIPO_ENTRADA:
-        inventario.stock_actual += movimiento.cantidad
-    elif tipo == TIPO_SALIDA:
-        if inventario.stock_actual < movimiento.cantidad:
-            raise HTTPException(
-                status_code=400,
-                detail="Stock insuficiente para realizar la salida",
-            )
-        inventario.stock_actual -= movimiento.cantidad
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Tipo de movimiento invalido (Use 'ENTRADA' o 'SALIDA')",
-        )
-
-    db.add(MovimientoInventario(**movimiento.model_dump()))
-    db.commit()
-    db.refresh(inventario)
-    return inventario
 
 
 def _registrar_movimiento_por_sede(

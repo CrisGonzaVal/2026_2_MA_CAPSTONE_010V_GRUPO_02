@@ -27,7 +27,7 @@ from uuid import uuid4
 from typing import List
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -119,6 +119,43 @@ def _nombre_rol(db: Session, usuario: Usuario) -> str | None:
 
 def _conflicto(detalle: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detalle)
+
+
+def _nombre_normalizado(nombre: str) -> str:
+    """Nombre visible sin espacios exteriores; el resto se conserva."""
+    return nombre.strip()
+
+
+def _sede_duplicada(
+    db: Session,
+    institucion_id: str,
+    nombre: str,
+    excluir_id: int | None = None,
+) -> bool:
+    """Feature 026 (U-03): homonimo funcional dentro de la institucion."""
+    consulta = db.query(Sede).filter(
+        Sede.institucion_id == institucion_id,
+        func.lower(func.trim(Sede.nombre)) == nombre.strip().lower(),
+    )
+    if excluir_id is not None:
+        consulta = consulta.filter(Sede.sede_id != excluir_id)
+    return consulta.first() is not None
+
+
+def _departamento_duplicado(
+    db: Session,
+    institucion_id: str,
+    nombre_dep: str,
+    excluir_id: int | None = None,
+) -> bool:
+    """Feature 026 (U-04): homonimo funcional dentro de la institucion."""
+    consulta = db.query(Departamento).filter(
+        Departamento.institucion_id == institucion_id,
+        func.lower(func.trim(Departamento.nombre_dep)) == nombre_dep.strip().lower(),
+    )
+    if excluir_id is not None:
+        consulta = consulta.filter(Departamento.departamento_id != excluir_id)
+    return consulta.first() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -318,18 +355,20 @@ def crear_sede(
     UI (AC-6). La institucion la resuelve el servidor desde la sesion.
     """
     institucion_id = _institucion_requerida(db, identidad)
-    existente = (
-        db.query(Sede)
-        .filter(Sede.institucion_id == institucion_id, Sede.nombre == datos.nombre)
-        .first()
-    )
-    if existente is not None:
+    nombre = _nombre_normalizado(datos.nombre)
+    if _sede_duplicada(db, institucion_id, nombre):
         raise _conflicto("Ya existe una sede con ese nombre en la institucion")
     sede = Sede(
-        nombre=datos.nombre, direccion=datos.direccion, institucion_id=institucion_id
+        nombre=nombre, direccion=datos.direccion, institucion_id=institucion_id
     )
     db.add(sede)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _conflicto(
+            "Ya existe una sede con ese nombre en la institucion"
+        ) from exc
     db.refresh(sede)
     return sede
 
@@ -347,9 +386,20 @@ def editar_sede(
     """
     institucion_id = ambito_service.alcance_institucional(db, identidad)
     sede = _sede_en_alcance(db, sede_id, institucion_id)
-    sede.nombre = datos.nombre
+    nombre = _nombre_normalizado(datos.nombre)
+    if _sede_duplicada(
+        db, sede.institucion_id, nombre, excluir_id=sede.sede_id
+    ):
+        raise _conflicto("Ya existe una sede con ese nombre en la institucion")
+    sede.nombre = nombre
     sede.direccion = datos.direccion
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _conflicto(
+            "Ya existe una sede con ese nombre en la institucion"
+        ) from exc
     db.refresh(sede)
     return sede
 
@@ -435,13 +485,24 @@ def crear_departamento(
     operativa, regla 011); se asigna despues con `PUT .../sede`.
     """
     institucion_id = _institucion_requerida(db, identidad)
+    nombre_dep = _nombre_normalizado(datos.nombre_dep)
+    if _departamento_duplicado(db, institucion_id, nombre_dep):
+        raise _conflicto(
+            "Ya existe un departamento con ese nombre en la institucion"
+        )
     departamento = Departamento(
-        nombre_dep=datos.nombre_dep,
+        nombre_dep=nombre_dep,
         descripcion=datos.descripcion,
         institucion_id=institucion_id,
     )
     db.add(departamento)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _conflicto(
+            "Ya existe un departamento con ese nombre en la institucion"
+        ) from exc
     db.refresh(departamento)
     return departamento
 
@@ -455,9 +516,25 @@ def editar_departamento(
     """Modifica nombre y descripcion de un departamento del tenant (AC-7)."""
     institucion_id = ambito_service.alcance_institucional(db, identidad)
     departamento = _departamento_en_alcance(db, departamento_id, institucion_id)
-    departamento.nombre_dep = datos.nombre_dep
+    nombre_dep = _nombre_normalizado(datos.nombre_dep)
+    if _departamento_duplicado(
+        db,
+        departamento.institucion_id,
+        nombre_dep,
+        excluir_id=departamento.departamento_id,
+    ):
+        raise _conflicto(
+            "Ya existe un departamento con ese nombre en la institucion"
+        )
+    departamento.nombre_dep = nombre_dep
     departamento.descripcion = datos.descripcion
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _conflicto(
+            "Ya existe un departamento con ese nombre en la institucion"
+        ) from exc
     db.refresh(departamento)
     return departamento
 

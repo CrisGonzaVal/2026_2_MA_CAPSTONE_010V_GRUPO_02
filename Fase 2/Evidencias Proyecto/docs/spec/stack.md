@@ -92,17 +92,19 @@ aplicación, con estado en Redis y **fail-open**. Norma desde la Feature 025:
 
 > **Nota de migración**: el código actual está en fase de migración a esta estructura, que es la normativa desde hoy (AGENTS.md describe la nueva estructura).
 
-> **Nota de vigencia — base consolidada (07/Nov/2026):** `database/` se mantiene en
-> dos scripts puros. `01_esquema.sql` crea `control` (27 tablas) y un esquema
-> `tenant_<slug>_<hash>` por institución (24 tablas de negocio) y siembra la
+> **Nota de vigencia — base consolidada (18/Nov/2026, Feature 026):** `database/` se
+> mantiene en dos scripts puros. `01_esquema.sql` crea `control` (26 tablas) y un esquema
+> `tenant_<slug>_<hash>` por institución (23 tablas de negocio) y siembra la
 > topología; `02_datos_semilla.sql` llena la semilla QA, la reparte a los tenants,
-> puebla `control.mapa_usuario_esquema` y fija la versión `021.1` con guardia
+> puebla `control.mapa_usuario_esquema` y fija la versión `026.0` con guardia
 > fail-closed. **No hay migraciones**: los cambios de esquema se resuelven
 > recreando el volumen (`docker compose down -v` + `up -d`), nunca actualizando in
-> situ. Las menciones a migraciones, constructores de tenants, a los conteos
-> anteriores (22/19 tablas) y al «modelo de 12 entidades» que aparecen más abajo son
-> **históricas** de las features 008–019 y quedan superadas por esta nota y por las
-> secciones de las Features 020 y 021.
+> situ. La tabla `inventario` se retiró: el saldo vigente es `stock_sede` y la
+> auditoría es `movimiento_inventario`, cuyo destino es `stock_sede_id` (obligatorio).
+> Las menciones a migraciones, constructores de tenants, a los conteos
+> anteriores (27/24 y 22/19 tablas) y al «modelo de 12 entidades» que aparecen más abajo son
+> **históricas** de las features 008–021 y quedan superadas por esta nota y por las
+> secciones de las Features 020, 021 y 026.
 
 Para lograr un proyecto verdaderamente modular, escalable y mantenible, la estructura de carpetas debe seguir principios de arquitectura limpia (Clean Architecture) en el backend y diseño guiado por el dominio (Domain-Driven Design - DDD) en el frontend.
 
@@ -767,6 +769,8 @@ El stock físico se reparte **parcialmente** entre pedidos, a diferencia de la s
 
 **Por qué:** el Administrador no puede decidir una compra mirando solo la demanda agregada; necesita saber qué pedidos la componen, asignarlos al emitir y seguir el avance por producto sin inventar un estado nuevo que rompa el Kanban. Una sola tabla puente con la cantidad asignada y el faltante congela la intención para auditar «planificado vs real», permite cobertura parcial y conserva la cancelación como historia sin replanificar en silencio. Reutilizar la capacidad `compras` y una única operación de lectura mantiene el contrato acotado, y el renombrado visible alinea el lenguaje del negocio con «pedido» sin romper ninguna ruta ni identificador. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y su aprobación eleva el conteo de `AGENTS.md` §7 a **22 entidades de dominio**, el DDL a **27/24 tablas** y el token a **`021.1`**; sincronizar esas cifras en `AGENTS.md` y `MEMORY.md` corresponde al cierre de la feature (AGENTS.md §8.7).
 
+**Enmienda 18/Nov/2026 (Feature 026): salud del esquema BD.** El modelo canónico pasa de 22 a **21 entidades de dominio** al retirar la tabla `inventario`; se conservan `stock_sede` (saldo vigente) y `movimiento_inventario` (auditoría, con `stock_sede_id NOT NULL` y sin `inventario_id`). El DDL pasa de **27 a 26 tablas en `control`** y de **24 a 23 tablas por tenant**. Se agregan **15 índices P0** por esquema (más los 2 P0 heredados de la 021) y **6 unicidades B2**: checks K-01…K-04, la unicidad parcial U-06 y las unicidades funcionales U-01…U-05 con normalización y respuesta **409**; U-07 (`UNIQUE ((true))` sobre `version_esquema`) es un helper **solo de PostgreSQL**, aplicado en caliente por `control_service`. La semilla conserva **14 `stock_sede`** (10 en INST-001 + 4 en INST-002) y **3 `movimiento_inventario`** coherentes, con saldos 45 (producto 5, stock 8) y 12 (producto 9, stock 9). El token de versión sube de `021.1` a **`026.0`**. Se mantienen todas las FKs y joins del modelo vigente —la única FK retirada es la de `movimiento_inventario` hacia `inventario`, que muere con la tabla—; no hay triggers, stored procedures ni cursores. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y su aprobación deja `AGENTS.md` §7 en **21 entidades de dominio**, el DDL en **26/23 tablas** y el token en `026.0`.
+
 ### 3. Estructura del Frontend (Angular 18 Standalone)
 En Angular moderno (sin NgModules), la clave es el agrupamiento por Características (Features). Esto facilita el Lazy Loading (carga perezosa) y hace que la aplicación escale sin que el código se enrede.
 
@@ -891,7 +895,8 @@ Frontend     obtenerTickets()     listaStock       AutenticacionService
 - APIs de terceros y de framework.
 - Sufijos estructurales de Angular (`Component`, `Service`, `Guard`, `Interceptor`, `Pipe`, `Routes`): se traduce el dominio, no el sufijo. Por eso `auth.service.ts` exporta `AutenticacionService`.
 
-**Los 12 modelos de dominio ya cumplen** la regla: `Institucion`, `Departamento`, `Rol`, `Usuario`, `Categoria`, `Producto`, `Inventario`, `MovimientoInventario`, `Prioridad`, `EstadoTicket`, `Ticket`, `DetalleTicket`.
+**Los 14 modelos de dominio ya cumplen** la regla: `Institucion`, `Departamento`, `Rol`, `Usuario`, `Categoria`, `Producto`, `Prioridad`, `EstadoTicket`, `Ticket`, `DetalleTicket`, `Sede`, `DepartamentoEncargado`, `StockSede`, `VersionEsquema`.
+  *Nota: `MovimientoInventario` persiste como tipo de dato de auditoria (no como tabla operativa de entidad de dominio), referenciado por `stock_sede_id` y con la versión esquema `version_esquema` como catálogo global. La tabla `inventario` se retiró en la Feature 026.*
 
 **Los DTO de lectura también, y en las dos capas.** La Feature 002 agregó un par de
 schemas y su par de tipos de TypeScript, con el mismo nombre en ambos lados:

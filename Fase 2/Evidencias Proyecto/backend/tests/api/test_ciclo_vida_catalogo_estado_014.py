@@ -201,16 +201,14 @@ def test_baja_producto_con_saldos_en_cero_procede_ac_6(motor, mundo):
         assert activo_de_producto(motor, producto) is False
 
 
-def test_inventario_legado_positivo_no_impide_la_baja_ac_6(motor, mundo):
-    """AC-6: `inventario` legado no es saldo operativo y no participa."""
-    # El producto base de la fixture tiene una fila legada de `inventario` con 50;
-    # se le da saldo operativo cero en `stock_sede` para aislar la precondicion.
-    base = mundo["producto_id"]
-    fijar_stock_sede(motor, mundo, base, 0)
+def test_saldo_operativo_positivo_impide_la_baja_ac_6(motor, mundo):
+    """AC-6/026: solo el saldo vigente por sede participa en la precondicion."""
+    # El saldo operativo vigente debe quedar en cero para permitir la baja.
+    base = crear_producto(motor, mundo, nombre="Saldo legado retirado", stock_sede=0)
 
     with _admin(motor, mundo) as cliente:
         respuesta = transicionar_producto(
-            cliente, base, activo=False, motivo="Solo queda inventario legado"
+            cliente, base, activo=False, motivo="Saldo operativo cero"
         )
         assert respuesta.status_code == 200, respuesta.text
         assert activo_de_producto(motor, base) is False

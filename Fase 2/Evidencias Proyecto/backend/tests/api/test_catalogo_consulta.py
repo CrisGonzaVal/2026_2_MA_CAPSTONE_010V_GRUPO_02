@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Categoria, Departamento, Inventario, Producto, Sede, StockSede
+from app.models import Categoria, Departamento, Producto, Sede, StockSede
 
 RUTA_EXISTENCIAS = "/api/v1/inventario/existencias"
 RUTA_CATEGORIAS = "/api/v1/inventario/categorias"
@@ -91,18 +91,6 @@ def datos_catalogo(motor, datos_base):
             db.flush()
             return producto
 
-        def nueva_existencia(producto_id, stock, ubicacion, departamento_id):
-            inventario = Inventario(
-                stock_actual=stock,
-                ubicacion=ubicacion,
-                departamento_id=departamento_id,
-                producto_id=producto_id,
-                institucion_id="INST01",
-            )
-            db.add(inventario)
-            db.flush()
-            return inventario
-
         # Multi-sede: el mismo producto en dos departamentos.
         resma = nuevo_producto(
             "Resma Carta 75g",
@@ -111,9 +99,7 @@ def datos_catalogo(motor, datos_base):
             20,
             datos_base["categoria_id"],
         )
-        nueva_existencia(resma.producto_id, 120, "Bodega Central - A1", datos_base["departamento_id"])
-        nueva_existencia(resma.producto_id, 30, "Bodega Central - A2", departamento_bodega.departamento_id)
-        # Saldo vigente por sede (Feature 011, D-2): mismo agregado (150) que el legado.
+        # Saldo vigente por sede (Feature 011, D-2).
         nueva_existencia_sede(resma.producto_id, 120, sede_operaciones.sede_id)
         nueva_existencia_sede(resma.producto_id, 30, sede_bodega.sede_id)
         # El cuaderno de `datos_base`: su saldo vigente es el de la sede (50).
@@ -123,7 +109,6 @@ def datos_catalogo(motor, datos_base):
         toner = nuevo_producto(
             "Toner HP 26A", "Cartucho negro HP26A", "UNIDAD", 10, categoria_toner.categoria_id
         )
-        nueva_existencia(toner.producto_id, 3, "Bodega Central - B1", departamento_bodega.departamento_id)
         nueva_existencia_sede(toner.producto_id, 3, sede_bodega.sede_id)
 
         # Sin ninguna existencia: debe seguir apareciendo en el catalogo.
@@ -135,8 +120,7 @@ def datos_catalogo(motor, datos_base):
         boligrota = nuevo_producto(
             "Boligrota Bic Cristal", "Punta fina color negro", "UNIDAD", 30, datos_base["categoria_id"]
         )
-        nueva_existencia(boligrota.producto_id, 30, "Bodega Central - C1", datos_base["departamento_id"])
-        nueva_existencia_sede(boligrota.producto_id, 30, sede_operaciones.sede_id)
+        nueva_existencia_sede(boligrota.producto_id, 30, sede_bodega.sede_id)
 
         ids = {
             "categoria_toner_id": categoria_toner.categoria_id,
@@ -206,7 +190,7 @@ def test_existencia_expone_categoria_y_sedes(cliente, datos_catalogo):
     for existencia in _obtener(cliente):
         assert existencia["categoria_nombre"]
         for sede in existencia["sedes"]:
-            assert sede["sede_nombre"] in {"Operaciones", "Bodega"}
+            assert sede["sede_nombre"] in {"Sede Central", "Operaciones", "Bodega"}
 
     resma = _por_id(_obtener(cliente), datos_catalogo["producto_resma_id"])
     assert resma["categoria_nombre"] == "Papeleria"

@@ -361,7 +361,9 @@ def test_superadmin_no_muta_catalogo_stock_ni_tickets(motor, datos_base):
                 "tipo_movimiento": "ENTRADA",
                 "cantidad": 5,
                 "observacion": "Intento de Superadmin",
-                "inventario_id": datos_base["inventario_id"],
+                # El cuerpo debe validar para llegar a la autorizacion; el id no
+                # necesita existir porque el 403 corta antes de resolver el recurso.
+                "stock_sede_id": 1,
             },
         )
         ticket = cliente.post(

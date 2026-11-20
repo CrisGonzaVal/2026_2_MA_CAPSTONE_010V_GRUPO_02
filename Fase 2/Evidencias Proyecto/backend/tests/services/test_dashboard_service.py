@@ -36,7 +36,6 @@ from app.models import (
     Departamento,
     EstadoTicket,
     Institucion,
-    Inventario,
     MovimientoInventario,
     Prioridad,
     Producto,
@@ -169,29 +168,9 @@ def escenario(motor):
         producto("Producto Sin Inventario", 5, cat_a)
         papel_b = producto("Papel Bond", M_PAPEL, cat_b)
 
-        def inventario(
-            prod: Producto, dep: Departamento, stock: int
-        ) -> Inventario:
-            inv = Inventario(
-                stock_actual=stock,
-                ubicacion=f"{dep.nombre_dep} ({prod.institucion_id})",
-                departamento_id=dep.departamento_id,
-                producto_id=prod.producto_id,
-                institucion_id=prod.institucion_id,
-            )
-            db.add(inv)
-            db.flush()
-            return inv
-
-        inv_papel_op_a = inventario(papel_a, dep_op_a, M_PAPEL - 1)
-        inventario(papel_a, dep_bod_a, M_PAPEL)
-        inventario(papel_a, dep_arc_a, M_PAPEL + 1)
-        inventario(cero_a, dep_op_a, 0)
-        inventario(papel_b, dep_op_b, 3)
-
-        # Feature 011 (spec D-6/AC-11): el saldo vigente vive por sede. Se crea una
-        # sede por departamento y las filas de stock equivalentes; las de
-        # `inventario` quedan como legado para los movimientos historicos.
+        # Feature 026: el saldo vigente vive unicamente por sede. Se crea una
+        # sede por departamento y las filas de stock equivalentes; ya no hay
+        # filas legadas de `inventario`.
         def sede(nombre: str, dep: Departamento, institucion_id: str) -> Sede:
             fila = Sede(nombre=nombre, institucion_id=institucion_id)
             db.add(fila)
@@ -217,7 +196,7 @@ def escenario(motor):
             db.flush()
             return fila
 
-        stock_por_sede(papel_a, sede_op_a, M_PAPEL - 1)
+        stock_papel_op_a = stock_por_sede(papel_a, sede_op_a, M_PAPEL - 1)
         stock_por_sede(papel_a, sede_bod_a, M_PAPEL)
         stock_por_sede(papel_a, sede_arc_a, M_PAPEL + 1)
         stock_por_sede(cero_a, sede_op_a, 0)
@@ -263,7 +242,7 @@ def escenario(motor):
             "solic1_a": solic1_a.usuario_id,
             "producto_papel_a": papel_a.producto_id,
             "producto_papel_b": papel_b.producto_id,
-            "inventario_papel_op_a": inv_papel_op_a.inventario_id,
+            "stock_sede_papel_op_a": stock_papel_op_a.stock_sede_id,
         }
     finally:
         db.close()
@@ -446,7 +425,7 @@ def test_actividad_ordena_por_fecha_y_id_descendente_con_limite(motor, escenario
     """AC-6: solo las diez mas recientes, `fecha DESC` y desempate `id DESC`."""
     db = sessionmaker(bind=motor)()
     try:
-        inventario_id = escenario["inventario_papel_op_a"]
+        stock_sede_id = escenario["stock_sede_papel_op_a"]
         nueva = datetime(2026, 3, 10, 9, 0, 0)
         media = datetime(2026, 2, 10, 9, 0, 0)
         vieja = datetime(2026, 1, 10, 9, 0, 0)
@@ -457,7 +436,7 @@ def test_actividad_ordena_por_fecha_y_id_descendente_con_limite(motor, escenario
                 cantidad=1,
                 fecha_movimiento=fecha,
                 observacion="Sembrado para la actividad",
-                inventario_id=inventario_id,
+                stock_sede_id=stock_sede_id,
             )
             db.add(mov)
             db.flush()

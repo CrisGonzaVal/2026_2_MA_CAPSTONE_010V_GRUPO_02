@@ -25,7 +25,9 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Identity,
+    Index,
     String,
+    func,
     true,
 )
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column
@@ -116,6 +118,14 @@ class ProveedorControl(BaseControl):
     """
 
     __tablename__ = "proveedor"
+    __table_args__ = (
+        # Feature 026 (K-02): el RUT visible conserva puntos y guion, pero se
+        # guarda en mayusculas y sin espacios exteriores.
+        CheckConstraint(
+            "rut = upper(trim(rut)) AND length(rut) > 0",
+            name="proveedor_rut_canonico_ck",
+        ),
+    )
 
     proveedor_id: Mapped[int] = mapped_column(
         Identity(always=True), primary_key=True
@@ -130,3 +140,17 @@ class ProveedorControl(BaseControl):
     activo: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
+
+
+# Feature 026 (U-02): unicidad funcional global del RUT en `control`.
+Index(
+    "proveedor_rut_normalizado_uk",
+    func.upper(
+        func.replace(
+            func.replace(func.replace(func.trim(ProveedorControl.rut), ".", ""), "-", ""),
+            " ",
+            "",
+        )
+    ),
+    unique=True,
+)

@@ -26,7 +26,6 @@ from app.models import (
     Departamento,
     DetalleTicket,
     EstadoTicket,
-    Inventario,
     MovimientoInventario,
     Producto,
     Sede,
@@ -56,9 +55,14 @@ def _sede_de_datos_base(motor, datos_base):
     """
     global _SEDE_BASE_ID, _MOTOR
     _MOTOR = motor
-    _SEDE_BASE_ID = asegurar_sede_de_departamento(
+    sede_base = asegurar_sede_de_departamento(
         motor, datos_base, stocks={datos_base["producto_id"]: 50}
-    )["sede_id"]
+    )
+    _SEDE_BASE_ID = sede_base["sede_id"]
+    # Feature 026: `datos_base` ya no siembra sede ni saldo; esta suite los
+    # necesita en todos los fixtures derivados, asi que se adjuntan al dict.
+    datos_base["sede_id"] = sede_base["sede_id"]
+    datos_base["stock_sede_id"] = sede_base["stock_sede_ids"][datos_base["producto_id"]]
 
 
 def _instalar_catalogo(motor, nombres):
@@ -138,26 +142,16 @@ def datos_despacho(motor, datos_base):
         db.add(producto_escaso)
         db.flush()
 
-        inventario_escaso = Inventario(
-            stock_actual=4,
-            ubicacion="Bodega escasa",
-            departamento_id=datos_base["departamento_id"],
+        # Feature 026: el saldo vigente del producto escaso vive directamente en
+        # la sede; no se crea una fila departamental legada.
+        inventario_escaso = StockSede(
+            sede_id=_SEDE_BASE_ID,
             producto_id=producto_escaso.producto_id,
+            stock_actual=4,
             institucion_id=datos_base["institucion_id"],
         )
         db.add(inventario_escaso)
         db.flush()
-
-        # Feature 011 (T9): el saldo vigente del producto escaso vive en la sede
-        # del departamento (el inventario legado de arriba solo da el id/mapa).
-        db.add(
-            StockSede(
-                sede_id=_SEDE_BASE_ID,
-                producto_id=producto_escaso.producto_id,
-                stock_actual=4,
-                institucion_id=datos_base["institucion_id"],
-            )
-        )
         db.commit()
 
         datos = {**datos_base}
@@ -170,7 +164,7 @@ def datos_despacho(motor, datos_base):
                 "estado_en_curso_id": ids["EnCurso"],
                 "estado_cerrado_id": ids["Cerrado"],
                 "producto_escaso_id": producto_escaso.producto_id,
-                "inventario_escaso_id": inventario_escaso.inventario_id,
+                "inventario_escaso_id": inventario_escaso.stock_sede_id,
             }
         )
         return datos
@@ -271,7 +265,7 @@ def datos_inventario_invalido(motor, datos_base):
 
     Feature 011 (T9): el despacho lee solo `stock_sede` de la sede almacenada. Los
     casos de "inventario ausente/ambiguo" pasan a ser "sin saldo en la sede":
-    `producto_sin_inventario_id` no tiene ninguna fila de `stock_sede`;
+    `producto_sin_stock_sede_id` no tiene ninguna fila de `stock_sede`;
     `producto_dos_filas_id` solo tiene saldo en **otra** sede (la del segundo
     departamento), de modo que el despacho no lo usa y responde 409.
     """
@@ -330,7 +324,7 @@ def datos_inventario_invalido(motor, datos_base):
                 "estado_en_revision_id": ids["EnRevision"],
                 "estado_en_curso_id": ids["EnCurso"],
                 "estado_cerrado_id": ids["Cerrado"],
-                "producto_sin_inventario_id": sin_inventario.producto_id,
+                "producto_sin_stock_sede_id": sin_inventario.producto_id,
                 "producto_dos_filas_id": dos_filas.producto_id,
                 "sede_alterna_id": sede_alterna.sede_id,
             }
@@ -407,7 +401,7 @@ def leer_ticket(cliente, ticket_id: int) -> dict:
     return next(t for t in respuesta.json() if t["ticket_id"] == ticket_id)
 
 
-def leer_stock(cliente, inventario_id: int) -> int:
+def leer_stock(cliente, stock_sede_id: int) -> int:
     """Saldo por sede del producto de una fila de inventario legado.
 
     Feature 011 (T9/B1): el despacho ya no rebaja el inventario departamental sino
@@ -417,7 +411,7 @@ def leer_stock(cliente, inventario_id: int) -> int:
     esta suite). Asi los casos previos siguen midiendo el efecto real del despacho.
     """
     with sessionmaker(bind=_MOTOR)() as db:
-        producto_id = db.get(Inventario, inventario_id).producto_id
+        producto_id = db.get(StockSede, stock_sede_id).producto_id
 
     existencias = cliente.get("/api/v1/inventario/existencias")
     assert existencias.status_code == 200, existencias.text
@@ -451,7 +445,7 @@ def salidas_persistidas(motor) -> list[dict]:
                 "tipo_movimiento": m.tipo_movimiento,
                 "cantidad": m.cantidad,
                 "observacion": m.observacion,
-                "inventario_id": m.inventario_id,
+                "stock_sede_id": m.stock_sede_id,
             }
             for m in registros
         ]
@@ -477,7 +471,7 @@ def verificar_sin_efectos(
     Observa, en este orden, el ticket (estado y `fecha_cierre`), sus detalles
     (`cantidad_entregada` en 0), el inventario que se habría rebajado y la
     auditoría (cero movimientos del ticket). `inventarios` mapea
-    `inventario_id` → stock que debe permanecer intacto.
+    `stock_sede_id` → stock que debe permanecer intacto.
     """
     ticket = leer_ticket(cliente, ticket_id)
     assert (
@@ -487,10 +481,10 @@ def verificar_sin_efectos(
     assert all(
         detalle["cantidad_entregada"] == 0 for detalle in ticket["detalles"]
     ), "un rechazo no puede dejar entregas, ni parciales"
-    for inventario_id, stock_esperado in inventarios.items():
+    for stock_sede_id, stock_esperado in inventarios.items():
         assert (
-            leer_stock(cliente, inventario_id) == stock_esperado
-        ), f"un rechazo no puede rebajar el inventario {inventario_id}"
+            leer_stock(cliente, stock_sede_id) == stock_esperado
+        ), f"un rechazo no puede rebajar el inventario {stock_sede_id}"
     assert (
         salidas_del_ticket(motor, ticket_id) == []
     ), "un rechazo no puede crear movimientos de auditoría"
@@ -532,7 +526,7 @@ def test_despacho_cierra_el_ticket_con_fecha_y_entregas_completas(
 
 def test_despacho_rebaja_el_stock_del_inventario_unico(cliente, datos_despacho):
     """AC-2: el inventario único del producto baja exactamente lo solicitado."""
-    stock_inicial = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock_inicial = leer_stock(cliente, datos_despacho["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_despacho,
@@ -544,7 +538,7 @@ def test_despacho_rebaja_el_stock_del_inventario_unico(cliente, datos_despacho):
     )
 
     assert respuesta.status_code == 200, respuesta.text
-    assert leer_stock(cliente, datos_despacho["inventario_id"]) == stock_inicial - 3
+    assert leer_stock(cliente, datos_despacho["stock_sede_id"]) == stock_inicial - 3
 
 
 def test_despacho_registra_una_salida_con_observacion_literal(
@@ -574,9 +568,7 @@ def test_despacho_registra_una_salida_con_observacion_literal(
     salida = salidas[0]
     assert salida["tipo_movimiento"] == "SALIDA"
     assert salida["cantidad"] == 3
-    assert salida["inventario_id"] is None, (
-        "Feature 011: el movimiento nuevo se enlaza por stock_sede_id"
-    )
+    assert salida["stock_sede_id"] is not None
     assert salida["observacion"] == observacion_esperada
 
 
@@ -587,7 +579,7 @@ def test_despacho_de_dos_lineas_del_mismo_producto_suma_stock_y_deja_una_por_lin
     cliente, motor, datos_despacho
 ):
     """AC-3: dos líneas del mismo producto, un movimiento por línea y suma total."""
-    stock_inicial = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock_inicial = leer_stock(cliente, datos_despacho["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_despacho,
@@ -606,14 +598,12 @@ def test_despacho_de_dos_lineas_del_mismo_producto_suma_stock_y_deja_una_por_lin
         respuesta.json()["detalles"], key=lambda d: d["detalle_ticket_id"]
     )
     assert [d["cantidad_entregada"] for d in detalles] == [3, 4]
-    assert leer_stock(cliente, datos_despacho["inventario_id"]) == stock_inicial - 7
+    assert leer_stock(cliente, datos_despacho["stock_sede_id"]) == stock_inicial - 7
 
     salidas = salidas_del_ticket(motor, ticket_id)
     assert len(salidas) == 2, "cada línea conserva su propio movimiento (D-7)"
     assert sorted(m["cantidad"] for m in salidas) == [3, 4]
-    assert {m["inventario_id"] for m in salidas} == {None}, (
-        "Feature 011: los movimientos nuevos dejan inventario_id nulo"
-    )
+    assert all(m["stock_sede_id"] is not None for m in salidas)
     assert {m["tipo_movimiento"] for m in salidas} == {"SALIDA"}
 
     persistido = leer_ticket(cliente, ticket_id)
@@ -705,7 +695,7 @@ def test_despacho_rechaza_stock_insuficiente_sin_efectos(
     inventarios (el escaso y el holgado) para descartar efectos colaterales.
     """
     stock_escaso = leer_stock(cliente, datos_despacho["inventario_escaso_id"])
-    stock_holgado = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock_holgado = leer_stock(cliente, datos_despacho["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_despacho,
@@ -730,7 +720,7 @@ def test_despacho_rechaza_stock_insuficiente_sin_efectos(
         datos_despacho["estado_en_curso_id"],
         {
             datos_despacho["inventario_escaso_id"]: stock_escaso,
-            datos_despacho["inventario_id"]: stock_holgado,
+            datos_despacho["stock_sede_id"]: stock_holgado,
         },
     )
 
@@ -744,7 +734,7 @@ def test_despacho_no_deja_efectos_parciales_si_un_producto_anterior_si_tenia_sto
     descuento línea a línea: la primera línea tiene stock de sobra y aun así no
     puede quedar rebajada cuando la segunda no alcanza.
     """
-    stock_holgado = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock_holgado = leer_stock(cliente, datos_despacho["stock_sede_id"])
     stock_escaso = leer_stock(cliente, datos_despacho["inventario_escaso_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
@@ -769,7 +759,7 @@ def test_despacho_no_deja_efectos_parciales_si_un_producto_anterior_si_tenia_sto
         ticket_id,
         datos_despacho["estado_en_curso_id"],
         {
-            datos_despacho["inventario_id"]: stock_holgado,
+            datos_despacho["stock_sede_id"]: stock_holgado,
             datos_despacho["inventario_escaso_id"]: stock_escaso,
         },
     )
@@ -806,7 +796,7 @@ def test_despacho_con_usuario_inexistente_responde_404_sin_efectos(
     cliente, motor, datos_despacho
 ):
     """AC-6: el `usuario_id` debe existir → 404, sin tocar el ticket ni el stock."""
-    stock = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock = leer_stock(cliente, datos_despacho["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_despacho,
@@ -822,7 +812,7 @@ def test_despacho_con_usuario_inexistente_responde_404_sin_efectos(
         motor,
         ticket_id,
         datos_despacho["estado_en_curso_id"],
-        {datos_despacho["inventario_id"]: stock},
+        {datos_despacho["stock_sede_id"]: stock},
     )
 
 
@@ -833,7 +823,7 @@ def test_despacho_rechaza_estado_no_elegible_sin_efectos(
     cliente, motor, datos_despacho
 ):
     """AC-7: un ticket que no está en `EnCurso` → 409 sin efectos."""
-    stock = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock = leer_stock(cliente, datos_despacho["stock_sede_id"])
     ticket_id = crear_ticket_en_estado(
         cliente,
         datos_despacho,
@@ -851,7 +841,7 @@ def test_despacho_rechaza_estado_no_elegible_sin_efectos(
         motor,
         ticket_id,
         datos_despacho["estado_pendiente_id"],
-        {datos_despacho["inventario_id"]: stock},
+        {datos_despacho["stock_sede_id"]: stock},
     )
 
 
@@ -868,7 +858,7 @@ def test_redespachar_un_ticket_cerrado_responde_409_sin_duplicar(
         cliente, ticket_id, {"usuario_id": datos_despacho["usuario_id"]}
     )
     assert primera.status_code == 200, primera.text
-    stock_tras_primera = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock_tras_primera = leer_stock(cliente, datos_despacho["stock_sede_id"])
     salidas_tras_primera = salidas_del_ticket(motor, ticket_id)
     assert len(salidas_tras_primera) == 1
 
@@ -883,7 +873,7 @@ def test_redespachar_un_ticket_cerrado_responde_409_sin_duplicar(
     assert all(
         detalle["cantidad_entregada"] == 3 for detalle in integro["detalles"]
     ), "el reintento no puede alterar la entrega ya registrada"
-    assert leer_stock(cliente, datos_despacho["inventario_id"]) == stock_tras_primera
+    assert leer_stock(cliente, datos_despacho["stock_sede_id"]) == stock_tras_primera
     assert (
         salidas_del_ticket(motor, ticket_id) == salidas_tras_primera
     ), "un reenvío no puede duplicar los movimientos del despacho"
@@ -896,7 +886,7 @@ def test_despacho_sin_en_curso_en_el_catalogo_responde_409_sin_efectos(
     cliente, motor, datos_sin_en_curso
 ):
     """AC-8: sin el nombre `EnCurso` no hay estado elegible → 409 sin escribir."""
-    stock = leer_stock(cliente, datos_sin_en_curso["inventario_id"])
+    stock = leer_stock(cliente, datos_sin_en_curso["stock_sede_id"])
     ticket_id = crear_ticket_en_estado(
         cliente,
         datos_sin_en_curso,
@@ -914,7 +904,7 @@ def test_despacho_sin_en_curso_en_el_catalogo_responde_409_sin_efectos(
         motor,
         ticket_id,
         datos_sin_en_curso["estado_pendiente_id"],
-        {datos_sin_en_curso["inventario_id"]: stock},
+        {datos_sin_en_curso["stock_sede_id"]: stock},
     )
 
 
@@ -922,7 +912,7 @@ def test_despacho_sin_cerrado_en_el_catalogo_responde_409_sin_efectos(
     cliente, motor, datos_sin_cerrado
 ):
     """AC-8: sin el nombre `Cerrado` no hay destino de cierre → 409 sin escribir."""
-    stock = leer_stock(cliente, datos_sin_cerrado["inventario_id"])
+    stock = leer_stock(cliente, datos_sin_cerrado["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_sin_cerrado,
@@ -939,7 +929,7 @@ def test_despacho_sin_cerrado_en_el_catalogo_responde_409_sin_efectos(
         motor,
         ticket_id,
         datos_sin_cerrado["estado_en_curso_id"],
-        {datos_sin_cerrado["inventario_id"]: stock},
+        {datos_sin_cerrado["stock_sede_id"]: stock},
     )
 
 
@@ -1032,13 +1022,13 @@ def test_despacho_rechaza_producto_sin_fila_de_inventario(
     cliente, motor, datos_inventario_invalido
 ):
     """AC-9: un detalle sin saldo en la sede del ticket → 409 sin efectos."""
-    stock = leer_stock(cliente, datos_inventario_invalido["inventario_id"])
+    stock = leer_stock(cliente, datos_inventario_invalido["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_inventario_invalido,
         [
             {
-                "producto_id": datos_inventario_invalido["producto_sin_inventario_id"],
+                "producto_id": datos_inventario_invalido["producto_sin_stock_sede_id"],
                 "cantidad_solicitada": 1,
             }
         ],
@@ -1055,7 +1045,7 @@ def test_despacho_rechaza_producto_sin_fila_de_inventario(
         motor,
         ticket_id,
         datos_inventario_invalido["estado_en_curso_id"],
-        {datos_inventario_invalido["inventario_id"]: stock},
+        {datos_inventario_invalido["stock_sede_id"]: stock},
     )
 
 
@@ -1068,7 +1058,7 @@ def test_despacho_rechaza_producto_con_saldo_solo_en_otra_sede(
     de "dos filas del mismo producto" del modelo departamental; su equivalente es
     un producto con saldo **solo en otra sede**, que el despacho no debe tocar.
     """
-    stock = leer_stock(cliente, datos_inventario_invalido["inventario_id"])
+    stock = leer_stock(cliente, datos_inventario_invalido["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_inventario_invalido,
@@ -1091,7 +1081,7 @@ def test_despacho_rechaza_producto_con_saldo_solo_en_otra_sede(
         motor,
         ticket_id,
         datos_inventario_invalido["estado_en_curso_id"],
-        {datos_inventario_invalido["inventario_id"]: stock},
+        {datos_inventario_invalido["stock_sede_id"]: stock},
     )
 
 
@@ -1106,7 +1096,7 @@ def test_despacho_de_ticket_sin_detalles_responde_409_sin_efectos(
     El alta exige al menos una línea, así que la ausencia se provoca borrando el
     detalle persistido con el motor de la fixture.
     """
-    stock = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock = leer_stock(cliente, datos_despacho["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_despacho,
@@ -1131,7 +1121,7 @@ def test_despacho_de_ticket_sin_detalles_responde_409_sin_efectos(
         motor,
         ticket_id,
         datos_despacho["estado_en_curso_id"],
-        {datos_despacho["inventario_id"]: stock},
+        {datos_despacho["stock_sede_id"]: stock},
     )
 
 
@@ -1147,7 +1137,7 @@ def test_despacho_rechaza_detalle_con_producto_no_resoluble(
     que la inconsistencia se inyecta con el motor de la fixture: se desactiva la
     comprobación de FKs mientras se añade la fila huérfana y se restaura después.
     """
-    stock = leer_stock(cliente, datos_despacho["inventario_id"])
+    stock = leer_stock(cliente, datos_despacho["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente,
         datos_despacho,
@@ -1182,7 +1172,7 @@ def test_despacho_rechaza_detalle_con_producto_no_resoluble(
         motor,
         ticket_id,
         datos_despacho["estado_en_curso_id"],
-        {datos_despacho["inventario_id"]: stock},
+        {datos_despacho["stock_sede_id"]: stock},
     )
 
 
@@ -1201,7 +1191,7 @@ def test_despacho_revierte_todo_si_el_commit_falla(
     """
     from sqlalchemy.orm import Session
 
-    stock = leer_stock(cliente_sin_excepcion, datos_despacho["inventario_id"])
+    stock = leer_stock(cliente_sin_excepcion, datos_despacho["stock_sede_id"])
     ticket_id = abrir_ticket_en_curso(
         cliente_sin_excepcion,
         datos_despacho,
@@ -1229,7 +1219,7 @@ def test_despacho_revierte_todo_si_el_commit_falla(
         motor,
         ticket_id,
         datos_despacho["estado_en_curso_id"],
-        {datos_despacho["inventario_id"]: stock},
+        {datos_despacho["stock_sede_id"]: stock},
     )
     assert (
         salidas_persistidas(motor) == []

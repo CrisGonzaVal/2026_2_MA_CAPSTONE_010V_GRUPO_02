@@ -49,7 +49,8 @@ export interface MovimientoCrear {
   tipo_movimiento: TipoMovimiento;
   cantidad: number;
   observacion: string | null;
-  inventario_id: number;
+  /** Destino del movimiento: la fila de `stock_sede` (Feature 026). */
+  stock_sede_id: number;
 }
 
 /** Respuesta de `POST /inventario/movimientos` (no usa `response_model`). */
@@ -553,14 +554,13 @@ export interface AlertaStock {
 }
 
 /**
- * Fila de la actividad reciente (Features 009 y 011, D-5/D-6).
+ * Fila de la actividad reciente (Features 009, 011 y 026, D-5/D-6).
  *
- * Refleja 1:1 el `MovimientoDashboardRespuesta` del backend: una proyección única
- * y compatible de las dos poblaciones de movimientos. Un movimiento **nuevo**
- * (Feature 011) puebla `sede_id`/`sede_nombre` y deja el bloque de departamento
- * en `null`; un movimiento **legado** puebla `departamento_id`/`departamento_nombre`
- * y `ubicacion`. `fecha_movimiento` llega como cadena ISO (el backend serializa
- * `datetime` a JSON), igual que `Ticket.fecha_creacion`.
+ * Refleja 1:1 el `MovimientoDashboardRespuesta` del backend. Desde la Feature 026
+ * `inventario` ya no existe: todo movimiento enlaza su saldo por sede, así que
+ * `sede_id`/`sede_nombre` son obligatorios y no hay campos departamentales.
+ * `fecha_movimiento` llega como cadena ISO (el backend serializa `datetime` a
+ * JSON), igual que `Ticket.fecha_creacion`.
  */
 export interface MovimientoDashboard {
   movimiento_id: number;
@@ -569,11 +569,8 @@ export interface MovimientoDashboard {
   fecha_movimiento: string;
   producto_id: number;
   producto_nombre: string;
-  sede_id: number | null;
-  sede_nombre: string | null;
-  departamento_id: number | null;
-  departamento_nombre: string | null;
-  ubicacion: string | null;
+  sede_id: number;
+  sede_nombre: string;
   institucion_id: string | null;
   institucion_nombre: string | null;
 }

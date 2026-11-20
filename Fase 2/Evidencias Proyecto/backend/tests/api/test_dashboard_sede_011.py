@@ -9,25 +9,23 @@ que desaparece es la lectura de saldos departamentales legados. En concreto:
   * `unidades_en_stock` = suma de los saldos por sede del ambito;
   * `total_alertas` = filas de stock por sede con `stock_actual <= stock_minimo`
     (la criticidad se evalua **por sede**, spec AC-11);
-  * la actividad sigue leyendo la auditoria y ahora debe mostrar tanto los
-    movimientos historicos (enlazados a `inventario_id`) como los nuevos
-    (enlazados a `stock_sede_id`).
+  * la actividad sigue leyendo la auditoria y muestra los movimientos por
+    `stock_sede_id`; la Feature 026 retiro el enlace legado `inventario_id`.
 
 Trazabilidad AC (spec 011 §5):
 
   * **AC-11** criticidad y compatibilidad analitica.
   * **AC-2** ausencia de una segunda fuente operativa de saldo.
 
-Fase ROJA de TDD: el servicio y los DTO del dashboard aun leen `inventario` y las
-columnas por sede no existen (T3/T10). Cada prueba arranca con la guarda de
-capacidad correspondiente.
+Estado actual: la suite esta en verde. Cada prueba arranca con la guarda de
+capacidad correspondiente y siembra el stock por sede que necesita.
 """
 
 from __future__ import annotations
 
 from sqlalchemy.orm import sessionmaker
 
-from app.models import MovimientoInventario, Producto
+from app.models import MovimientoInventario, Producto, StockSede
 
 from ._soporte_sede_011 import (
     RUTA_DASHBOARD,
@@ -58,13 +56,13 @@ def _crear_producto(motor, *, datos_base, nombre: str, stock_minimo: int) -> int
         db.close()
 
 
-def _crear_movimiento_legado(motor, *, inventario_id: int, cantidad: int) -> int:
+def _crear_movimiento(motor, *, stock_sede_id: int, cantidad: int) -> int:
     with sesion(motor) as db:
         movimiento = MovimientoInventario(
             tipo_movimiento="ENTRADA",
             cantidad=cantidad,
             observacion="movimiento historico",
-            inventario_id=inventario_id,
+            stock_sede_id=stock_sede_id,
         )
         db.add(movimiento)
         db.commit()
@@ -87,10 +85,10 @@ def _dashboard(motor, rol: str, *, departamento_id: int, usuario_id: int = 9999)
 
 
 def test_kpi_unidades_en_stock_suma_el_stock_por_sede(motor, datos_base):
-    """AC-2: las unidades son la suma de las sedes, no del inventario legado.
+    """AC-2: las unidades son la suma de las sedes, unica fuente de saldo.
 
-    La fixture sembro 50 unidades en la fila departamental. Con sedes de 30 y 12
-    el KPI debe valer 42; un 50 delataria que el dashboard sigue leyendo el legado.
+    Con dos sedes de 30 y 12 el KPI debe sumar 42. La fixture base ya no siembra
+    saldo: cada caso declara el suyo (Feature 026).
     """
     sede_norte = crear_sede(motor, institucion_id=datos_base["institucion_id"], nombre="Norte")
     sede_sur = crear_sede(motor, institucion_id=datos_base["institucion_id"], nombre="Sur")
@@ -111,14 +109,27 @@ def test_kpi_unidades_en_stock_suma_el_stock_por_sede(motor, datos_base):
 
 
 def test_kpi_sin_stock_por_sede_no_cuenta_el_legado(motor, datos_base):
-    """AC-2: sin filas de stock por sede el KPI es 0, no 50."""
+    """AC-2: un saldo vigente cero produce KPI cero."""
+    sede = crear_sede(
+        motor, institucion_id=datos_base["institucion_id"], nombre="Sede Unica"
+    )
+    crear_stock_sede(
+        motor, sede_id=sede, producto_id=datos_base["producto_id"],
+        stock_actual=50, institucion_id=datos_base["institucion_id"],
+    )
+    with sesion(motor) as db:
+        db.query(StockSede).filter(
+            StockSede.producto_id == datos_base["producto_id"],
+            StockSede.institucion_id == datos_base["institucion_id"],
+        ).update({StockSede.stock_actual: 0})
+        db.commit()
     cuerpo = _dashboard(
         motor, "Administrador", departamento_id=datos_base["departamento_id"]
     )
 
     assert cuerpo["kpi"]["unidades_en_stock"] == 0
-    assert cuerpo["kpi"]["total_alertas"] == 0
-    assert cuerpo["alertas"] == []
+    assert cuerpo["kpi"]["total_alertas"] == 1
+    assert len(cuerpo["alertas"]) == 1
 
 
 def test_alerta_por_sede_critica(motor, datos_base):
@@ -182,20 +193,16 @@ def test_alerta_por_sede_en_el_borde_del_minimo(motor, datos_base):
     assert productos_alertados == {producto_en_minimo}
 
 
-def test_actividad_reune_movimientos_historicos_y_nuevos(motor, datos_base):
-    """AC-11: la actividad no pierde ningun origen de auditoria.
-
-    Un movimiento historico enlaza `inventario_id`; un movimiento nuevo enlaza
-    `stock_sede_id`. La actividad debe mostrar ambos con su identificador.
-    """
+def test_actividad_reune_movimientos_por_sede(motor, datos_base):
+    """AC-11/026: la actividad lee todos los movimientos por sede."""
     exigir_contrato_alerta_por_sede()
     sede_id = crear_sede(motor, institucion_id=datos_base["institucion_id"])
     fila_stock = crear_stock_sede(
         motor, sede_id=sede_id, producto_id=datos_base["producto_id"],
         stock_actual=10, institucion_id=datos_base["institucion_id"],
     )
-    movimiento_legado = _crear_movimiento_legado(
-        motor, inventario_id=datos_base["inventario_id"], cantidad=5
+    movimiento_anterior = _crear_movimiento(
+        motor, stock_sede_id=fila_stock, cantidad=5
     )
     with sesion(motor) as db:
         nuevo = MovimientoInventario(
@@ -216,4 +223,4 @@ def test_actividad_reune_movimientos_historicos_y_nuevos(motor, datos_base):
     ids_actividad = {
         fila["movimiento_id"] for fila in cuerpo["actividad_movimientos"]
     }
-    assert {movimiento_legado, movimiento_nuevo} <= ids_actividad
+    assert {movimiento_anterior, movimiento_nuevo} <= ids_actividad

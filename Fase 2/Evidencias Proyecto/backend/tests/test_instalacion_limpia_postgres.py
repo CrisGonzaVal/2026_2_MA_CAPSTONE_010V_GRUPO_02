@@ -6,21 +6,20 @@ una base vacia, tal como lo hace el volumen de `docker compose`
 ni el DDL por esquema, asi que lo que la instalacion limpia exige solo se
 acredita contra PostgreSQL 16 real:
 
-  * `control` con las 27 tablas globales (Feature 017 anade
+  * `control` con las 26 tablas globales (Feature 017 anade
     `registro_motivo_constancia`; la 014, los dos historiales de transicion del
     catalogo; la 020, el catalogo de proveedores y las tres tablas de compras;
-    la 021, el puente orden de compra-ticket) y **un esquema tenant por
-    institucion** con las 24 tablas de negocio replicadas;
+    la 021, el puente orden de compra-ticket; la 026 retira `inventario`) y
+    **un esquema tenant por institucion** con las 23 tablas de negocio replicadas;
   * reparto deterministico de sedes (2/3/4/2 para INST-001..004) y de
     departamentos por round-robin sobre `departamento_id` ascendente;
-  * cuadre por producto dentro de cada tenant: la suma departamental de
-    `inventario` es igual a la suma por sede de `stock_sede`;
   * `control` queda como contexto global (sin filas de negocio), con la
-    topologia (4 instituciones + 28 capacidades), el catalogo de roles, el
-    estado `Anulado` y los 3 proveedores del catalogo global, y el mapa
-    `correo -> esquema` con las 12 identidades;
-  * version objetivo `021.1` en `control` y en cada tenant (expectativa
-    planificada de la Feature 021: se fija como literal, no se sigue del token),
+    topologia (4 instituciones de negocio + `CTRL-SAAS` y 28 capacidades), el
+    catalogo de roles, el estado `Anulado`, la identidad administrativa del
+    Superadmin, los 3 proveedores del catalogo global y el mapa
+    `correo -> esquema` con las 14 identidades;
+  * version objetivo `026.0` en `control` y en cada tenant (expectativa
+    planificada de la Feature 026: se fija como literal, no se sigue del token),
     con el catalogo sembrado activo por tenant y el routing exigiendo esa misma
     version (una version menor no se enruta);
   * guardia fail-closed: una segunda ejecucion de `02_` aborta sin cambios.
@@ -74,12 +73,11 @@ SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 #: Reparto fijo de sedes por institucion (Feature 011, D-7).
 SEDES_ESPERADAS = {"INST-001": 2, "INST-002": 3, "INST-003": 4, "INST-004": 2}
 
-#: Version objetivo vigente (Feature 021). Se fija como literal para que la
-#: expectativa no siga automaticamente al token del codigo: T1 crea el DDL y sube
-#: `VERSION_ESQUEMA_OBJETIVO` a este mismo valor.
-VERSION_OBJETIVO_VIGENTE = "021.1"
+#: Version objetivo vigente (Feature 026). Se fija como literal para que la
+#: expectativa no siga automaticamente al token del codigo.
+VERSION_OBJETIVO_VIGENTE = "026.0"
 
-#: Las 27 tablas globales de `control`.
+#: Las 26 tablas globales de `control`.
 TABLAS_CONTROL = {
     "institucion",
     "sede",
@@ -89,7 +87,6 @@ TABLAS_CONTROL = {
     "departamento_encargado",
     "categoria",
     "producto",
-    "inventario",
     "stock_sede",
     "movimiento_inventario",
     "prioridad",
@@ -114,7 +111,7 @@ TABLAS_CONTROL = {
     "orden_compra_ticket",
 }
 
-#: Las 24 tablas de negocio que cada tenant replica. Las tres auxiliares de
+#: Las 23 tablas de negocio que cada tenant replica. Las tres auxiliares de
 #: control (capacidades, mapa y motivos/constancias) nunca viajan al tenant.
 TABLAS_TENANT = TABLAS_CONTROL - {
     "funcion_institucion",
@@ -122,13 +119,17 @@ TABLAS_TENANT = TABLAS_CONTROL - {
     "registro_motivo_constancia",
 }
 
-#: Conteos de `control` tras la semilla (topologia y contexto global).
+#: Conteos de `control` tras la semilla (topologia y contexto global). La
+#: institucion y las dos filas administrativas (`usuario`/`departamento`) de
+#: `CTRL-SAAS` sostienen la identidad global del Superadmin.
 CONTROL_ESPERADO = {
-    "institucion": 4,
+    "institucion": 5,
     "funcion_institucion": 28,
     "rol": 4,
+    "usuario": 1,
+    "departamento": 1,
     "estado_ticket": 1,
-    "mapa_usuario_esquema": 12,
+    "mapa_usuario_esquema": 14,
     "version_esquema": 1,
     "registro_motivo_constancia": 0,
     # Feature 020: catalogo global compartido; sobrevive a la Fase 3.
@@ -139,12 +140,9 @@ CONTROL_ESPERADO = {
 #: los dos historiales de la 014, que no se siembran con transiciones ficticias.
 CONTROL_VACIAS = (
     "sede",
-    "departamento",
-    "usuario",
     "departamento_encargado",
     "categoria",
     "producto",
-    "inventario",
     "stock_sede",
     "movimiento_inventario",
     "prioridad",
@@ -173,13 +171,12 @@ CATALOGO_POR_TENANT = {
 TOTALES_TENANT = {
     "sede": 11,
     "departamento": 10,
-    "usuario": 12,
+    "usuario": 13,
     "departamento_encargado": 5,
     "categoria": 10,
     "producto": 14,
-    "inventario": 14,
     "stock_sede": 14,
-    "movimiento_inventario": 14,
+    "movimiento_inventario": 3,
     "ticket": 10,
     "detalle_ticket": 10,
     "historial_transicion_ticket": 0,
@@ -280,10 +277,13 @@ def _esquema_de_institucion(institucion_id: str) -> str:
 
 
 def _instituciones(conexion) -> list[str]:
+    # `CTRL-SAAS` vive solo en `control` y no tiene esquema tenant.
     return [
         fila[0]
         for fila in _ejecutar(
-            conexion, "SELECT institucion_id FROM control.institucion ORDER BY institucion_id"
+            conexion,
+            "SELECT institucion_id FROM control.institucion "
+            "WHERE institucion_id <> 'CTRL-SAAS' ORDER BY institucion_id",
         )
     ]
 
@@ -301,8 +301,8 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
     with _base_temporal() as conexion:
         _instalar(conexion)
 
-        assert len(TABLAS_CONTROL) == 27, len(TABLAS_CONTROL)
-        assert len(TABLAS_TENANT) == 24, len(TABLAS_TENANT)
+        assert len(TABLAS_CONTROL) == 26, len(TABLAS_CONTROL)
+        assert len(TABLAS_TENANT) == 23, len(TABLAS_TENANT)
         assert _tablas_del_esquema(conexion, "control") == TABLAS_CONTROL
         instituciones = _instituciones(conexion)
         assert instituciones == list(SEDES_ESPERADAS)
@@ -317,7 +317,7 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
 
 
 def test_el_token_de_codigo_apunta_a_la_version_vigente():
-    """AC-14: el objetivo del despliegue es `021.1` (lo sube T1 con el DDL)."""
+    """AC-14: el objetivo del despliegue es `026.0` (lo sube T1 con el DDL)."""
     assert VERSION_ESQUEMA_OBJETIVO == VERSION_OBJETIVO_VIGENTE, VERSION_ESQUEMA_OBJETIVO
 
 
@@ -326,7 +326,7 @@ def test_estructura_de_invitacion_y_motivos_vive_solo_en_control():
 
     Verifica el catalogo real de PostgreSQL: las cuatro columnas de invitacion
     y la tabla `registro_motivo_constancia` con su clave idempotente unica, su
-    `CHECK` de estado y su `FK` local a `institucion`. Cada tenant conserva sus 19
+    `CHECK` de estado y su `FK` local a `institucion`. Cada tenant conserva sus 23
     tablas de negocio y **no** recibe ninguna de las estructuras auxiliares.
     """
     with _base_temporal() as conexion:
@@ -463,25 +463,27 @@ def test_instalacion_limpia_reparte_sedes_y_cuadra_stock():
                 == 0
             ), f"{institucion_id} tiene tickets sin sede"
 
-            # Cuadre por producto: inventario departamental == stock por sede.
-            descuadres = _un_escalar(
-                conexion,
-                f"""
-                SELECT count(*) FROM (
-                    SELECT i.producto_id,
-                           sum(i.stock_actual) AS departamental,
-                           coalesce((
-                               SELECT sum(s.stock_actual)
-                               FROM "{esquema}".stock_sede s
-                               WHERE s.producto_id = i.producto_id
-                           ), 0) AS por_sede
-                    FROM "{esquema}".inventario i
-                    GROUP BY i.producto_id
-                ) AS totales
-                WHERE departamental <> por_sede
-                """,
-            )
-            assert descuadres == 0, f"{institucion_id} no cuadra por producto"
+            # Feature 026: el saldo vive solo en `stock_sede`; ninguno puede ser
+            # negativo y los saldos historicos 8 y 9 de INST-001 conservan su
+            # cuadre con los tres movimientos (45 = 35 + 10; 12 = 6 + 21 - 15).
+            assert (
+                _un_escalar(
+                    conexion,
+                    f'SELECT count(*) FROM "{esquema}".stock_sede WHERE stock_actual < 0',
+                )
+                == 0
+            ), f"{institucion_id} tiene saldos negativos"
+            if institucion_id == "INST-001":
+                for stock_sede_id, saldo in ((8, 45), (9, 12)):
+                    assert (
+                        _un_escalar(
+                            conexion,
+                            f'SELECT stock_actual FROM "{esquema}".stock_sede '
+                            "WHERE stock_sede_id = %s",
+                            (stock_sede_id,),
+                        )
+                        == saldo
+                    ), (institucion_id, stock_sede_id)
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +604,7 @@ def test_instalacion_limpia_enruta_en_la_version_vigente_y_deniega_una_version_m
     """AC-14: la version instalada es la unica, compatible y exigida por routing.
 
     Con la instalacion limpia (`01_` + `02_`) el token del codigo y el de los
-    esquemas coinciden (`021.1`) y la identidad mapeada se enruta; bajada la
+    esquemas coinciden (`026.0`) y la identidad mapeada se enruta; bajada la
     version del tenant a una menor, el routing la deniega en cerrado (mismo
     patron que la regresion de cadena de la Feature 013).
     """

@@ -15,27 +15,27 @@ viendo que el ticket nunca aparecio en `GET /api/v1/tickets/`.
 import pytest
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Inventario
+from app.models import StockSede
 
 from ._soporte_sede_011 import asegurar_sede_de_departamento
 
 
 @pytest.fixture(autouse=True)
-def _sede_del_departamento(motor, datos_base):
-    """Feature 011 (T9): el alta de ticket exige sede en el departamento."""
-    asegurar_sede_de_departamento(motor, datos_base)
+def sede_base(motor, datos_base):
+    """Feature 011/026: el alta de ticket exige sede y el saldo vive por sede.
 
-
-def _stock_legado(motor, inventario_id: int) -> int:
-    """Saldo de una fila legada de `inventario`, leido por ORM.
-
-    Feature 011 (B1): `GET /inventario/stock` dejo de exponer el inventario
-    departamental legado. Estos casos siguen ejerciendo el camino legado de
-    movimientos (`inventario_id`), asi que observan su saldo directamente.
+    Devuelve `{"sede_id", "stock_sede_ids"}` con 50 unidades del producto base.
     """
+    return asegurar_sede_de_departamento(
+        motor, datos_base, stocks={datos_base["producto_id"]: 50}
+    )
+
+
+def _stock_sede(motor, stock_sede_id: int) -> int:
+    """Saldo de una fila de `stock_sede`, leido por ORM."""
     db = sessionmaker(bind=motor)()
     try:
-        return db.get(Inventario, inventario_id).stock_actual
+        return db.get(StockSede, stock_sede_id).stock_actual
     finally:
         db.close()
 
@@ -111,7 +111,7 @@ def test_ticket_valido_persiste_cabecera_y_detalles_juntos(cliente, datos_base):
 
 
 def test_detalle_invalido_no_altera_el_stock(
-    cliente_sin_excepcion, motor, datos_base
+    cliente_sin_excepcion, motor, datos_base, sede_base
 ):
     """Crear un ticket no debe mover inventario, ni siquiera al fallar.
 
@@ -119,7 +119,8 @@ def test_detalle_invalido_no_altera_el_stock(
     no descuenta stock. Ese descuento pertenece a la approbacion del ticket
     (Feature 004/005), no a la creacion.
     """
-    stock_antes = _stock_legado(motor, datos_base["inventario_id"])
+    stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
+    stock_antes = _stock_sede(motor, stock_sede_id)
 
     cuerpo = _cuerpo_ticket(
         datos_base,
@@ -131,11 +132,13 @@ def test_detalle_invalido_no_altera_el_stock(
     # 404 desde la Feature 003 (antes 500 por el defecto de FK).
     assert cliente_sin_excepcion.post("/api/v1/tickets/", json=cuerpo).status_code == 404
 
-    stock_despues = _stock_legado(motor, datos_base["inventario_id"])
+    stock_despues = _stock_sede(motor, stock_sede_id)
     assert stock_despues == stock_antes
 
 
-def test_saldo_insuficiente_no_registra_movimiento(cliente, motor, datos_base):
+def test_saldo_insuficiente_no_registra_movimiento(
+    cliente, motor, datos_base, sede_base
+):
     """Trazabilidad absoluta (`constitucion.md` §2): un rechazo no deja rastro.
 
     Un movimiento rechazado no debe generar fila en `movimiento_inventario`, y el
@@ -143,18 +146,21 @@ def test_saldo_insuficiente_no_registra_movimiento(cliente, motor, datos_base):
     siguiente movimiento valido debe partir del valor original, no de uno
     corrompido.
     """
+    stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
     saldo_insuficiente = cliente.post(
         "/api/v1/inventario/movimientos",
         json={
             "tipo_movimiento": "SALIDA",
             "cantidad": 9999,
             "observacion": "Debe rechazarse",
-            "inventario_id": datos_base["inventario_id"],
+            "stock_sede_id": stock_sede_id,
         },
     )
-    assert saldo_insuficiente.status_code == 400, saldo_insuficiente.text
+    # Feature 011/026: sobre `stock_sede` el saldo insuficiente es un 409 de
+    # conflicto con el estado del recurso (el 400 era del camino legado).
+    assert saldo_insuficiente.status_code == 409, saldo_insuficiente.text
 
-    stock = _stock_legado(motor, datos_base["inventario_id"])
+    stock = _stock_sede(motor, stock_sede_id)
     assert stock == 50
 
     # La siguiente operacion valida debe partir de 50, no del valor alterado.
@@ -164,22 +170,25 @@ def test_saldo_insuficiente_no_registra_movimiento(cliente, motor, datos_base):
             "tipo_movimiento": "ENTRADA",
             "cantidad": 10,
             "observacion": "Ingreso posterior",
-            "inventario_id": datos_base["inventario_id"],
+            "stock_sede_id": stock_sede_id,
         },
     )
     assert entrada.status_code == 201, entrada.text
     assert entrada.json()["nuevo_stock"] == 60
 
 
-def test_tipo_de_movimiento_invalido_no_registra_movimiento(cliente, motor, datos_base):
+def test_tipo_de_movimiento_invalido_no_registra_movimiento(
+    cliente, motor, datos_base, sede_base
+):
+    stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
     respuesta = cliente.post(
         "/api/v1/inventario/movimientos",
         json={
             "tipo_movimiento": "AJUSTE_MAGICO",
             "cantidad": 1,
             "observacion": "Tipo no permitido",
-            "inventario_id": datos_base["inventario_id"],
+            "stock_sede_id": stock_sede_id,
         },
     )
     assert respuesta.status_code == 400, respuesta.text
-    assert _stock_legado(motor, datos_base["inventario_id"]) == 50
+    assert _stock_sede(motor, stock_sede_id) == 50

@@ -67,7 +67,15 @@ class Proveedor(Base):
     """
 
     __tablename__ = "proveedor"
-    __table_args__ = (UniqueConstraint("rut", name="proveedor_rut_uk"),)
+    __table_args__ = (
+        UniqueConstraint("rut", name="proveedor_rut_uk"),
+        # Feature 026 (K-02): el RUT visible conserva puntos y guion, pero se
+        # guarda en mayusculas y sin espacios exteriores.
+        CheckConstraint(
+            "rut = upper(trim(rut)) AND length(rut) > 0",
+            name="proveedor_rut_canonico_ck",
+        ),
+    )
 
     proveedor_id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=False
@@ -210,6 +218,34 @@ class OrdenCompra(Base):
         ),
         foreign_keys="OrdenCompraTicket.orden_compra_id",
     )
+
+
+# Feature 026: unicidad funcional del RUT (sin puntos, guion ni espacios) e
+# indices P0 del listado institucional de ordenes.
+Index(
+    "proveedor_rut_normalizado_uk",
+    func.upper(
+        func.replace(
+            func.replace(func.replace(func.trim(Proveedor.rut), ".", ""), "-", ""),
+            " ",
+            "",
+        )
+    ),
+    unique=True,
+)
+Index(
+    "orden_compra_institucion_fecha_idx",
+    OrdenCompra.institucion_id,
+    OrdenCompra.fecha_creacion,
+    OrdenCompra.orden_compra_id,
+)
+Index(
+    "orden_compra_sede_estado_fecha_idx",
+    OrdenCompra.sede_id,
+    OrdenCompra.estado,
+    OrdenCompra.fecha_creacion,
+    OrdenCompra.orden_compra_id,
+)
 
 
 class DetalleOrdenCompra(Base):

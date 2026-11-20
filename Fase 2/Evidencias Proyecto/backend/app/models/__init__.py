@@ -30,7 +30,7 @@ from app.models.control_canonico import (
     ProveedorControl,
 )
 from app.models.institucion import Departamento, Institucion
-from app.models.inventario import Inventario, MovimientoInventario
+from app.models.inventario import MovimientoInventario
 from app.models.organizacion import DepartamentoEncargado
 from app.models.producto import (
     Categoria,
@@ -67,7 +67,6 @@ __all__ = [
     "HistorialTransicionTicket",
     "Institucion",
     "InstitucionControl",
-    "Inventario",
     "MapaUsuarioEsquema",
     "MovimientoInventario",
     "OrdenCompra",

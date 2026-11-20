@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core import permisos
@@ -17,6 +17,37 @@ from ._comun import (
     _es_postgres,
     _no_encontrado,
 )
+
+
+def normalizar_rut(rut: str) -> str:
+    """Clave de comparacion: mayusculas, sin puntos, guion ni espacios.
+
+    Feature 026 (U-02): el RUT visible conserva puntos y guion, pero la unicidad
+    se evalua sobre esta clave. La expresion coincide con el indice funcional
+    `proveedor_rut_normalizado_uk` del DDL y del ORM.
+    """
+    return (
+        rut.replace(".", "")
+        .replace("-", "")
+        .replace(" ", "")
+        .strip()
+        .upper()
+    )
+
+
+def _clave_rut_sql():
+    """Expresion SQL de la clave normalizada del RUT (misma que el indice)."""
+    return func.upper(
+        func.replace(
+            func.replace(
+                func.replace(func.trim(ProveedorControl.rut), ".", ""),
+                "-",
+                "",
+            ),
+            " ",
+            "",
+        )
+    )
 
 
 def _proveedor_activo_control(
@@ -88,9 +119,10 @@ def crear_proveedor(
     El Superadmin opera solo sobre control (AC-2). En SQLite la replica es la
     misma tabla fisica y no se reinserta.
     """
-    rut = datos.rut.strip()
+    rut = datos.rut.strip().upper()
+    clave = normalizar_rut(rut)
     existente = db_control.execute(
-        select(ProveedorControl).where(ProveedorControl.rut == rut)
+        select(ProveedorControl).where(_clave_rut_sql() == clave)
     ).scalar_one_or_none()
     if existente is not None:
         raise _conflicto("El RUT del proveedor ya esta registrado")

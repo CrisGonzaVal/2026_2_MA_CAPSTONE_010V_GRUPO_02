@@ -2,9 +2,11 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
+    func,
     true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -35,9 +37,9 @@ class Institucion(Base):
 class Departamento(Base):
     __tablename__ = "departamento"
     __table_args__ = (
-        # Destino de la FK compuesta `inventario -> departamento` (Feature 008,
-        # AC-2/AC-4): obliga a que el inventario y su departamento compartan
-        # institucion. La PK simple se conserva.
+        # Unicidad historica de la Feature 008 (era destino de la FK compuesta de
+        # `inventario`, retirada en la 026). Se conserva por paridad con el DDL y
+        # para futuras referencias institucionales. La PK simple se conserva.
         UniqueConstraint(
             "institucion_id", "departamento_id", name="departamento_institucion_uk"
         ),
@@ -63,9 +65,21 @@ class Departamento(Base):
 
     institucion = relationship("Institucion", back_populates="departamentos")
     usuarios = relationship("Usuario", back_populates="departamento")
-    inventarios = relationship("Inventario", back_populates="departamento")
     sede = relationship(
         "Sede",
         primaryjoin="Departamento.sede_id == Sede.sede_id",
         foreign_keys="Departamento.sede_id",
     )
+
+
+# Feature 026: indice P0 por sede y unicidad funcional del nombre por institucion.
+Index(
+    "departamento_sede_idx",
+    Departamento.sede_id,
+)
+Index(
+    "departamento_nombre_institucion_uk",
+    Departamento.institucion_id,
+    func.lower(func.trim(Departamento.nombre_dep)),
+    unique=True,
+)

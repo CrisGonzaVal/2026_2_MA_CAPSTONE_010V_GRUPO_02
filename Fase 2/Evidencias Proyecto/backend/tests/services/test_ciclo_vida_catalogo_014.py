@@ -32,7 +32,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models import (
     HistorialTransicionCategoria,
     HistorialTransicionProducto,
-    Inventario,
+    StockSede,
     Producto,
     StockSede,
 )
@@ -201,21 +201,17 @@ def test_baja_producto_con_saldos_en_cero_procede(motor, mundo):
         assert resultado.activo is False
 
 
-def test_inventario_legado_positivo_no_impide_la_baja(motor, mundo):
-    """AC-6: `inventario` legado no es saldo operativo y no participa."""
-    base = mundo["producto_id"]
-    fijar_stock_sede(motor, mundo, base, 0)
-    with sesion(motor) as db:
-        # El producto base conserva su fila legada con 50 unidades.
-        assert db.execute(
-            select(Inventario).where(Inventario.producto_id == base)
-        ).scalars().all()
+def test_saldo_operativo_cero_no_impide_la_baja(motor, mundo):
+    """AC-6/026: con el saldo por sede en cero, la baja procede."""
+    producto = crear_producto(
+        motor, mundo, nombre="Retirado con saldo cero", stock_sede=0
+    )
 
     with sesion(motor) as db:
         resultado = inventario_service.transicionar_producto(
             db,
-            base,
-            TransicionCatalogo(activo=False, motivo="Solo queda inventario legado"),
+            producto,
+            TransicionCatalogo(activo=False, motivo="Saldo operativo cero"),
             _admin(mundo),
         )
         assert resultado.activo is False

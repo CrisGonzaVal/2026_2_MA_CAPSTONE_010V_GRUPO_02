@@ -1,12 +1,15 @@
 from sqlalchemy import (
     TIMESTAMP,
+    CheckConstraint,
     Column,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -99,6 +102,11 @@ class DetalleTicket(Base):
             ["institucion_id", "producto_id"],
             ["producto.institucion_id", "producto.producto_id"],
             name="detalle_ticket_producto_institucion_fk",
+        ),
+        # Feature 026 (K-03): el despacho nunca entrega mas de lo solicitado.
+        CheckConstraint(
+            "cantidad_entregada <= cantidad_solicitada",
+            name="detalle_cantidad_entregada_tope_ck",
         ),
     )
 
@@ -209,3 +217,44 @@ class HistorialTransicionTicket(Base):
         ),
         foreign_keys="HistorialTransicionTicket.orden_compra_id",
     )
+
+
+# Feature 026: indices P0 del ciclo de tickets y unicidad parcial de creacion.
+Index(
+    "ticket_sede_estado_fecha_idx",
+    Ticket.sede_id,
+    Ticket.estado_id,
+    Ticket.fecha_creacion.desc(),
+    Ticket.ticket_id.desc(),
+)
+Index(
+    "ticket_usuario_fecha_idx",
+    Ticket.usuario_id,
+    Ticket.fecha_creacion.desc(),
+    Ticket.ticket_id.desc(),
+)
+Index(
+    "detalle_ticket_ticket_idx",
+    DetalleTicket.ticket_id,
+    DetalleTicket.detalle_ticket_id,
+)
+Index(
+    "detalle_ticket_producto_idx",
+    DetalleTicket.producto_id,
+    DetalleTicket.ticket_id,
+)
+Index(
+    "historial_ticket_ticket_fecha_idx",
+    HistorialTransicionTicket.ticket_id,
+    HistorialTransicionTicket.fecha_transicion.desc(),
+    HistorialTransicionTicket.historial_transicion_id.desc(),
+)
+# U-06: exactamente una fila de creacion por ticket (`estado_origen_id` nulo).
+# Se declara en ambos dialectos para que SQLite tambien lo aplique.
+Index(
+    "historial_transicion_ticket_creacion_uk",
+    HistorialTransicionTicket.ticket_id,
+    unique=True,
+    postgresql_where=text("estado_origen_id IS NULL"),
+    sqlite_where=text("estado_origen_id IS NULL"),
+)

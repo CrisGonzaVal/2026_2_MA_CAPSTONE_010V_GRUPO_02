@@ -331,7 +331,6 @@ def test_despacho_registra_movimiento_por_stock_sede(motor, datos_base):
     assert len(salidas) == 1
     assert salidas[0].stock_sede_id is not None
     assert salidas[0].cantidad == 4
-    assert salidas[0].inventario_id is None
     assert despacho.json()["detalles"][0]["cantidad_entregada"] == 4
 
 

@@ -1,18 +1,17 @@
 """DTOs del dashboard analitico consolidado (Features 009 y 011).
 
 Ningun schema de este modulo lleva `model_config = ConfigDict(from_attributes=True)`:
-todos son **read models** de consulta que cruzan `stock_sede` (o `inventario`
-legado), `producto`, `sede`, `departamento`, `institucion` y
-`movimiento_inventario` con joins y agregan, asi que los arma el service a mano
-(`app/services/dashboard_service.py`, plan §1). Con `from_attributes`, Pydantic
-buscaria campos que el objeto ORM no expone (por ejemplo `producto_nombre` o
-`total_alertas`) y fallaria (stack.md §2, "Read models de consulta").
+todos son **read models** de consulta que cruzan `stock_sede`, `producto`, `sede`,
+`institucion` y `movimiento_inventario` con joins y agregan, asi que los arma el
+service a mano (`app/services/dashboard_service.py`, plan §1). Con
+`from_attributes`, Pydantic buscaria campos que el objeto ORM no expone (por
+ejemplo `producto_nombre` o `total_alertas`) y fallaria (stack.md §2, "Read models
+de consulta").
 
-Feature 011 (spec D-6/AC-11): la fuente de saldo pasa a ser el **stock por sede**,
-asi que la alerta se atribuye a `sede_id`/`sede_nombre` y a la institucion, y la
-actividad reconoce tanto movimientos historicos (`inventario_id`) como nuevos
-(`stock_sede_id`) mediante una proyeccion unica compatible: los campos de sede y
-los de departamento son mutuamente opcionales segun el origen del movimiento.
+Feature 011 (spec D-6/AC-11): la fuente de saldo es el **stock por sede**, asi que
+la alerta se atribuye a `sede_id`/`sede_nombre` y a la institucion. La Feature 026
+retiro `inventario`: la actividad tiene un unico origen (`stock_sede_id`) y ya no
+mezcla campos departamentales.
 
 Los nombres de campo son el contrato publico (`snake_case`, en espanol) y coinciden
 1:1 con los que fijan las pruebas de `tests/api/`. No se expone ningun campo
@@ -62,13 +61,11 @@ class AlertaStockRespuesta(BaseModel):
 class MovimientoDashboardRespuesta(BaseModel):
     """Fila de la actividad reciente (proyeccion unica de movimientos, D-5).
 
-    Cruza `movimiento_inventario` con su origen de auditoria, ya sea legado
-    (`inventario_id -> inventario -> producto + departamento`) o nuevo
-    (`stock_sede_id -> stock_sede -> producto + sede`). La proyeccion es unica y
-    compatible: `sede_id`/`sede_nombre` se pueblan en los movimientos nuevos y
-    `departamento_id`/`departamento_nombre`/`ubicacion` en los legados; el otro
-    conjunto queda `null` segun el origen. `institucion_id`/`institucion_nombre`
-    atribuyen cada movimiento en la lectura global del Superadmin.
+    Feature 026: todo movimiento enlaza `stock_sede_id -> stock_sede -> producto +
+    sede`. `sede_id`/`sede_nombre` son obligatorios;
+    `institucion_id`/`institucion_nombre` atribuyen cada movimiento en la lectura
+    global del Superadmin. Los campos del inventario departamental legado ya no
+    existen.
     """
 
     movimiento_id: int
@@ -77,11 +74,8 @@ class MovimientoDashboardRespuesta(BaseModel):
     fecha_movimiento: datetime
     producto_id: int
     producto_nombre: str
-    sede_id: int | None
-    sede_nombre: str | None
-    departamento_id: int | None
-    departamento_nombre: str | None
-    ubicacion: str | None
+    sede_id: int
+    sede_nombre: str
     institucion_id: str | None
     institucion_nombre: str | None
 

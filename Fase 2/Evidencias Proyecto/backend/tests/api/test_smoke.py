@@ -13,13 +13,15 @@ from ._soporte_sede_011 import asegurar_sede_de_departamento
 
 
 @pytest.fixture(autouse=True)
-def _sede_del_departamento(motor, datos_base):
-    """Feature 011 (T9): el alta de ticket exige sede en el departamento.
+def sede_base(motor, datos_base):
+    """Feature 011/026: el alta de ticket exige sede y el saldo vive por sede.
 
-    El smoke crea tickets sobre `datos_base`; desde T9 el departamento debe tener
-    una sede asignada, asi que se siembra la precondicion para toda la suite.
+    El smoke crea tickets y un movimiento sobre `datos_base`; se siembra la sede
+    del departamento con 50 unidades del producto base y se exponen los ids.
     """
-    asegurar_sede_de_departamento(motor, datos_base)
+    return asegurar_sede_de_departamento(
+        motor, datos_base, stocks={datos_base["producto_id"]: 50}
+    )
 
 
 def _crear_usuario(datos_base):
@@ -100,14 +102,15 @@ def test_crear_producto_responde_201(cliente, datos_base):
     assert respuesta.json()["nombre"] == "Resma de papel bond"
 
 
-def test_registrar_movimiento_responde_201(cliente, datos_base):
+def test_registrar_movimiento_responde_201(cliente, datos_base, sede_base):
+    stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
     respuesta = cliente.post(
         "/api/v1/inventario/movimientos",
         json={
             "tipo_movimiento": "ENTRADA",
             "cantidad": 25,
             "observacion": "Recepcion de mercaderia",
-            "inventario_id": datos_base["inventario_id"],
+            "stock_sede_id": stock_sede_id,
         },
     )
     assert respuesta.status_code == 201, respuesta.text

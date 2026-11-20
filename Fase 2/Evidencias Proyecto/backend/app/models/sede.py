@@ -11,10 +11,11 @@ sede pertenece a una institucion y `StockSede` lleva `institucion_id` con FKs
 compuestas `(institucion_id, sede_id)` y `(institucion_id, producto_id)`, de modo
 que el esquema rechaza asociar una sede con un producto de otra institucion. Las
 relaciones ORM se fijan a los ids simples (`primaryjoin`) para no depender del
-orden de las claves compuestas, igual que en `inventario.py`.
+orden de las claves compuestas.
 
-Las filas legadas de `inventario` y sus movimientos **no** se tocan: siguen siendo
-los registros historicos inmutables de la auditoria (spec D-2, decision 10).
+Desde la Feature 026 la antigua tabla `inventario` ya no existe: `stock_sede` es
+el unico saldo y `movimiento_inventario` apunta a el por `stock_sede_id`
+obligatorio.
 """
 
 from __future__ import annotations
@@ -24,9 +25,11 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
+    func,
     true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -53,8 +56,8 @@ class Sede(Base):
         Integer, primary_key=True, index=True, autoincrement=True
     )
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
-    #: Direccion fisica de la sede; opcional (el dato organizacional es propio de
-    #: la sede y no se infiere de `inventario.ubicacion`, que queda legado).
+    #: Direccion fisica de la sede; opcional (dato propio de la sede; la antigua
+    #: `inventario.ubicacion` desaparecio con esa tabla en la Feature 026).
     direccion: Mapped[str | None] = mapped_column(String(200), nullable=True)
     institucion_id: Mapped[str] = mapped_column(
         String(20), ForeignKey("institucion.institucion_id"), nullable=False
@@ -84,6 +87,17 @@ class Sede(Base):
         foreign_keys="Departamento.sede_id",
         viewonly=True,
     )
+
+
+# Feature 026 (U-03): nombre unico por institucion sin distinguir mayusculas ni
+# espacios exteriores. La normalizacion del servicio devuelve 409 antes de
+# llegar aqui; el indice cierra la carrera y las escrituras directas.
+Index(
+    "sede_nombre_institucion_uk",
+    Sede.institucion_id,
+    func.lower(func.trim(Sede.nombre)),
+    unique=True,
+)
 
 
 class StockSede(Base):
@@ -143,3 +157,11 @@ class StockSede(Base):
         primaryjoin="StockSede.stock_sede_id == MovimientoInventario.stock_sede_id",
         foreign_keys="MovimientoInventario.stock_sede_id",
     )
+
+
+# Feature 026 (I-01): detalle de producto por sede.
+Index(
+    "stock_sede_producto_sede_idx",
+    StockSede.producto_id,
+    StockSede.sede_id,
+)

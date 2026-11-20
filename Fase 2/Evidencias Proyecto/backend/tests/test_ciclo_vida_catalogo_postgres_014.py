@@ -4,11 +4,11 @@ Complemento gated de la suite SQLite. SQLite no reproduce namespaces, FKs ni el
 DDL por esquema, asi que lo que la Feature 014 exige del esquema y de la
 coordinacion de bloqueos solo se acredita contra PostgreSQL 16 real:
 
-  * **Instalacion limpia** (`01_` + `02_`): 27 tablas en `control` y 24 por
-    tenant (conteos vigentes tras la Feature 021), columna `activo` en
+  * **Instalacion limpia** (`01_` + `02_`): 26 tablas en `control` y 23 por
+    tenant (conteos vigentes tras la Feature 026), columna `activo` en
     producto/categoria, las dos tablas de historial en control y en cada tenant,
     historiales vacios, semilla de productos y categorias activos y version
-    objetivo `021.1` (AC-13/AC-14);
+    objetivo `026.0` (AC-13/AC-14);
   * **Paridad estructural** control/tenant de las dos tablas de historial;
   * **Escenarios concurrentes** AC-6 (entrada de stock frente a baja de
     producto), AC-16 (baja de categoria frente a alta/reactivacion de
@@ -66,9 +66,9 @@ RAIZ = Path(__file__).resolve().parents[2]
 ESQUEMA_SQL = RAIZ / "database" / "01_esquema.sql"
 SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 
-#: Las 27 tablas de `control` vigentes tras la 021: las 22 de la 014 mas el
+#: Las 26 tablas de `control` vigentes tras la 026: las 22 de la 014 mas el
 #: catalogo global de proveedores, las tres tablas de compras y el puente
-#: orden de compra-ticket.
+#: orden de compra-ticket, menos `inventario` (retirada por la 026).
 TABLAS_CONTROL_014 = {
     "institucion",
     "sede",
@@ -78,7 +78,6 @@ TABLAS_CONTROL_014 = {
     "departamento_encargado",
     "categoria",
     "producto",
-    "inventario",
     "stock_sede",
     "movimiento_inventario",
     "prioridad",
@@ -102,7 +101,7 @@ TABLAS_CONTROL_014 = {
 }
 
 #: Las tres estructuras auxiliares que viven solo en `control`; el tenant
-#: replica las 24 tablas de negocio.
+#: replica las 23 tablas de negocio.
 AUXILIARES_CONTROL = {
     "funcion_institucion",
     "mapa_usuario_esquema",
@@ -112,7 +111,7 @@ TABLAS_TENANT_014 = TABLAS_CONTROL_014 - AUXILIARES_CONTROL
 
 TABLA_HISTORIAL_PRODUCTO = "historial_transicion_producto"
 TABLA_HISTORIAL_CATEGORIA = "historial_transicion_categoria"
-VERSION_VIGENTE = "021.1"
+VERSION_VIGENTE = "026.0"
 
 
 # ---------------------------------------------------------------------------
@@ -206,11 +205,14 @@ def _esquema_de_institucion(institucion_id: str) -> str:
 
 
 def _instituciones(conexion) -> list[str]:
+    # `CTRL-SAAS` es la institucion administrativa del esquema `control`: no
+    # tiene esquema tenant, asi que no participa de los recorridos por tenant.
     return [
         fila[0]
         for fila in _ejecutar(
             conexion,
-            "SELECT institucion_id FROM control.institucion ORDER BY institucion_id",
+            "SELECT institucion_id FROM control.institucion "
+            "WHERE institucion_id <> 'CTRL-SAAS' ORDER BY institucion_id",
         )
     ]
 
@@ -250,7 +252,7 @@ def _claves_foraneas(conexion, esquema: str, tabla: str) -> set[tuple]:
 
 
 def test_el_codigo_apunta_a_la_version_vigente():
-    """AC-14: `VERSION_ESQUEMA_OBJETIVO` es el token vigente (021.1)."""
+    """AC-14: `VERSION_ESQUEMA_OBJETIVO` es el token vigente (026.0)."""
     assert VERSION_ESQUEMA_OBJETIVO == VERSION_VIGENTE, VERSION_ESQUEMA_OBJETIVO
 
 
@@ -259,18 +261,18 @@ def test_el_codigo_apunta_a_la_version_vigente():
 # ---------------------------------------------------------------------------
 
 
-def test_instalacion_limpia_crea_27_tablas_en_control_y_24_por_tenant():
-    """AC-14: los conteos vigentes son 27/24 con exactamente las tablas esperadas."""
+def test_instalacion_limpia_crea_26_tablas_en_control_y_23_por_tenant():
+    """AC-14: los conteos vigentes son 26/23 con exactamente las tablas esperadas."""
     with _base_temporal() as conexion:
         _instalar(conexion)
 
         assert _tablas_del_esquema(conexion, "control") == TABLAS_CONTROL_014
-        assert len(TABLAS_CONTROL_014) == 27
+        assert len(TABLAS_CONTROL_014) == 26
 
         for institucion_id in _instituciones(conexion):
             esquema = _esquema_de_institucion(institucion_id)
             assert _tablas_del_esquema(conexion, esquema) == TABLAS_TENANT_014
-            assert len(TABLAS_TENANT_014) == 24
+            assert len(TABLAS_TENANT_014) == 23
 
 
 def test_instalacion_limpia_crea_estado_e_historiales_en_control_y_tenants():

@@ -62,9 +62,6 @@ describe('DashboardService', () => {
         producto_nombre: 'Papel Bond',
         sede_id: 11,
         sede_nombre: 'Sede Central',
-        departamento_id: null,
-        departamento_nombre: null,
-        ubicacion: null,
         institucion_id: 'INSTA',
         institucion_nombre: 'Instituto Alfa',
       },
@@ -75,11 +72,8 @@ describe('DashboardService', () => {
         fecha_movimiento: '2026-04-01T07:30:00',
         producto_id: 202,
         producto_nombre: 'Papel Bond',
-        sede_id: null,
-        sede_nombre: null,
-        departamento_id: 22,
-        departamento_nombre: 'Operaciones',
-        ubicacion: 'Operaciones (INSTB)',
+        sede_id: 22,
+        sede_nombre: 'Sede Norte',
         institucion_id: 'INSTB',
         institucion_nombre: 'Instituto Beta',
       },
@@ -136,17 +130,12 @@ describe('DashboardService', () => {
     expect(recibidos[0].alertas[0].sede_nombre).toBe('Sede Central');
     expect(recibidos[0].alertas[0].institucion_nombre).toBe('Instituto Alfa');
     expect(recibidos[0].actividad_disponible).toBe(true);
-    // Movimiento nuevo: sede poblada y bloque de departamento nulo.
+    // Feature 026: todo movimiento se atribuye por su sede; no hay bloque legado.
     expect(recibidos[0].actividad_movimientos[0].sede_nombre).toBe('Sede Central');
-    expect(recibidos[0].actividad_movimientos[0].departamento_nombre).toBeNull();
-    // Movimiento legado: departamento/ubicacion poblados y sede nula.
     expect(recibidos[0].actividad_movimientos[1].institucion_nombre).toBe(
       'Instituto Beta',
     );
-    expect(recibidos[0].actividad_movimientos[1].sede_nombre).toBeNull();
-    expect(recibidos[0].actividad_movimientos[1].ubicacion).toBe(
-      'Operaciones (INSTB)',
-    );
+    expect(recibidos[0].actividad_movimientos[1].sede_nombre).toBe('Sede Norte');
   });
 
   it('no consulta el historial de movimientos ni ningún otro endpoint', () => {

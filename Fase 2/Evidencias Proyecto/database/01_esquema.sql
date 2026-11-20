@@ -6,8 +6,8 @@
 --
 -- PROPOSITO
 --   Crear TODA la estructura de una instalacion limpia:
---     * el esquema global `control` (27 tablas);
---     * un esquema `tenant_<slug>_<hash>` por institucion, con las 24 tablas
+--     * el esquema global `control` (26 tablas);
+--     * un esquema `tenant_<slug>_<hash>` por institucion, con las 23 tablas
 --       de negocio replicadas.
 --   Los datos de negocio los siembra `02_datos_semilla.sql`, que corre despues.
 --
@@ -25,18 +25,19 @@
 --
 -- MODELO
 --   Es el modelo canonico de 21 entidades de dominio (institucion, sede,
---   departamento, rol, usuario, categoria, producto, inventario, stock_sede,
+--   departamento, rol, usuario, categoria, producto, stock_sede,
 --   movimiento_inventario, prioridad, estado_ticket, ticket, detalle_ticket,
 --   historial_transicion_ticket, historial_transicion_producto,
 --   historial_transicion_categoria, proveedor, orden_compra,
---   detalle_orden_compra, factura_compra) + `departamento_encargado` auxiliar,
+--   detalle_orden_compra, factura_compra, orden_compra_ticket) +
+--   `departamento_encargado` auxiliar,
 --   mas las tablas de control (`funcion_institucion`, `mapa_usuario_esquema`,
 --   `registro_motivo_constancia`, `version_esquema`). Las justificaciones de las
---   Features 008/010/011/012/013/014/017/020 viven en docs/spec/stack.md; aqui
---   solo esta el DDL vigente.
+--   Features 008/010/011/012/013/014/017/020/021/026 viven en docs/spec/stack.md;
+--   aqui solo esta el DDL vigente.
 --
 -- VERSION OBJETIVO DEL DDL
---   020.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
+--   026.0 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
 -- =====================================================
 
 -- =====================================================
@@ -117,8 +118,8 @@ CREATE TABLE control.funcion_institucion (
 -- (`institucion_id` NOT NULL) y expone la clave compuesta
 -- `(institucion_id, sede_id)`, destino de la FK compuesta de `stock_sede`.
 -- Se crea aqui, antes de `departamento`, porque `departamento.sede_id` la
--- referencia. La direccion es el dato organizacional propio de la sede: no se
--- infiere de `inventario.ubicacion`, que queda como dato legado.
+-- referencia. La direccion es el dato organizacional propio de la sede (la
+-- antigua `inventario.ubicacion` desaparecio con esa tabla en la Feature 026).
 
 CREATE TABLE control.sede (
     sede_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -163,7 +164,8 @@ CREATE TABLE control.departamento (
         FOREIGN KEY (sede_id)
         REFERENCES sede(sede_id),
 
-    -- Destino de la FK compuesta inventario -> departamento (Feature 008).
+    -- Destino de la FK compuesta `stock_sede -> sede` y de la antigua
+    -- `inventario -> departamento` (Feature 008), retirada en la 026.
     CONSTRAINT departamento_institucion_uk
         UNIQUE (institucion_id, departamento_id)
 );
@@ -203,7 +205,13 @@ CREATE TABLE control.usuario (
 
     CONSTRAINT usuario_sede_fk
         FOREIGN KEY (sede_id)
-        REFERENCES sede(sede_id)
+        REFERENCES sede(sede_id),
+
+    -- Feature 026 (K-01): todo correo se guarda canonico (minusculas y sin
+    -- espacios exteriores). `security.normalizar_correo` ya lo hace; el check
+    -- cierra la puerta a escrituras directas.
+    CONSTRAINT usuario_correo_canonico_ck
+        CHECK (correo = lower(trim(correo)) AND length(correo) > 0)
 );
 
 -- =====================================================
@@ -281,7 +289,7 @@ CREATE TABLE control.producto (
         FOREIGN KEY (institucion_id, categoria_id)
         REFERENCES categoria(institucion_id, categoria_id),
 
-    -- Destino de las FK compuestas inventario -> producto y
+    -- Destino de las FK compuestas stock_sede -> producto y
     -- detalle_ticket -> producto (Feature 008, AC-2, AC-4).
     CONSTRAINT producto_institucion_uk
         UNIQUE (institucion_id, producto_id),
@@ -291,46 +299,11 @@ CREATE TABLE control.producto (
 );
 
 -- =====================================================
--- 7. INVENTARIO
+-- 7. STOCK_SEDE  (Feature 011; unica fuente de saldo desde la 026)
 -- =====================================================
-
-CREATE TABLE control.inventario (
-    inventario_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    stock_actual INTEGER NOT NULL DEFAULT 0,
-    ubicacion VARCHAR(100),
-    departamento_id INTEGER NOT NULL,
-    producto_id INTEGER NOT NULL,
-    -- Feature 008 (D-2): derivada del departamento; la puebla el servicio.
-    institucion_id VARCHAR(20) NOT NULL,
-
-    CONSTRAINT inventario_institucion_fk
-        FOREIGN KEY (institucion_id)
-        REFERENCES institucion(institucion_id),
-
-    -- Ambas FK comparten institucion_id: obligan a que el departamento y el
-    -- producto del inventario sean de la misma institucion (Feature 008, AC-2,
-    -- AC-4). Sustituyen a las FK simples previas.
-    CONSTRAINT inventario_departamento_institucion_fk
-        FOREIGN KEY (institucion_id, departamento_id)
-        REFERENCES departamento(institucion_id, departamento_id),
-
-    CONSTRAINT inventario_producto_institucion_fk
-        FOREIGN KEY (institucion_id, producto_id)
-        REFERENCES producto(institucion_id, producto_id),
-
-    CONSTRAINT inventario_stock_ck
-        CHECK (stock_actual >= 0),
-
-    CONSTRAINT inventario_producto_departamento_uk
-        UNIQUE (departamento_id, producto_id)
-);
-
--- =====================================================
--- 7b. STOCK_SEDE  (Feature 011)
--- =====================================================
--- Entidad de dominio nueva: el saldo operativo vigente es por `(sede, producto)`
--- y sustituye al saldo departamental (que queda como registro legado). Las FKs
--- compuestas obligan a que la sede y el producto sean de la misma institucion.
+-- El saldo operativo vigente es por `(sede, producto)`. Las FKs compuestas
+-- obligan a que la sede y el producto sean de la misma institucion. La Feature
+-- 026 retiro `inventario`: ya no hay saldo departamental ni registro legado.
 
 CREATE TABLE control.stock_sede (
     stock_sede_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -368,23 +341,19 @@ CREATE TABLE control.movimiento_inventario (
     cantidad INTEGER NOT NULL,
     fecha_movimiento TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     observacion VARCHAR(250),
-    -- Feature 011 (D-2): referencia historica al inventario departamental. Sus
-    -- valores no se alteran, pero deja de ser obligatoria porque los movimientos
-    -- nuevos se enlazan por `stock_sede_id` y dejan esta columna nula.
-    inventario_id INTEGER,
-    -- Referencia de los movimientos nuevos (negocio y consolidacion).
-    stock_sede_id INTEGER,
-
-    CONSTRAINT movimiento_inventario_fk
-        FOREIGN KEY (inventario_id)
-        REFERENCES inventario(inventario_id),
+    -- Feature 026 (D-5): `stock_sede` es el unico destino. El legado
+    -- `inventario_id` desaparecio con la tabla `inventario`.
+    stock_sede_id INTEGER NOT NULL,
 
     CONSTRAINT movimiento_stock_sede_fk
         FOREIGN KEY (stock_sede_id)
         REFERENCES stock_sede(stock_sede_id),
 
     CONSTRAINT movimiento_cantidad_ck
-        CHECK (cantidad > 0)
+        CHECK (cantidad > 0),
+
+    CONSTRAINT movimiento_tipo_ck
+        CHECK (tipo_movimiento IN ('ENTRADA', 'SALIDA'))
 );
 
 -- =====================================================
@@ -485,7 +454,11 @@ CREATE TABLE control.detalle_ticket (
         CHECK (cantidad_solicitada > 0),
 
     CONSTRAINT detalle_cantidad_entregada_ck
-        CHECK (cantidad_entregada >= 0)
+        CHECK (cantidad_entregada >= 0),
+
+    -- Feature 026 (K-03): el despacho nunca entrega mas de lo solicitado.
+    CONSTRAINT detalle_cantidad_entregada_tope_ck
+        CHECK (cantidad_entregada <= cantidad_solicitada)
 );
 
 -- =====================================================
@@ -709,6 +682,12 @@ CREATE TABLE control.version_esquema (
     actualizada_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Feature 026 (U-07): una sola fila de version por esquema. El indice parcial
+-- sobre la constante `true` es el mecanismo portable en PostgreSQL 16; el ORM
+-- no lo declara (solo aplica al DDL de control y al bootstrap de tenants).
+CREATE UNIQUE INDEX version_esquema_unica_idx
+    ON control.version_esquema ((true));
+
 -- =====================================================
 -- FEATURE 020: REABASTECIMIENTO EXTERNO Y COMPRAS
 -- =====================================================
@@ -735,7 +714,12 @@ CREATE TABLE control.proveedor (
     activo BOOLEAN NOT NULL DEFAULT TRUE,
 
     CONSTRAINT proveedor_rut_uk
-        UNIQUE (rut)
+        UNIQUE (rut),
+
+    -- Feature 026 (K-02): el RUT visible conserva puntos y guion, pero se
+    -- guarda en mayusculas y sin espacios exteriores.
+    CONSTRAINT proveedor_rut_canonico_ck
+        CHECK (rut = upper(trim(rut)) AND length(rut) > 0)
 );
 
 CREATE TABLE control.orden_compra (
@@ -905,6 +889,88 @@ ALTER TABLE control.historial_transicion_ticket
     FOREIGN KEY (orden_compra_id)
     REFERENCES orden_compra(orden_compra_id);
 
+-- =====================================================
+-- INDICES P0  (Feature 026)
+-- =====================================================
+-- Cubren los planes de lectura mas calientes de la API: saldo por producto/sede,
+-- bitacora por saldo y por fecha global, tablero por sede/estado, detalle de
+-- ticket, historiales por entidad, catalogos por departamento/categoria y
+-- ordenes por institucion/sede. Se crean al final porque referencian tablas
+-- creadas arriba (en particular `orden_compra`).
+
+CREATE INDEX stock_sede_producto_sede_idx
+    ON control.stock_sede (producto_id, sede_id);
+
+CREATE INDEX movimiento_stock_sede_fecha_idx
+    ON control.movimiento_inventario (stock_sede_id, fecha_movimiento DESC, movimiento_id DESC);
+
+CREATE INDEX movimiento_fecha_idx
+    ON control.movimiento_inventario (fecha_movimiento DESC, movimiento_id DESC);
+
+CREATE INDEX ticket_sede_estado_fecha_idx
+    ON control.ticket (sede_id, estado_id, fecha_creacion DESC, ticket_id DESC);
+
+CREATE INDEX ticket_usuario_fecha_idx
+    ON control.ticket (usuario_id, fecha_creacion DESC, ticket_id DESC);
+
+CREATE INDEX detalle_ticket_ticket_idx
+    ON control.detalle_ticket (ticket_id, detalle_ticket_id);
+
+CREATE INDEX detalle_ticket_producto_idx
+    ON control.detalle_ticket (producto_id, ticket_id);
+
+CREATE INDEX historial_ticket_ticket_fecha_idx
+    ON control.historial_transicion_ticket (ticket_id, fecha_transicion DESC, historial_transicion_id DESC);
+
+CREATE INDEX historial_producto_producto_fecha_idx
+    ON control.historial_transicion_producto (producto_id, fecha_transicion DESC, historial_producto_id DESC);
+
+CREATE INDEX historial_categoria_categoria_fecha_idx
+    ON control.historial_transicion_categoria (categoria_id, fecha_transicion DESC, historial_categoria_id DESC);
+
+CREATE INDEX usuario_departamento_idx
+    ON control.usuario (departamento_id);
+
+CREATE INDEX departamento_sede_idx
+    ON control.departamento (sede_id);
+
+CREATE INDEX producto_categoria_idx
+    ON control.producto (categoria_id);
+
+CREATE INDEX orden_compra_institucion_fecha_idx
+    ON control.orden_compra (institucion_id, fecha_creacion, orden_compra_id);
+
+CREATE INDEX orden_compra_sede_estado_fecha_idx
+    ON control.orden_compra (sede_id, estado, fecha_creacion, orden_compra_id);
+
+-- =====================================================
+-- UNICIDADES B2  (Feature 026)
+-- =====================================================
+-- Normalizan el dato visible: correo en minusculas, RUT sin separadores y
+-- nombres de catalogo comparados sin mayusculas ni espacios exteriores. El
+-- historial de ticket tiene una sola fila de creacion (`estado_origen_id` nulo).
+
+CREATE UNIQUE INDEX usuario_correo_normalizado_uk
+    ON control.usuario (lower(trim(correo)));
+
+CREATE UNIQUE INDEX proveedor_rut_normalizado_uk
+    ON control.proveedor (
+        upper(replace(replace(replace(trim(rut), '.', ''), '-', ''), ' ', ''))
+    );
+
+CREATE UNIQUE INDEX sede_nombre_institucion_uk
+    ON control.sede (institucion_id, lower(trim(nombre)));
+
+CREATE UNIQUE INDEX departamento_nombre_institucion_uk
+    ON control.departamento (institucion_id, lower(trim(nombre_dep)));
+
+CREATE UNIQUE INDEX categoria_nombre_institucion_uk
+    ON control.categoria (institucion_id, lower(trim(nombre_cat)));
+
+CREATE UNIQUE INDEX historial_transicion_ticket_creacion_uk
+    ON control.historial_transicion_ticket (ticket_id)
+    WHERE estado_origen_id IS NULL;
+
 
 -- =====================================================
 -- TOPOLOGIA DE TENANTS  (un esquema por institucion)
@@ -958,7 +1024,7 @@ AS $nombre$
 $nombre$;
 
 -- Crea un esquema tenant por cada institucion de la topologia. Las plantillas
--- son identicas al DDL de `control` de las 24 tablas de negocio, con las FKs
+-- son identicas al DDL de `control` de las 23 tablas de negocio, con las FKs
 -- calificadas al mismo esquema (sin referencias cross-schema). El espejo
 -- `institucion` se limita a dos columnas (`institucion_id`, `nombre`): `rut`,
 -- `direccion`, `activo` y `funcion_institucion` viven SOLO en control.
@@ -1014,7 +1080,8 @@ BEGIN
         'CONSTRAINT usuario_departamento_fk FOREIGN KEY (departamento_id) '
         'REFERENCES %1$I.departamento(departamento_id), '
         'CONSTRAINT usuario_rol_fk FOREIGN KEY (rol_id) REFERENCES %1$I.rol(rol_id), '
-        'CONSTRAINT usuario_sede_fk FOREIGN KEY (sede_id) REFERENCES %1$I.sede(sede_id))',
+        'CONSTRAINT usuario_sede_fk FOREIGN KEY (sede_id) REFERENCES %1$I.sede(sede_id), '
+        'CONSTRAINT usuario_correo_canonico_ck CHECK (correo = lower(trim(correo)) AND length(correo) > 0))',
 
         'CREATE TABLE %1$I.departamento_encargado ('
         'departamento_encargado_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
@@ -1052,22 +1119,6 @@ BEGIN
         'CONSTRAINT producto_institucion_uk UNIQUE (institucion_id, producto_id), '
         'CONSTRAINT producto_stock_minimo_ck CHECK (stock_minimo >= 0))',
 
-        'CREATE TABLE %1$I.inventario ('
-        'inventario_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
-        'stock_actual INTEGER NOT NULL DEFAULT 0, '
-        'ubicacion VARCHAR(100), '
-        'departamento_id INTEGER NOT NULL, '
-        'producto_id INTEGER NOT NULL, '
-        'institucion_id VARCHAR(20) NOT NULL, '
-        'CONSTRAINT inventario_institucion_fk FOREIGN KEY (institucion_id) '
-        'REFERENCES %1$I.institucion(institucion_id), '
-        'CONSTRAINT inventario_departamento_institucion_fk FOREIGN KEY (institucion_id, departamento_id) '
-        'REFERENCES %1$I.departamento(institucion_id, departamento_id), '
-        'CONSTRAINT inventario_producto_institucion_fk FOREIGN KEY (institucion_id, producto_id) '
-        'REFERENCES %1$I.producto(institucion_id, producto_id), '
-        'CONSTRAINT inventario_stock_ck CHECK (stock_actual >= 0), '
-        'CONSTRAINT inventario_producto_departamento_uk UNIQUE (departamento_id, producto_id))',
-
         'CREATE TABLE %1$I.stock_sede ('
         'stock_sede_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
         'stock_actual INTEGER NOT NULL DEFAULT 0, '
@@ -1089,13 +1140,11 @@ BEGIN
         'cantidad INTEGER NOT NULL, '
         'fecha_movimiento TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, '
         'observacion VARCHAR(250), '
-        'inventario_id INTEGER, '
-        'stock_sede_id INTEGER, '
-        'CONSTRAINT movimiento_inventario_fk FOREIGN KEY (inventario_id) '
-        'REFERENCES %1$I.inventario(inventario_id), '
+        'stock_sede_id INTEGER NOT NULL, '
         'CONSTRAINT movimiento_stock_sede_fk FOREIGN KEY (stock_sede_id) '
         'REFERENCES %1$I.stock_sede(stock_sede_id), '
-        'CONSTRAINT movimiento_cantidad_ck CHECK (cantidad > 0))',
+        'CONSTRAINT movimiento_cantidad_ck CHECK (cantidad > 0), '
+        'CONSTRAINT movimiento_tipo_ck CHECK (tipo_movimiento IN (''ENTRADA'', ''SALIDA'')))',
 
         'CREATE TABLE %1$I.prioridad ('
         'prioridad_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
@@ -1140,7 +1189,8 @@ BEGIN
         'CONSTRAINT detalle_ticket_producto_institucion_fk FOREIGN KEY (institucion_id, producto_id) '
         'REFERENCES %1$I.producto(institucion_id, producto_id), '
         'CONSTRAINT detalle_cantidad_solicitada_ck CHECK (cantidad_solicitada > 0), '
-        'CONSTRAINT detalle_cantidad_entregada_ck CHECK (cantidad_entregada >= 0))',
+        'CONSTRAINT detalle_cantidad_entregada_ck CHECK (cantidad_entregada >= 0), '
+        'CONSTRAINT detalle_cantidad_entregada_tope_ck CHECK (cantidad_entregada <= cantidad_solicitada))',
 
         'CREATE TABLE %1$I.historial_transicion_ticket ('
         'historial_transicion_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
@@ -1197,7 +1247,8 @@ BEGIN
         'correo VARCHAR(100), '
         'telefono VARCHAR(20), '
         'activo BOOLEAN NOT NULL DEFAULT TRUE, '
-        'CONSTRAINT proveedor_rut_uk UNIQUE (rut))',
+        'CONSTRAINT proveedor_rut_uk UNIQUE (rut), '
+        'CONSTRAINT proveedor_rut_canonico_ck CHECK (rut = upper(trim(rut)) AND length(rut) > 0))',
 
         'CREATE TABLE %1$I.orden_compra ('
         'orden_compra_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
@@ -1298,7 +1349,77 @@ BEGIN
         'ALTER TABLE %1$I.historial_transicion_ticket '
         'ADD CONSTRAINT historial_transicion_ticket_orden_compra_fk '
         'FOREIGN KEY (orden_compra_id) '
-        'REFERENCES %1$I.orden_compra(orden_compra_id)'
+        'REFERENCES %1$I.orden_compra(orden_compra_id)',
+
+        -- Feature 026: indices P0 y unicidades B2 al final del arreglo, cuando
+        -- todas las tablas ya existen.
+        'CREATE INDEX stock_sede_producto_sede_idx '
+        'ON %1$I.stock_sede (producto_id, sede_id)',
+
+        'CREATE INDEX movimiento_stock_sede_fecha_idx '
+        'ON %1$I.movimiento_inventario (stock_sede_id, fecha_movimiento DESC, movimiento_id DESC)',
+
+        'CREATE INDEX movimiento_fecha_idx '
+        'ON %1$I.movimiento_inventario (fecha_movimiento DESC, movimiento_id DESC)',
+
+        'CREATE INDEX ticket_sede_estado_fecha_idx '
+        'ON %1$I.ticket (sede_id, estado_id, fecha_creacion DESC, ticket_id DESC)',
+
+        'CREATE INDEX ticket_usuario_fecha_idx '
+        'ON %1$I.ticket (usuario_id, fecha_creacion DESC, ticket_id DESC)',
+
+        'CREATE INDEX detalle_ticket_ticket_idx '
+        'ON %1$I.detalle_ticket (ticket_id, detalle_ticket_id)',
+
+        'CREATE INDEX detalle_ticket_producto_idx '
+        'ON %1$I.detalle_ticket (producto_id, ticket_id)',
+
+        'CREATE INDEX historial_ticket_ticket_fecha_idx '
+        'ON %1$I.historial_transicion_ticket (ticket_id, fecha_transicion DESC, historial_transicion_id DESC)',
+
+        'CREATE INDEX historial_producto_producto_fecha_idx '
+        'ON %1$I.historial_transicion_producto (producto_id, fecha_transicion DESC, historial_producto_id DESC)',
+
+        'CREATE INDEX historial_categoria_categoria_fecha_idx '
+        'ON %1$I.historial_transicion_categoria (categoria_id, fecha_transicion DESC, historial_categoria_id DESC)',
+
+        'CREATE INDEX usuario_departamento_idx '
+        'ON %1$I.usuario (departamento_id)',
+
+        'CREATE INDEX departamento_sede_idx '
+        'ON %1$I.departamento (sede_id)',
+
+        'CREATE INDEX producto_categoria_idx '
+        'ON %1$I.producto (categoria_id)',
+
+        'CREATE INDEX orden_compra_institucion_fecha_idx '
+        'ON %1$I.orden_compra (institucion_id, fecha_creacion, orden_compra_id)',
+
+        'CREATE INDEX orden_compra_sede_estado_fecha_idx '
+        'ON %1$I.orden_compra (sede_id, estado, fecha_creacion, orden_compra_id)',
+
+        'CREATE UNIQUE INDEX usuario_correo_normalizado_uk '
+        'ON %1$I.usuario (lower(trim(correo)))',
+
+        'CREATE UNIQUE INDEX proveedor_rut_normalizado_uk '
+        'ON %1$I.proveedor '
+        '(upper(replace(replace(replace(trim(rut), ''.'', ''''), ''-'', ''''), '' '', '''')))',
+
+        'CREATE UNIQUE INDEX sede_nombre_institucion_uk '
+        'ON %1$I.sede (institucion_id, lower(trim(nombre)))',
+
+        'CREATE UNIQUE INDEX departamento_nombre_institucion_uk '
+        'ON %1$I.departamento (institucion_id, lower(trim(nombre_dep)))',
+
+        'CREATE UNIQUE INDEX categoria_nombre_institucion_uk '
+        'ON %1$I.categoria (institucion_id, lower(trim(nombre_cat)))',
+
+        'CREATE UNIQUE INDEX historial_transicion_ticket_creacion_uk '
+        'ON %1$I.historial_transicion_ticket (ticket_id) '
+        'WHERE estado_origen_id IS NULL',
+
+        'CREATE UNIQUE INDEX version_esquema_unica_idx '
+        'ON %1$I.version_esquema ((true))'
     ];
 
     FOR v_institucion_id IN SELECT institucion_id FROM control.institucion ORDER BY institucion_id LOOP
@@ -1309,17 +1430,17 @@ BEGIN
             EXECUTE format(v_plantilla, v_esquema);
         END LOOP;
 
-        -- Fail-closed: el tenant debe tener exactamente las 24 tablas de negocio.
+        -- Fail-closed: el tenant debe tener exactamente las 23 tablas de negocio.
         SELECT count(*) INTO v_conteo
         FROM information_schema.tables
         WHERE table_schema = v_esquema
           AND table_type = 'BASE TABLE';
-        IF v_conteo <> 24 THEN
+        IF v_conteo <> 23 THEN
             RAISE EXCEPTION
-                '01: el tenant % tiene % tabla(s) (esperadas 24).',
+                '01: el tenant % tiene % tabla(s) (esperadas 23).',
                 v_esquema, v_conteo;
         END IF;
-        RAISE NOTICE '01: tenant % creado con 24 tablas.', v_esquema;
+        RAISE NOTICE '01: tenant % creado con 23 tablas.', v_esquema;
     END LOOP;
 END;
 $tenants$;

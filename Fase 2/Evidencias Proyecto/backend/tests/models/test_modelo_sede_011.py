@@ -26,7 +26,7 @@ from app.db.database import Base
 from app.models import (
     Departamento,
     Institucion,
-    Inventario,
+    StockSede,
     MovimientoInventario,
     Rol,
     Ticket,
@@ -106,38 +106,35 @@ def test_metadata_declara_las_entidades_nuevas(motor):
 
 
 def test_columnas_nuevas_son_nullable_con_su_fk(motor):
-    """AC-9 y restricciones §7: las columnas nuevas son nullable y con FK.
+    """AC-9 y Feature 026: las columnas de sede son nullable y la del saldo no.
 
-    `departamento.sede_id`, `usuario.sede_id`, `ticket.sede_id` y
-    `movimiento_inventario.stock_sede_id` no son `NOT NULL`: la obligatoriedad es
-    operativa (spec D-5) y los registros legados deben seguir siendo
-    representables. `inventario_id` conserva su FK a la tabla legada, pero deja de
-    ser obligatorio para admitir los movimientos **nuevos**, que se enlazan por
-    `stock_sede_id` y dejan `inventario_id` nulo (spec D-2 y §7).
+    `departamento.sede_id`, `usuario.sede_id` y `ticket.sede_id` no son `NOT
+    NULL`: la obligatoriedad es operativa (spec 011 D-5). Desde la Feature 026
+    `movimiento_inventario.stock_sede_id` es `NOT NULL`: todo movimiento se
+    enlaza a la unica fila de saldo por sede y ya no existe el destino legado
+    `inventario_id`.
     """
     destinos = {
         ("departamento", "sede_id"): "sede",
         ("usuario", "sede_id"): "sede",
         ("ticket", "sede_id"): "sede",
-        ("movimiento_inventario", "stock_sede_id"): "stock_sede",
     }
     for tabla, columna in COLUMNAS_NUEVAS:
         assert tabla in Base.metadata.tables, f"falta la tabla {tabla}"
         columnas = Base.metadata.tables[tabla].columns
         assert columna in columnas, f"falta {tabla}.{columna}"
-        assert columnas[columna].nullable is True, f"{tabla}.{columna} debe ser nullable"
         fks = {fk.target_fullname for fk in columnas[columna].foreign_keys}
         assert any(
-            destinos[(tabla, columna)] in fk for fk in fks
-        ), f"{tabla}.{columna} debe referenciar {destinos[(tabla, columna)]}"
-
-    columnas_legadas = Base.metadata.tables["movimiento_inventario"].columns
-    assert columnas_legadas["inventario_id"].nullable is True, (
-        "un movimiento nuevo se enlaza por stock_sede_id y deja inventario_id nulo"
-    )
-    assert {
-        fk.target_fullname for fk in columnas_legadas["inventario_id"].foreign_keys
-    } == {"inventario.inventario_id"}, "la FK historica se conserva"
+            destinos.get((tabla, columna), "stock_sede") in fk for fk in fks
+        ), f"{tabla}.{columna} debe referenciar su tabla de sede/saldo"
+        if (tabla, columna) == ("movimiento_inventario", "stock_sede_id"):
+            assert columnas[columna].nullable is False, (
+                "Feature 026: el movimiento siempre apunta a un saldo por sede"
+            )
+        else:
+            assert columnas[columna].nullable is True, (
+                f"{tabla}.{columna} debe ser nullable"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -335,38 +332,23 @@ def test_departamento_encargado_exige_referencias_existentes(motor):
 # ---------------------------------------------------------------------------
 
 
-def test_las_entidades_legadas_conservan_su_estructura(motor):
-    """Restricciones §7: `inventario` no se reescribe ni pierde su unicidad."""
-    inspector = inspect(motor)
-    columnas = {columna["name"] for columna in inspector.get_columns("inventario")}
-    assert {"inventario_id", "stock_actual", "departamento_id", "producto_id"} <= columnas
-    unicos = {
-        tuple(sorted(restriccion["column_names"]))
-        for restriccion in inspector.get_unique_constraints("inventario")
-    }
-    assert ("departamento_id", "producto_id") in unicos, (
-        "la unicidad departamental legada se conserva"
-    )
+def test_inventario_ya_no_existe_en_la_metadata(motor):
+    """Feature 026: la tabla legada `inventario` se retiro del modelo."""
+    assert "inventario" not in Base.metadata.tables
 
 
-def test_movimiento_legado_sin_stock_sede_sigue_siendo_valido(motor, datos_base):
-    """Restricciones §7: un movimiento historico sin referencia nueva es valido."""
+def test_movimiento_sin_stock_sede_es_rechazado(motor, datos_base):
+    """Feature 026: `stock_sede_id` es obligatorio; no hay movimientos sin saldo."""
     db = _sesion(motor)
     try:
         movimiento = MovimientoInventario(
             tipo_movimiento="ENTRADA",
             cantidad=4,
-            observacion="historial legado",
-            inventario_id=datos_base["inventario_id"],
+            observacion="sin destino",
         )
         db.add(movimiento)
-        db.commit()
-        db.refresh(movimiento)
-
-        assert movimiento.movimiento_id is not None
-        assert movimiento.stock_sede_id is None
-        inventario = db.get(Inventario, datos_base["inventario_id"])
-        assert inventario.stock_actual == 50, "el saldo legado no se altera"
+        with pytest.raises(IntegrityError):
+            db.commit()
     finally:
         db.close()
 
@@ -399,7 +381,7 @@ def test_movimiento_nuevo_puede_referenciar_stock_sede(motor, datos_base):
         db.commit()
 
         movimiento = db.execute(select(MovimientoInventario)).scalars().one()
-        assert movimiento.inventario_id is None
+        assert movimiento.stock_sede_id == fila.stock_sede_id
         assert movimiento.stock_sede.stock_actual == 9
         assert movimiento.stock_sede.sede.sede_id == sede_id
     finally:

@@ -25,17 +25,11 @@ CAMPOS_HISTORIAL = {
     "cantidad",
     "fecha_movimiento",
     "observacion",
-    # Referencia legada (movimientos historicos) y nueva (Feature 011: por sede).
-    "inventario_id",
     "stock_sede_id",
     "producto_id",
     "producto_nombre",
-    # Atribucion departamental (legados) y de sede (nuevos, Feature 011).
-    "departamento_id",
-    "departamento_nombre",
     "sede_id",
     "sede_nombre",
-    "ubicacion",
     # Feature 008 (AC-8): atribucion institucional del movimiento.
     "institucion_id",
 }
@@ -76,13 +70,12 @@ def test_movimiento_inventario_respuesta_instancia_todos_los_campos():
         cantidad=3,
         fecha_movimiento=datetime(2026, 1, 1, 12, 0, 0),
         observacion="Despacho ticket_id=1; detalle_id=2; producto_id=5",
-        inventario_id=4,
+        stock_sede_id=4,
         producto_id=5,
         producto_nombre="Resma de papel",
-        departamento_id=2,
-        departamento_nombre="Bodega",
-        ubicacion="Estante A",
+        sede_id=2,
+        sede_nombre="Bodega",
     )
     assert movimiento.producto_nombre == "Resma de papel"
-    assert movimiento.departamento_nombre == "Bodega"
+    assert movimiento.sede_nombre == "Bodega"
     assert movimiento.cantidad == 3

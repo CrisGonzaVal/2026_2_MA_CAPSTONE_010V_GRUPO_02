@@ -30,38 +30,36 @@ from ._soporte_sede_011 import asegurar_sede_de_departamento
 
 
 @pytest.fixture(autouse=True)
-def _sede_de_datos_base(motor, datos_base):
+def sede_base(motor, datos_base):
     """Feature 011 (T9): el alta de ticket exige sede en el departamento.
 
     El caso AC-20 corre el despacho real; desde T9 el departamento debe tener sede
-    y el saldo vive en `stock_sede`.
+    y el saldo vive en `stock_sede`. Devuelve `{"sede_id", "stock_sede_ids"}` para
+    que los casos que registran movimientos usen la fila sembrada.
     """
-    asegurar_sede_de_departamento(
+    return asegurar_sede_de_departamento(
         motor, datos_base, stocks={datos_base["producto_id"]: 50}
     )
 
 #: Ruta contractual del historial (`spec.md` §5).
 RUTA_HISTORIAL = "/api/v1/inventario/movimientos"
 
-#: Claves del DTO `MovimientoInventarioRespuesta` (`spec.md` §5, Feature 008 y
-#: Feature 011). `institucion_id` da la atribucion institucional para las lecturas
-#: globales del Superadmin (AC-8); `stock_sede_id`/`sede_id`/`sede_nombre`
-#: corresponden a los movimientos nuevos de la granularidad por sede (011 D-2).
+#: Claves del DTO `MovimientoInventarioRespuesta` (Feature 008, 011 y 026).
+#: `institucion_id` da la atribucion institucional para las lecturas globales del
+#: Superadmin (AC-8); `stock_sede_id`/`sede_id`/`sede_nombre` corresponden a la
+#: granularidad por sede (011 D-2). La Feature 026 retiro `inventario_id`,
+#: `departamento_id`, `departamento_nombre` y `ubicacion`.
 CAMPOS_HISTORIAL = {
     "movimiento_id",
     "tipo_movimiento",
     "cantidad",
     "fecha_movimiento",
     "observacion",
-    "inventario_id",
     "stock_sede_id",
     "producto_id",
     "producto_nombre",
-    "departamento_id",
-    "departamento_nombre",
     "sede_id",
     "sede_nombre",
-    "ubicacion",
     "institucion_id",
 }
 
@@ -87,7 +85,7 @@ def _instalar_catalogo(motor, nombres):
         db.close()
 
 
-def _sembrar_movimiento(motor, inventario_id, fecha, observacion, tipo="ENTRADA", cantidad=1):
+def _sembrar_movimiento(motor, stock_sede_id, fecha, observacion, tipo="ENTRADA", cantidad=1):
     """Inserta una fila de `movimiento_inventario` con fecha explicita.
 
     Devuelve el `movimiento_id` generado. Se usa el motor solo para fijar la
@@ -101,7 +99,7 @@ def _sembrar_movimiento(motor, inventario_id, fecha, observacion, tipo="ENTRADA"
             cantidad=cantidad,
             fecha_movimiento=fecha,
             observacion=observacion,
-            inventario_id=inventario_id,
+            stock_sede_id=stock_sede_id,
         )
         db.add(movimiento)
         db.commit()
@@ -172,21 +170,23 @@ def test_historial_sin_movimientos_devuelve_lista_vacia(cliente, datos_base):
 
 
 def test_historial_expone_los_campos_asociados_del_movimiento(
-    cliente, motor, datos_base
+    cliente, motor, datos_base, sede_base
 ):
-    """AC-18/AC-22: el movimiento manual aparece con producto, departamento y ubicacion.
+    """AC-18/AC-22: el movimiento manual aparece con producto y sede.
 
-    Se crea por HTTP con el registro manual de la 002 (misma tabla) y se lee por
-    HTTP en el historial; asi el caso comprueba tambien que un movimiento ajeno
-    al despacho entra en la misma lectura.
+    Se crea por HTTP con el registro manual (misma tabla) y se lee por HTTP en el
+    historial; asi el caso comprueba tambien que un movimiento ajeno al despacho
+    entra en la misma lectura. Feature 026: el destino es `stock_sede` y el DTO ya
+    no expone campos del inventario departamental legado.
     """
+    stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
     registro = cliente.post(
         "/api/v1/inventario/movimientos",
         json={
             "tipo_movimiento": "ENTRADA",
             "cantidad": 5,
             "observacion": "Ingreso de reposicion",
-            "inventario_id": datos_base["inventario_id"],
+            "stock_sede_id": stock_sede_id,
         },
     )
     assert registro.status_code == 201, registro.text
@@ -199,19 +199,18 @@ def test_historial_expone_los_campos_asociados_del_movimiento(
     assert movimiento["tipo_movimiento"] == "ENTRADA"
     assert movimiento["cantidad"] == 5
     assert movimiento["observacion"] == "Ingreso de reposicion"
-    assert movimiento["inventario_id"] == datos_base["inventario_id"]
+    assert movimiento["stock_sede_id"] == stock_sede_id
     assert movimiento["producto_id"] == datos_base["producto_id"]
     assert movimiento["producto_nombre"] == "Cuaderno linedado"
-    assert movimiento["departamento_id"] == datos_base["departamento_id"]
-    assert movimiento["departamento_nombre"] == "Operaciones"
-    assert movimiento["ubicacion"] == "Bodega central"
+    assert movimiento["sede_id"] == sede_base["sede_id"]
+    assert movimiento["sede_nombre"] == "Sede Base"
 
 
 # --- AC-19: orden determinista por fecha DESC y desempate por id DESC ---
 
 
 def test_historial_ordena_por_fecha_desc_y_desempata_por_id_desc(
-    cliente, motor, datos_base
+    cliente, motor, datos_base, sede_base
 ):
     """AC-19/D-8: fecha descendente; ante empate, `movimiento_id` descendente.
 
@@ -221,18 +220,18 @@ def test_historial_ordena_por_fecha_desc_y_desempata_por_id_desc(
     menor: si el desempate no existiera, el par empatado saldria en orden de
     insercion (id ascendente) y la prueba fallaria.
     """
-    inventario_id = datos_base["inventario_id"]
+    stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
     fecha_vieja = datetime(2026, 1, 1, 10, 0, 0)
     fecha_nueva = datetime(2026, 1, 2, 10, 0, 0)
 
     id_viejo_primero = _sembrar_movimiento(
-        motor, inventario_id, fecha_vieja, "empate insertado primero"
+        motor, stock_sede_id, fecha_vieja, "empate insertado primero"
     )
     id_reciente = _sembrar_movimiento(
-        motor, inventario_id, fecha_nueva, "movimiento mas reciente"
+        motor, stock_sede_id, fecha_nueva, "movimiento mas reciente"
     )
     id_viejo_segundo = _sembrar_movimiento(
-        motor, inventario_id, fecha_vieja, "empate insertado despues"
+        motor, stock_sede_id, fecha_vieja, "empate insertado despues"
     )
 
     cuerpo = _leer_historial(cliente)
@@ -288,7 +287,6 @@ def test_la_salida_de_un_despacho_aparece_en_el_historial_por_stock_sede(
         ]
         assert len(salidas) == 1, f"se esperaba una salida de despacho: {salidas}"
         salida_persistida = salidas[0]
-        assert salida_persistida.inventario_id is None, "el movimiento nuevo no usa el legado"
         assert salida_persistida.stock_sede_id is not None, "se enlaza por stock_sede_id"
     finally:
         db.close()
@@ -300,11 +298,9 @@ def test_la_salida_de_un_despacho_aparece_en_el_historial_por_stock_sede(
     assert set(salida) == CAMPOS_HISTORIAL, "faltan campos del contrato (§5)"
     assert salida["cantidad"] == 3
     assert salida["observacion"] == observacion
-    assert salida["inventario_id"] is None, "el movimiento nuevo no usa el legado"
     assert salida["stock_sede_id"] is not None, "se enlaza por stock_sede_id"
     assert salida["sede_id"] is not None, "el movimiento nuevo atribuye su sede"
     assert salida["sede_nombre"], "la sede viaja resuelta"
-    assert salida["departamento_id"] is None, "el movimiento nuevo no atribuye departamento"
     assert salida["producto_id"] == datos_despacho["producto_id"]
 
 

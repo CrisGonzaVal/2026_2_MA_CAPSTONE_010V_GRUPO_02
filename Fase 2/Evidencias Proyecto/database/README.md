@@ -5,8 +5,8 @@ instalación vigentes: no hay migraciones ni cadena incremental.
 
 | Script | Qué hace |
 |---|---|
-| `01_esquema.sql` | Crea `control` (27 tablas) y un esquema `tenant_<slug>_<hash>` por institución (24 tablas de negocio cada uno). Siembra la topología: las 4 instituciones de QA (las capacidades funcionales las llena `02_`). |
-| `02_datos_semilla.sql` | Llena la semilla QA, la reparte a los tenants, replica catálogos (incluido el global de proveedores), consolida `stock_sede`, puebla el mapa `correo -> esquema`, fija la versión `021.1` y deja `control` como contexto global. Corre en una transacción con guardia fail-closed. |
+| `01_esquema.sql` | Crea `control` (26 tablas) y un esquema `tenant_<slug>_<hash>` por institución (23 tablas de negocio cada uno). Siembra la topología: las 4 instituciones de QA (las capacidades funcionales las llena `02_`). |
+| `02_datos_semilla.sql` | Llena la semilla QA, la reparte a los tenants, replica catálogos, consolida `stock_sede`, puebla el mapa `correo -> esquema`, fija la versión `026.0` y deja `control` como contexto global. Corre en una transacción con guardia fail-closed. |
 
 Estructura de la Feature 014: `producto.activo` y `categoria.activo` (booleanas,
 `NOT NULL DEFAULT TRUE`) y las dos tablas de historial de transición del catálogo
@@ -71,7 +71,7 @@ esquema hardcodeados.
 SELECT count(*) FROM control.institucion;              -- 4
 SELECT count(*) FROM control.mapa_usuario_esquema;     -- 12
 SELECT count(*) FROM control.funcion_institucion;      -- 28 (4 × 7)
-SELECT version FROM control.version_esquema;           -- 021.1
+SELECT version FROM control.version_esquema;           -- 026.0
 SELECT count(*) FROM control.historial_transicion_producto;   -- 0
 SELECT count(*) FROM control.historial_transicion_categoria;  -- 0
 SELECT count(*) FROM control.proveedor;                -- 3 (catálogo global)
@@ -84,12 +84,12 @@ WHERE table_schema = 'control' AND table_name = 'historial_transicion_ticket'
   AND column_name = 'orden_compra_id';                 -- 1
 SELECT table_schema, count(*) FROM information_schema.tables
 WHERE table_schema = 'control' AND table_type = 'BASE TABLE'
-GROUP BY table_schema;                                 -- control: 27
+GROUP BY table_schema;                                 -- control: 26
 SELECT table_schema, count(*) FROM information_schema.tables
 WHERE table_schema LIKE 'tenant_%' AND table_type = 'BASE TABLE'
-GROUP BY table_schema;                                 -- 24 por tenant
+GROUP BY table_schema;                                 -- 23 por tenant
 ```
 
-Cada tenant debe declarar la versión `021.1` en su `version_esquema`: el routing
+Cada tenant debe declarar la versión `026.0` en su `version_esquema`: el routing
 exige igualdad exacta con `VERSION_ESQUEMA_OBJETIVO` (`backend/app/core/config.py`)
 y una versión menor no se enruta.

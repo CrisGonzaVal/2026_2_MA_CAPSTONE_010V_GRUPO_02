@@ -10,7 +10,7 @@ Lo que se fija (AC-2, AC-4):
 
   * las claves unicas compuestas y FK compuestas declaradas en el modelo;
   * que una referencia cruzada entre instituciones (producto/categoria,
-    inventario/departamento, inventario/producto, detalle/ticket, detalle/producto)
+    stock_sede/sede, stock_sede/producto, detalle/ticket, detalle/producto)
     se **rechaza** y no deja fila persistida;
   * que las relaciones validas dentro de una misma institucion si persisten.
 
@@ -31,7 +31,8 @@ from app.models import (
     DetalleTicket,
     EstadoTicket,
     Institucion,
-    Inventario,
+    Sede,
+    StockSede,
     Prioridad,
     Producto,
     Rol,
@@ -67,11 +68,16 @@ def _sembrar_institucion(db, codigo: str) -> dict:
     usuario = Usuario(
         nombre="Usuario",
         apellido=codigo,
-        correo=f"usuario.{codigo}@compustock.cl",
+        # Feature 026 (K-01): el correo se guarda canonico en minusculas.
+        correo=f"usuario.{codigo.lower()}@compustock.cl",
         departamento_id=departamento.departamento_id,
         rol_id=rol.rol_id,
     )
     db.add(usuario)
+    db.flush()
+
+    sede = Sede(nombre=f"Sede {codigo}", institucion_id=codigo)
+    db.add(sede)
     db.flush()
 
     categoria = Categoria(nombre_cat=f"Categoria {codigo}", institucion_id=codigo)
@@ -110,6 +116,7 @@ def _sembrar_institucion(db, codigo: str) -> dict:
         "categoria": categoria,
         "producto": producto,
         "ticket": ticket,
+        "sede": sede,
     }
 
 
@@ -138,13 +145,13 @@ def test_modelo_declara_claves_compuestas_institucionales():
 def test_modelo_declara_fk_compuestas_institucionales():
     esperadas = {
         "producto_categoria_institucion_fk",
-        "inventario_departamento_institucion_fk",
-        "inventario_producto_institucion_fk",
+        "stock_sede_sede_institucion_fk",
+        "stock_sede_producto_institucion_fk",
         "detalle_ticket_ticket_institucion_fk",
         "detalle_ticket_producto_institucion_fk",
     }
     declaradas = set()
-    for tabla in (Producto, Inventario, DetalleTicket):
+    for tabla in (Producto, StockSede, DetalleTicket):
         declaradas |= _nombres(
             c for c in tabla.__table__.constraints if isinstance(c, ForeignKeyConstraint)
         )
@@ -172,14 +179,14 @@ def test_producto_con_categoria_ajena_es_rechazado(sesion):
     assert sesion.query(Producto).filter_by(nombre="Cruce categoria").count() == 0
 
 
-def test_inventario_con_departamento_ajeno_es_rechazado(sesion):
+def test_stock_sede_con_sede_ajena_es_rechazado(sesion):
     a = _sembrar_institucion(sesion, "A")
     b = _sembrar_institucion(sesion, "B")
 
     sesion.add(
-        Inventario(
+        StockSede(
             stock_actual=1,
-            departamento_id=b["departamento"].departamento_id,
+            sede_id=b["sede"].sede_id,
             producto_id=a["producto"].producto_id,
             institucion_id="A",
         )
@@ -188,17 +195,17 @@ def test_inventario_con_departamento_ajeno_es_rechazado(sesion):
         sesion.commit()
     sesion.rollback()
 
-    assert sesion.query(Inventario).count() == 0
+    assert sesion.query(StockSede).count() == 0
 
 
-def test_inventario_con_producto_ajeno_es_rechazado(sesion):
+def test_stock_sede_con_producto_ajeno_es_rechazado(sesion):
     a = _sembrar_institucion(sesion, "A")
     b = _sembrar_institucion(sesion, "B")
 
     sesion.add(
-        Inventario(
+        StockSede(
             stock_actual=1,
-            departamento_id=a["departamento"].departamento_id,
+            sede_id=a["sede"].sede_id,
             producto_id=b["producto"].producto_id,
             institucion_id="A",
         )
@@ -207,7 +214,7 @@ def test_inventario_con_producto_ajeno_es_rechazado(sesion):
         sesion.commit()
     sesion.rollback()
 
-    assert sesion.query(Inventario).count() == 0
+    assert sesion.query(StockSede).count() == 0
 
 
 def test_detalle_con_producto_ajeno_es_rechazado(sesion):
@@ -257,10 +264,9 @@ def test_relaciones_intrainstitucionales_persisten(sesion):
     a = _sembrar_institucion(sesion, "A")
     b = _sembrar_institucion(sesion, "B")
 
-    inventario = Inventario(
+    stock_sede = StockSede(
         stock_actual=5,
-        ubicacion="Bodega A",
-        departamento_id=a["departamento"].departamento_id,
+        sede_id=a["sede"].sede_id,
         producto_id=a["producto"].producto_id,
         institucion_id="A",
     )
@@ -271,10 +277,10 @@ def test_relaciones_intrainstitucionales_persisten(sesion):
         cantidad_entregada=0,
         institucion_id="A",
     )
-    sesion.add_all([inventario, detalle])
+    sesion.add_all([stock_sede, detalle])
     sesion.commit()
 
-    assert sesion.query(Inventario).count() == 1
+    assert sesion.query(StockSede).count() == 1
     assert sesion.query(DetalleTicket).count() == 1
     # Los homonimos de B no se mezclan: son registros independientes (AC-1).
     assert a["producto"].producto_id != b["producto"].producto_id

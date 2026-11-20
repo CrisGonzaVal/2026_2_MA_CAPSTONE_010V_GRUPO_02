@@ -1,4 +1,12 @@
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -6,6 +14,14 @@ from app.db.database import Base
 
 class Usuario(Base):
     __tablename__ = "usuario"
+    __table_args__ = (
+        # Feature 026 (K-01): el correo se guarda canonico; `security.normalizar_correo`
+        # lo hace en el servicio y este check cierra las escrituras directas.
+        CheckConstraint(
+            "correo = lower(trim(correo)) AND length(correo) > 0",
+            name="usuario_correo_canonico_ck",
+        ),
+    )
 
     usuario_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     nombre = Column(String(100), nullable=False)
@@ -29,3 +45,16 @@ class Usuario(Base):
         primaryjoin="Usuario.sede_id == Sede.sede_id",
         foreign_keys="Usuario.sede_id",
     )
+
+
+# Feature 026: indice P0 de usuarios por departamento y unicidad funcional del
+# correo (minusculas y sin espacios exteriores).
+Index(
+    "usuario_departamento_idx",
+    Usuario.departamento_id,
+)
+Index(
+    "usuario_correo_normalizado_uk",
+    func.lower(func.trim(Usuario.correo)),
+    unique=True,
+)

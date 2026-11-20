@@ -915,11 +915,11 @@ def despachar_ticket(
 
     Feature 011 (spec D-5/AC-9): el despacho usa **exclusivamente** la instantanea
     `ticket.sede_id`, nunca la asignacion vigente del departamento; rebaja solo el
-    `StockSede` de esa sede y enlaza el movimiento nuevo por `stock_sede_id`,
-    dejando `inventario_id` nulo. Un ticket sin instantanea (legado sin migrar)
-    responde 409. La sede se bloquea con `FOR UPDATE` junto al ticket para
-    serializar despachos concurrentes; SQLite ignora el bloqueo y la garantia real
-    se verifica en PostgreSQL.
+    `StockSede` de esa sede y enlaza el movimiento nuevo por `stock_sede_id`, que
+    desde la Feature 026 es el unico destino posible. Un ticket sin instantanea
+    (legado sin migrar) responde 409. La sede se bloquea con `FOR UPDATE` junto al
+    ticket para serializar despachos concurrentes; SQLite ignora el bloqueo y la
+    garantia real se verifica en PostgreSQL.
     """
     ticket = db.execute(
         select(Ticket).where(Ticket.ticket_id == ticket_id).with_for_update()
@@ -1071,8 +1071,8 @@ def despachar_ticket(
                         detalle_ticket_id=detalle.detalle_ticket_id,
                         producto_id=detalle.producto_id,
                     ),
-                    # Movimiento nuevo: se enlaza por `stock_sede_id` y deja
-                    # `inventario_id` nulo (spec D-2 y §7).
+                    # Movimiento nuevo: se enlaza por `stock_sede_id`, el unico
+                    # destino de auditoria desde la Feature 026 (spec D-2 y §7).
                     stock_sede_id=fila.stock_sede_id,
                 )
             )

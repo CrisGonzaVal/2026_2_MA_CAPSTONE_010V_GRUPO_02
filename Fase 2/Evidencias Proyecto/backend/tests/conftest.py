@@ -33,10 +33,11 @@ from app.models import (
     Departamento,
     EstadoTicket,
     Institucion,
-    Inventario,
     Prioridad,
     Producto,
     Rol,
+    Sede,
+    StockSede,
     Usuario,
 )
 from app.services.auth_service import IdentidadAutenticada
@@ -259,14 +260,10 @@ def datos_base(motor):
         db.add(producto)
         db.flush()
 
-        inventario = Inventario(
-            stock_actual=50,
-            ubicacion="Bodega central",
-            departamento_id=departamento.departamento_id,
-            producto_id=producto.producto_id,
-            institucion_id=institucion.institucion_id,
-        )
-        db.add(inventario)
+        # Feature 026: `inventario` desaparecio y el saldo vivo es `stock_sede`.
+        # La fixture base no siembra sedes ni saldo operativo: cada caso declara
+        # el suyo con `asegurar_sede_de_departamento` (o su propio sembrado), de
+        # modo que los totales no arrastren stock ajeno al escenario.
         db.commit()
 
         return {
@@ -281,7 +278,6 @@ def datos_base(motor):
             "estado_cerrado_id": estado_cerrado.estado_id,
             "categoria_id": categoria.categoria_id,
             "producto_id": producto.producto_id,
-            "inventario_id": inventario.inventario_id,
             "correo_usado": usuario.correo,
         }
     finally:
@@ -389,14 +385,21 @@ def dos_instituciones(motor, datos_base):
         db.add(producto_homonimo)
         db.flush()
 
-        inventario_homonimo = Inventario(
+        sede_ajena = Sede(
+            nombre="Sede Ajeno",
+            direccion="Bodega Sur - H1",
+            institucion_id="INST02",
+        )
+        db.add(sede_ajena)
+        db.flush()
+
+        stock_homonimo = StockSede(
             stock_actual=5,
-            ubicacion="Bodega Sur - H1",
-            departamento_id=departamento_ajeno.departamento_id,
+            sede_id=sede_ajena.sede_id,
             producto_id=producto_homonimo.producto_id,
             institucion_id="INST02",
         )
-        db.add(inventario_homonimo)
+        db.add(stock_homonimo)
         db.commit()
 
         return {
@@ -406,7 +409,8 @@ def dos_instituciones(motor, datos_base):
             "departamento_ajeno_id": departamento_ajeno.departamento_id,
             "categoria_homonima_ajena_id": categoria_homonima.categoria_id,
             "producto_homonimo_ajeno_id": producto_homonimo.producto_id,
-            "inventario_homonimo_ajeno_id": inventario_homonimo.inventario_id,
+            "sede_ajena_id": sede_ajena.sede_id,
+            "stock_homonimo_ajeno_id": stock_homonimo.stock_sede_id,
             "stock_homonimo_ajeno": 5,
             "usuarios_inst01": usuarios_inst01,
             "usuarios_inst02": usuarios_inst02,

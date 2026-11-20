@@ -1,9 +1,10 @@
 """T2 (Feature 011): existencias y movimientos por sede — pruebas rojas.
 
-Seam bajo prueba: la **interfaz HTTP del `app` real**. La Feature 011 sustituye el
+Seam bajo prueba: la **interfaz HTTP del `app` real**. La Feature 011 sustituyo el
 saldo operativo departamental de `inventario` por existencias `(sede, producto)`:
-el total institucional se **deriva** de las sedes (spec D-2) y ninguna consulta
-debe leer ni exponer las filas legadas de `inventario` (spec §7).
+el total institucional se **deriva** de las sedes (spec D-2). La tabla
+`inventario` se retiro en la Feature 026, de modo que `stock_sede` es la unica
+fuente de saldo (spec §7).
 
 Contrato que estas pruebas fijan:
 
@@ -22,9 +23,8 @@ Trazabilidad AC (spec 011 §5):
   * **AC-8** ambito del Administrador (toda su institucion) y Superadmin de lectura.
   * **AC-11** criticidad por sede.
 
-Fase ROJA de TDD: los modelos y los contratos nuevos no existen (T3/T8). Cada
-prueba arranca con la guarda de capacidad correspondiente y falla con un motivo
-explicito, nunca por `ImportError` ni sintaxis.
+Estado actual: la suite esta en verde. Cada prueba arranca con la guarda de
+capacidad correspondiente y siembra el stock por sede que necesita.
 
 Observacion de la auditoria: se lee la fila persistida de `movimiento_inventario`
 con el motor de prueba. No es comodidad: el contrato de `GET /inventario/movimientos`
@@ -82,16 +82,16 @@ def _existencias(cliente_http, **params) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# AC-2: el saldo vigente es el de las sedes; el inventario legado no se lee
+# AC-2: el saldo vigente es el de las sedes; no hay inventario departamental
 # ---------------------------------------------------------------------------
 
 
 def test_existencias_exponen_sede_y_saldo(motor, datos_base):
     """AC-2: el producto muestra su saldo por sede y el total derivado.
 
-    La fixture trae una fila **legada** de `inventario` con 50 unidades para el
-    producto del catalogo. El saldo vigente debe ser el de la sede (42), no el
-    departamental: 50 significaria que la consulta sigue leyendo el legado.
+    La fixture no siembra saldo: la prueba crea una sede con 42 unidades y el
+    total debe ser exactamente ese, sin una segunda fuente departamental (la
+    tabla `inventario` se retiro en la Feature 026).
     """
     exigir_contrato_existencias_por_sede()
     sede_id = crear_sede(
@@ -111,14 +111,14 @@ def test_existencias_exponen_sede_y_saldo(motor, datos_base):
         filas = _existencias(cliente_http)
 
     producto = producto_de_existencias(filas, datos_base["producto_id"])
-    assert producto["stock_total"] == 42, "el total sale de las sedes, no del legado"
+    assert producto["stock_total"] == 42, "el total sale de las sedes, no de otra tabla"
     sedes = {fila["sede_id"]: fila for fila in producto["sedes"]}
     assert sedes[sede_id]["stock_actual"] == 42
     assert sedes[sede_id]["sede_nombre"] == "Sede Unica"
 
 
 def test_producto_sin_stock_sede_aparece_en_cero(motor, datos_base):
-    """AC-2: sin filas por sede el producto existe con total 0, no con 50."""
+    """AC-2: sin filas por sede el producto existe con total 0."""
     exigir_contrato_existencias_por_sede()
 
     with cliente(
@@ -128,7 +128,7 @@ def test_producto_sin_stock_sede_aparece_en_cero(motor, datos_base):
 
     producto = producto_de_existencias(filas, datos_base["producto_id"])
     assert producto["stock_total"] == 0, (
-        "el inventario departamental legado (50) no es una fuente de saldo vigente"
+        "sin filas de stock_sede no hay saldo vigente que sumar"
     )
     assert producto["sedes"] == []
 
@@ -252,9 +252,15 @@ def test_bodeguero_solo_opera_en_su_sede(motor, dos_instituciones):
     agrega ademas una sede de otro tenant para cubrir el caso ajeno.
     """
     exigir_contrato_movimiento_por_sede()
-    sede_propia = crear_sede(motor, institucion_id=dos_instituciones["inst_propia"])
-    sede_intrusa = crear_sede(motor, institucion_id=dos_instituciones["inst_propia"])
-    sede_ajena = crear_sede(motor, institucion_id=dos_instituciones["inst_ajena"])
+    sede_propia = crear_sede(
+        motor, institucion_id=dos_instituciones["inst_propia"], nombre="Sede Propia"
+    )
+    sede_intrusa = crear_sede(
+        motor, institucion_id=dos_instituciones["inst_propia"], nombre="Sede Intrusa"
+    )
+    sede_ajena = crear_sede(
+        motor, institucion_id=dos_instituciones["inst_ajena"], nombre="Sede Ajena"
+    )
     fila_intrusa = crear_stock_sede(
         motor, sede_id=sede_intrusa, producto_id=dos_instituciones["producto_id"],
         stock_actual=9, institucion_id=dos_instituciones["inst_propia"],
@@ -362,9 +368,8 @@ def test_superadmin_no_escribe_stock(motor, datos_base):
 def test_movimiento_nuevo_audita_por_stock_sede(motor, datos_base):
     """AC-2/AC-7: la entrada afecta el saldo por sede y deja auditoria nueva.
 
-    La fila de auditoria se lee persistida: referencia `stock_sede_id` y deja
-    `inventario_id` nulo, de modo que el movimiento historico sigue enlazado a su
-    tabla legada (spec D-2, decision 10).
+    La fila de auditoria se lee persistida: referencia `stock_sede_id`, el unico
+    destino de movimiento desde la Feature 026 (spec D-2, decision 10).
     """
     exigir_contrato_movimiento_por_sede()
     sede_id = crear_sede(motor, institucion_id=datos_base["institucion_id"])
@@ -398,9 +403,6 @@ def test_movimiento_nuevo_audita_por_stock_sede(motor, datos_base):
     assert auditoria.stock_sede_id == fila_stock
     assert auditoria.tipo_movimiento == "ENTRADA"
     assert auditoria.cantidad == 5
-    assert auditoria.inventario_id is None, (
-        "los movimientos nuevos usan la referencia de stock por sede"
-    )
 
 
 def test_movimiento_con_saldo_insuficiente_responde_409_sin_auditoria(

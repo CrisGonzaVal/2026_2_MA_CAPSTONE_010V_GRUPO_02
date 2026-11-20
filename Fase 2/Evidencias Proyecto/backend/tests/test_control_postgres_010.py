@@ -60,10 +60,10 @@ pytestmark = pytest.mark.skipif(
     ),
 )
 
-#: Tablas del DDL canonical que todo tenant reproduce. La Feature 011 agrega
-#: `sede`, `stock_sede` y `departamento_encargado` (14 entidades de dominio mas
-#: la auxiliar); `departamento` referencia `sede`, asi que la copia por esquema
-#: debe incluirla o la FK no resuelve.
+#: Tablas del DDL canonical que todo tenant reproduce. La Feature 011 agrego
+#: `sede`, `stock_sede` y `departamento_encargado`; la 026 retiro `inventario`.
+#: `departamento` referencia `sede`, asi que la copia por esquema debe incluirla
+#: o la FK no resuelve.
 TABLAS_DOMINIO = (
     "institucion",
     "departamento",
@@ -71,7 +71,6 @@ TABLAS_DOMINIO = (
     "usuario",
     "categoria",
     "producto",
-    "inventario",
     "movimiento_inventario",
     "prioridad",
     "estado_ticket",
@@ -87,7 +86,7 @@ TABLAS_CON_FK_INSTITUCION = (
     "departamento",
     "categoria",
     "producto",
-    "inventario",
+    "stock_sede",
     "ticket",
     "detalle_ticket",
 )

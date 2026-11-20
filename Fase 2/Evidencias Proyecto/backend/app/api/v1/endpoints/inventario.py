@@ -414,8 +414,8 @@ def listar_stock_sede(
     summary="Historial de movimientos con sus datos asociados",
     description=(
         "Devuelve **todas las filas de auditoria de `movimiento_inventario`**, "
-        "enriquecidas con el producto, el departamento y la ubicacion de su "
-        "inventario de destino. La respuesta es una lista, incluso vacia, sin "
+        "enriquecidas con el producto y la sede de su saldo de destino "
+        "(`stock_sede`). La respuesta es una lista, incluso vacia, sin "
         "paginacion ni filtros en esta entrega.\n\n"
         "El orden es determinista: `fecha_movimiento` descendente y, ante "
         "empates, `movimiento_id` descendente. El recurso es de solo lectura: no "

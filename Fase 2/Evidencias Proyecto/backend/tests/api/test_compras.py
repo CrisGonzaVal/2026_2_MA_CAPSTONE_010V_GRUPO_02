@@ -954,7 +954,7 @@ def test_recepcion_incrementa_stock_audita_y_desbloquea_ticket(motor, mundo):
     assert len(movimientos) == 2
     assert {m.tipo_movimiento for m in movimientos} == {"ENTRADA"}
     assert {m.cantidad for m in movimientos} == {1, 2}
-    assert all(m.inventario_id is None for m in movimientos)
+    assert all(m.stock_sede_id is not None for m in movimientos)
     assert all("FAC-REC-001" in (m.observacion or "") for m in movimientos)
     assert all("Bodeguero:" in (m.observacion or "") for m in movimientos)
 

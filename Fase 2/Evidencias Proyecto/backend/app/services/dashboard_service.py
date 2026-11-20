@@ -28,10 +28,8 @@ Decisiones de la spec que este modulo implementa:
 Feature 011 (spec D-6/AC-11): los KPI conservan exactamente las formulas de la
 Feature 009 pero su **fuente** pasa de `inventario` departamental a `stock_sede`:
 unidades = suma de saldos por sede; alertas = filas `(sede, producto)` criticas.
-La actividad reconoce las dos poblaciones de auditoria mediante **una proyeccion
-unica** (`union_all`): los movimientos historicos enlazados a `inventario_id` y los
-nuevos enlazados a `stock_sede_id`, atribuyendo la sede en los nuevos sin exponer
-saldos departamentales legados.
+La Feature 026 retiro `inventario`: la actividad tiene un unico origen
+(`stock_sede_id`) y ya no mezcla campos departamentales.
 
 Sin SQL raw: todo son consultas tipadas SQLAlchemy ORM/Core. Cada seccion se arma
 con **una** consulta (agregados en SQL, o una proyeccion con joins explicitos), de
@@ -40,7 +38,7 @@ modo que no hay N+1 ni descarga de colecciones de tickets a Python.
 
 from __future__ import annotations
 
-from sqlalchemy import Integer, String, cast, func, null, select, union_all
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from fastapi import HTTPException, status
@@ -51,7 +49,6 @@ from app.models import (
     Departamento,
     EstadoTicket,
     Institucion,
-    Inventario,
     MovimientoInventario,
     Producto,
     Sede,
@@ -201,51 +198,12 @@ def _listar_alertas(
     ]
 
 
-def _actividad_legados():
-    """Select de los movimientos historicos (enlazados a `inventario_id`).
+def _actividad_movimientos():
+    """Select unico de la actividad reciente (Feature 026).
 
-    Proyeccion compatible de la actividad: atribuye `departamento`/`ubicacion` y
-    deja `sede` en `null`, con el mismo conjunto y orden de columnas que
-    `_actividad_nuevos` para poder unirlas con `union_all` (spec D-6/AC-11).
-    """
-    return (
-        select(
-            MovimientoInventario.movimiento_id,
-            MovimientoInventario.tipo_movimiento,
-            MovimientoInventario.cantidad,
-            MovimientoInventario.fecha_movimiento,
-            Inventario.producto_id,
-            Producto.nombre.label("producto_nombre"),
-            cast(null(), Integer).label("sede_id"),
-            cast(null(), String(100)).label("sede_nombre"),
-            Inventario.departamento_id,
-            Departamento.nombre_dep.label("departamento_nombre"),
-            Inventario.ubicacion,
-            Inventario.institucion_id,
-            Institucion.nombre.label("institucion_nombre"),
-        )
-        .join(
-            Inventario,
-            MovimientoInventario.inventario_id == Inventario.inventario_id,
-        )
-        .join(Producto, Inventario.producto_id == Producto.producto_id)
-        .outerjoin(
-            Departamento,
-            Inventario.departamento_id == Departamento.departamento_id,
-        )
-        .outerjoin(
-            Institucion, Inventario.institucion_id == Institucion.institucion_id
-        )
-        .where(MovimientoInventario.inventario_id.is_not(None))
-    )
-
-
-def _actividad_nuevos():
-    """Select de los movimientos nuevos (enlazados a `stock_sede_id`).
-
-    Misma forma que `_actividad_legados`: atribuye `sede`/producto/institucion
-    desde `stock_sede` y deja `departamento`/`ubicacion` en `null`. No consulta
-    saldos legados.
+    Todo movimiento enlaza `stock_sede_id -> stock_sede -> producto + sede`, con
+    la institucion de la fila de saldo. Ya no existe la poblacion legada por
+    `inventario_id` ni campos departamentales.
     """
     return (
         select(
@@ -257,9 +215,6 @@ def _actividad_nuevos():
             Producto.nombre.label("producto_nombre"),
             Sede.sede_id.label("sede_id"),
             Sede.nombre.label("sede_nombre"),
-            cast(null(), Integer).label("departamento_id"),
-            cast(null(), String(200)).label("departamento_nombre"),
-            cast(null(), String(100)).label("ubicacion"),
             StockSede.institucion_id,
             Institucion.nombre.label("institucion_nombre"),
         )
@@ -268,11 +223,10 @@ def _actividad_nuevos():
             MovimientoInventario.stock_sede_id == StockSede.stock_sede_id,
         )
         .join(Producto, StockSede.producto_id == Producto.producto_id)
-        .outerjoin(Sede, StockSede.sede_id == Sede.sede_id)
+        .join(Sede, StockSede.sede_id == Sede.sede_id)
         .outerjoin(
             Institucion, StockSede.institucion_id == Institucion.institucion_id
         )
-        .where(MovimientoInventario.stock_sede_id.is_not(None))
     )
 
 
@@ -281,17 +235,14 @@ def _listar_actividad(
 ) -> list[MovimientoDashboardRespuesta]:
     """Actividad reciente: ultimos `LIMITE_ACTIVIDAD` movimientos (D-5).
 
-    Proyeccion **unica y compatible** (`union_all`) de las dos poblaciones de
-    auditoria -históricos por `inventario_id` y nuevos por `stock_sede_id`-, para
-    que la actividad no pierda ningun origen (spec D-6/AC-11). Se ordena
+    Feature 026: una sola consulta sobre `MovimientoInventario` unida a
+    `StockSede`, `Producto`, `Sede` e `Institucion`. Se ordena
     `fecha_movimiento DESC, movimiento_id DESC` (desempate determinista ante
     fechas iguales) y se limita a `LIMITE_ACTIVIDAD`. Cada fila lleva la
-    atribucion institucional de su origen. Solo se invoca para roles autorizados;
+    atribucion institucional de su saldo. Solo se invoca para roles autorizados;
     el Solicitante no dispara esta consulta.
     """
-    actividad = union_all(_actividad_legados(), _actividad_nuevos()).subquery(
-        "actividad"
-    )
+    actividad = _actividad_movimientos().subquery("actividad")
     consulta = select(actividad)
     consulta = ambito_service.filtrar_por_institucion(
         consulta, actividad.c.institucion_id, institucion_id

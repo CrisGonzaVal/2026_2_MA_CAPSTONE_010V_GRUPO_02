@@ -164,11 +164,13 @@ def _esquema_de_institucion(institucion_id: str) -> str:
 
 
 def _instituciones(conexion) -> list[str]:
+    # `CTRL-SAAS` es la institucion administrativa de `control`: no tiene tenant.
     return [
         fila[0]
         for fila in _ejecutar(
             conexion,
-            "SELECT institucion_id FROM control.institucion ORDER BY institucion_id",
+            "SELECT institucion_id FROM control.institucion "
+            "WHERE institucion_id <> 'CTRL-SAAS' ORDER BY institucion_id",
         )
     ]
 

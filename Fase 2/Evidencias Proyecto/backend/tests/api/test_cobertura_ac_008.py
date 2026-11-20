@@ -112,9 +112,21 @@ def test_catalogos_de_flujo_son_compartidos_por_ambas_instituciones(
 
 
 def _sembrar_stock_sede(motor, institucion_id: str, producto_id: int, stock: int) -> None:
-    """Siembra el saldo vigente de un producto en una sede nueva (Feature 011, D-2)."""
+    """Fija el saldo vigente, reutilizando una fila existente si la hay."""
     db = sessionmaker(bind=motor)()
     try:
+        existente = (
+            db.query(StockSede)
+            .filter(
+                StockSede.institucion_id == institucion_id,
+                StockSede.producto_id == producto_id,
+            )
+            .first()
+        )
+        if existente is not None:
+            existente.stock_actual = stock
+            db.commit()
+            return
         sede = Sede(nombre=f"Sede {institucion_id}", institucion_id=institucion_id)
         db.add(sede)
         db.flush()

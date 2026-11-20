@@ -38,7 +38,7 @@ from app.models import (
     Departamento,
     EstadoTicket,
     Institucion,
-    Inventario,
+    StockSede,
     MovimientoInventario,
     Prioridad,
     Producto,
@@ -80,8 +80,7 @@ CAMPOS_ALERTA = {
     "institucion_id",
     "institucion_nombre",
 }
-#: Campos de cada fila de la actividad reciente (Feature 011: proyeccion unica;
-#: `sede` para movimientos nuevos y `departamento`/`ubicacion` para los legados).
+#: Campos de cada fila de la actividad reciente (Feature 026: origen unico por sede).
 CAMPOS_ACTIVIDAD = {
     "movimiento_id",
     "tipo_movimiento",
@@ -91,9 +90,6 @@ CAMPOS_ACTIVIDAD = {
     "producto_nombre",
     "sede_id",
     "sede_nombre",
-    "departamento_id",
-    "departamento_nombre",
-    "ubicacion",
     "institucion_id",
     "institucion_nombre",
 }
@@ -409,28 +405,7 @@ def escenario_kpi(motor):
         sin_inv_a = _producto("Producto Sin Inventario", 5, cat_a)
         papel_b = _producto("Papel Bond", M_PAPEL, cat_b)
 
-        def _inventario(producto, departamento, stock):
-            inv = Inventario(
-                stock_actual=stock,
-                ubicacion=f"{departamento.nombre_dep} ({producto.institucion_id})",
-                departamento_id=departamento.departamento_id,
-                producto_id=producto.producto_id,
-                institucion_id=producto.institucion_id,
-            )
-            db.add(inv)
-            db.flush()
-            return inv
-
-        inv_m_menos_1 = _inventario(papel_a, dep_op_a, STOCK_M_MENOS_1)
-        inv_m = _inventario(papel_a, dep_bod_a, STOCK_M)
-        inv_m_mas_1 = _inventario(papel_a, dep_arc_a, STOCK_M_MAS_1)
-        inv_cero = _inventario(cero_a, dep_op_a, 0)
-        inv_papel_b = _inventario(papel_b, dep_op_b, STOCK_PAPEL_B)
-
-        # Feature 011 (spec D-6/AC-11): la fuente vigente de saldo es `stock_sede`.
-        # Se crea una sede por departamento (con su denominacion) y las filas de
-        # stock equivalentes a las de `inventario`; esas filas legadas quedan para
-        # los movimientos historicos de la actividad.
+        # Feature 026: la fuente unica de saldo y de movimientos es `stock_sede`.
         def _sede(nombre, dep, institucion_id):
             sede = Sede(nombre=nombre, institucion_id=institucion_id)
             db.add(sede)
@@ -460,7 +435,7 @@ def escenario_kpi(motor):
         _stock_sede(papel_a, sede_bod_a, STOCK_M)
         _stock_sede(papel_a, sede_arc_a, STOCK_M_MAS_1)
         _stock_sede(cero_a, sede_op_a, 0)
-        _stock_sede(papel_b, sede_op_b, STOCK_PAPEL_B)
+        stock_papel_b = _stock_sede(papel_b, sede_op_b, STOCK_PAPEL_B)
 
         prioridad = Prioridad(nombre="ALTA", descripcion="Prioridad alta")
         db.add(prioridad)
@@ -507,8 +482,8 @@ def escenario_kpi(motor):
             "producto_papel_a": papel_a.producto_id,
             "producto_papel_b": papel_b.producto_id,
             "producto_sin_inventario_a": sin_inv_a.producto_id,
-            "inventario_papel_op_a": inv_m_menos_1.inventario_id,
-            "inventario_papel_b": inv_papel_b.inventario_id,
+            "stock_sede_papel_op_a": stock_papel_op_a.stock_sede_id,
+            "stock_sede_papel_b": stock_papel_b.stock_sede_id,
             "sede_papel_op_a": sede_op_a.sede_id,
             "stock_sede_papel_op_a": stock_papel_op_a.stock_sede_id,
         }
@@ -728,12 +703,12 @@ def _conteo_filas_por_tabla(motor) -> dict[str, int]:
         db.close()
 
 
-def _cuerpo_movimiento(inventario_id: int, tipo: str, cantidad: int) -> dict:
+def _cuerpo_movimiento(stock_sede_id: int, tipo: str, cantidad: int) -> dict:
     return {
         "tipo_movimiento": tipo,
         "cantidad": cantidad,
         "observacion": f"Movimiento {tipo} del escenario de umbral",
-        "inventario_id": inventario_id,
+        "stock_sede_id": stock_sede_id,
     }
 
 
@@ -922,14 +897,14 @@ def test_superadmin_filas_de_alertas_y_actividad_recibe_403_ac_15(
     ) as cliente_a:
         entrada_a = cliente_a.post(
             RUTA_MOVIMIENTOS,
-            json=_cuerpo_movimiento(escenario_kpi["inventario_papel_op_a"], "ENTRADA", 1),
+            json=_cuerpo_movimiento(escenario_kpi["stock_sede_papel_op_a"], "ENTRADA", 1),
         )
     with _cliente(
         motor, "Administrador", departamento_id=escenario_kpi["dep_op_b"]
     ) as cliente_b:
         entrada_b = cliente_b.post(
             RUTA_MOVIMIENTOS,
-            json=_cuerpo_movimiento(escenario_kpi["inventario_papel_b"], "ENTRADA", 1),
+            json=_cuerpo_movimiento(escenario_kpi["stock_sede_papel_b"], "ENTRADA", 1),
         )
     assert entrada_a.status_code == 201, entrada_a.text
     assert entrada_b.status_code == 201, entrada_b.text
@@ -949,7 +924,7 @@ def test_superadmin_filas_de_alertas_y_actividad_recibe_403_ac_15(
 
 def _sembrar_movimiento(
     motor,
-    inventario_id: int,
+    stock_sede_id: int,
     fecha: datetime,
     *,
     tipo: str = "ENTRADA",
@@ -968,7 +943,7 @@ def _sembrar_movimiento(
             cantidad=cantidad,
             fecha_movimiento=fecha,
             observacion=observacion,
-            inventario_id=inventario_id,
+            stock_sede_id=stock_sede_id,
         )
         db.add(movimiento)
         db.commit()
@@ -989,7 +964,7 @@ def test_actividad_limita_a_diez_y_ordena_descendente(motor, escenario_kpi):
     antiguas (10 en total); las dos antiguas de menor id quedan fuera. Una lectura
     sin limite traeria 12 y una ordenacion por insercion invertiria el empate.
     """
-    inventario_id = escenario_kpi["inventario_papel_op_a"]
+    inventario_id = escenario_kpi["stock_sede_papel_op_a"]
     fecha_nueva = datetime(2026, 3, 10, 9, 0, 0)
     fecha_media = datetime(2026, 2, 10, 9, 0, 0)
     fecha_vieja = datetime(2026, 1, 10, 9, 0, 0)
@@ -1030,7 +1005,7 @@ def test_actividad_desempata_por_id_descendente_ante_fechas_iguales(motor, escen
     Tres movimientos con fecha identica: si el desempate no existiera saldrian en
     orden de insercion (id ascendente) y la prueba fallaria.
     """
-    inventario_id = escenario_kpi["inventario_papel_op_a"]
+    inventario_id = escenario_kpi["stock_sede_papel_op_a"]
     fecha = datetime(2026, 2, 20, 12, 0, 0)
     ids = [
         _sembrar_movimiento(motor, inventario_id, fecha, observacion=f"empate {i}")
@@ -1057,10 +1032,10 @@ def test_actividad_expone_campos_ubicacion_y_atribucion(motor, escenario_kpi):
     """
     fecha = datetime(2026, 4, 1, 8, 0, 0)
     _sembrar_movimiento(
-        motor, escenario_kpi["inventario_papel_op_a"], fecha, observacion="INSTA"
+        motor, escenario_kpi["stock_sede_papel_op_a"], fecha, observacion="INSTA"
     )
     _sembrar_movimiento(
-        motor, escenario_kpi["inventario_papel_b"], fecha, observacion="INSTB"
+        motor, escenario_kpi["stock_sede_papel_b"], fecha, observacion="INSTB"
     )
 
     with _cliente(
@@ -1084,23 +1059,22 @@ def test_actividad_expone_campos_ubicacion_y_atribucion(motor, escenario_kpi):
 
     assert propio["institucion_id"] == "INSTA"
     assert propio["producto_nombre"] == "Papel Bond"
-    assert propio["departamento_nombre"] == "Operaciones"
+    assert propio["sede_nombre"] == "Operaciones"
     assert propio["institucion_nombre"] == "Instituto Alfa"
-    assert propio["ubicacion"] == "Operaciones (INSTA)"
 
     assert ajeno["institucion_id"] == "INSTB"
     assert ajeno["institucion_nombre"] == "Instituto Beta"
-    assert ajeno["ubicacion"] == "Operaciones (INSTB)"
+    assert ajeno["sede_nombre"] == "Operaciones"
 
 
 def test_actividad_de_rol_limitado_no_incluye_otra_institucion(motor, escenario_kpi):
     """AC-7/AC-8: un rol de INSTA no ve movimientos de INSTB en su actividad."""
     fecha = datetime(2026, 5, 1, 0, 0, 0)
     movimiento_propio = _sembrar_movimiento(
-        motor, escenario_kpi["inventario_papel_op_a"], fecha
+        motor, escenario_kpi["stock_sede_papel_op_a"], fecha
     )
     movimiento_ajeno = _sembrar_movimiento(
-        motor, escenario_kpi["inventario_papel_b"], fecha
+        motor, escenario_kpi["stock_sede_papel_b"], fecha
     )
 
     with _cliente(
@@ -1124,7 +1098,7 @@ def test_solicitante_sin_actividad_y_403_en_el_historial(motor, escenario_kpi):
     `GET /inventario/movimientos` responde 403 (permiso vigente sin cambios).
     """
     _sembrar_movimiento(
-        motor, escenario_kpi["inventario_papel_op_a"], datetime(2026, 1, 1, 0, 0, 0)
+        motor, escenario_kpi["stock_sede_papel_op_a"], datetime(2026, 1, 1, 0, 0, 0)
     )
 
     with _cliente(

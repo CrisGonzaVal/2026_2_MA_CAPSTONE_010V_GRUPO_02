@@ -22,6 +22,7 @@ from ._soporte_ciclo_vida_013 import (
     sembrar_mundo_013,
     sembrar_ticket,
 )
+from ._soporte_sede_011 import crear_sede, crear_stock_sede
 
 #: El catalogo instala ademas el estado `anulado` en minusculas: con la
 #: exclusion por nombre EXACTO de la 009 (que la 013 conserva) ese estado si
@@ -99,6 +100,18 @@ def test_kpi_del_solicitante_no_cuenta_sus_anulados_ac_22(motor, datos_013):
 def test_kpi_resto_del_dashboard_intacto_ac_22(motor, datos_013):
     """AC-22: el resto de KPI, el log de alertas y la actividad no cambian."""
     _sembrar_poblacion_kpi(motor, datos_013)
+    # Feature 026: `datos_base` ya no siembra la sede de 50. Se declara una
+    # segunda sede explicita para seguir midiendo que el KPI suma ambas.
+    sede_extra = crear_sede(
+        motor, institucion_id=datos_013["institucion_id"], nombre="Sede Extra"
+    )
+    crear_stock_sede(
+        motor,
+        sede_id=sede_extra,
+        producto_id=datos_013["producto_id"],
+        stock_actual=50,
+        institucion_id=datos_013["institucion_id"],
+    )
 
     with cliente_con_rol(
         motor,
@@ -109,8 +122,8 @@ def test_kpi_resto_del_dashboard_intacto_ac_22(motor, datos_013):
         cuerpo = _leer_dashboard(cliente)
 
     kpi = cuerpo["kpi"]
-    assert kpi["unidades_en_stock"] == 50, (
-        "el stock por sede de la sede base no cambia"
+    assert kpi["unidades_en_stock"] == 100, (
+        "el KPI suma los saldos de ambas sedes del producto"
     )
     assert kpi["total_departamentos"] == 1, "el conteo de departamentos no cambia"
     assert kpi["total_alertas"] == 0, "stock 50 sobre minimo 10 no es critico"

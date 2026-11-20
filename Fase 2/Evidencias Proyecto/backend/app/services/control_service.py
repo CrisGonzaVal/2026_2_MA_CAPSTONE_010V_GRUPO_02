@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import contextmanager
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -442,7 +442,9 @@ def _crear_sede_inicial(sesion: Session, institucion_id: str) -> Sede:
     siembra "Sede Central" para dejarlo operativo antes de declarar su version.
     La sede pertenece a la institucion del tenant (`institucion_id` no nulo).
     """
-    sede = Sede(nombre=NOMBRE_SEDE_CENTRAL, institucion_id=institucion_id)
+    sede = Sede(
+        nombre=NOMBRE_SEDE_CENTRAL.strip(), institucion_id=institucion_id
+    )
     sesion.add(sede)
     sesion.flush()
     return sede
@@ -508,6 +510,24 @@ def _provisionar_tenant_logico(
     db.add(VersionEsquema(version=VERSION_ESQUEMA_OBJETIVO))
 
 
+def _crear_indice_version_unica(motor, esquema: str) -> None:
+    """U-07: una sola fila de version por esquema, solo en PostgreSQL.
+
+    SQLite no soporta el indice sobre una expresion constante y la suite
+    necesita insertar varias filas para probar el enrutamiento. Por eso no
+    vive en el ORM.
+    """
+    if motor.dialect.name != "postgresql":
+        return
+    with motor.begin() as conexion:
+        conexion.execute(
+            text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS version_esquema_unica_idx '
+                f'ON "{esquema}".version_esquema ((true))'
+            )
+        )
+
+
 def _provisionar_tenant_postgres(
     db: Session,
     datos: InstitucionAltaControlCrear,
@@ -539,6 +559,9 @@ def _provisionar_tenant_postgres(
         schema_translate_map={None: nombre_esquema}
     )
     Base.metadata.create_all(bind=motor_tenant, tables=tablas_tenant)
+    # Feature 026 (U-07): el ORM no declara el indice constante porque SQLite no
+    # lo soporta; en PostgreSQL el tenant recien creado lo recibe aqui.
+    _crear_indice_version_unica(motor, nombre_esquema)
 
     sesion_tenant = database.crear_sesion_esquema(nombre_esquema, motor=motor)
     try:

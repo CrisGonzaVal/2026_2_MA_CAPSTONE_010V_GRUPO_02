@@ -382,21 +382,14 @@ def _sembrar_tenant(
         )
         sesion.add(prod)
         sesion.flush()
-        inv = modelos.Inventario(
-            stock_actual=stock,
-            ubicacion=f"Operaciones ({institucion_id})",
-            departamento_id=dep.departamento_id,
-            producto_id=prod.producto_id,
-            institucion_id=institucion_id,
-        )
-        sesion.add(inv)
-        sesion.flush()
-        # Feature 011 (spec D-6/AC-11): el saldo vigente vive por sede. El
-        # dashboard / inventario leen `stock_sede`, no el inventario legado; la
-        # fila de `Inventario` se conserva para el movimiento historico.
+        # Feature 026: el saldo vive solo en `stock_sede`; `inventario` ya no
+        # existe en el modelo.
         sede = modelos.Sede(nombre="Sede Central", institucion_id=institucion_id)
         sesion.add(sede)
         sesion.flush()
+        # El departamento se deja sin sede a proposito: el fixture acredita el
+        # aislamiento de `sede_id` y hay pruebas que exigen que un 404 ajeno no
+        # mute la asignacion. El saldo no depende de ese enlace.
         stock_sede = modelos.StockSede(
             stock_actual=stock,
             sede_id=sede.sede_id,
@@ -410,7 +403,7 @@ def _sembrar_tenant(
                 tipo_movimiento="ENTRADA",
                 cantidad=1,
                 observacion=f"mov {institucion_id}",
-                inventario_id=inv.inventario_id,
+                stock_sede_id=stock_sede.stock_sede_id,
             )
         )
         for nombre in ("Alta", "Media", "Baja"):
@@ -422,7 +415,8 @@ def _sembrar_tenant(
         return {
             "institucion_id": institucion_id,
             "producto_id": prod.producto_id,
-            "inventario_id": inv.inventario_id,
+            "stock_sede_id": stock_sede.stock_sede_id,
+            "sede_id": sede.sede_id,
             "departamento_id": dep.departamento_id,
             "stock": stock,
         }
@@ -648,7 +642,7 @@ def test_lectura_global_es_una_sola_transaccion_repeatable_read(mundo_multitenan
             pid_a = s_a.execute(text("SELECT pg_backend_pid()")).scalar()
             iso_a = s_a.execute(text("SHOW transaction_isolation")).scalar()
             stock_a_inicial = s_a.execute(
-                text(f'SELECT stock_actual FROM "{mundo_multitenant["esq_a"]}".inventario')
+                text(f'SELECT stock_actual FROM "{mundo_multitenant["esq_a"]}".stock_sede')
             ).scalar()
 
             # Mutacion concurrente confirmada en otra conexion (mismo motor/base).
@@ -657,7 +651,7 @@ def test_lectura_global_es_una_sola_transaccion_repeatable_read(mundo_multitenan
             )
             with motor_ajeno.begin() as ajena:
                 ajena.execute(
-                    Base.metadata.tables["inventario"]
+                    Base.metadata.tables["stock_sede"]
                     .update()
                     .values(stock_actual=999)
                 )
@@ -669,7 +663,7 @@ def test_lectura_global_es_una_sola_transaccion_repeatable_read(mundo_multitenan
         # Relectura dentro de la MISMA transaccion: el snapshot no cambia.
         with lector.sesion(por_esquema[mundo_multitenant["esq_a"]]) as s_a2:
             stock_a_releido = s_a2.execute(
-                text(f'SELECT stock_actual FROM "{mundo_multitenant["esq_a"]}".inventario')
+                text(f'SELECT stock_actual FROM "{mundo_multitenant["esq_a"]}".stock_sede')
             ).scalar()
 
     assert pid_a == pid_b, "los tenants deben compartir la misma conexion"
@@ -831,7 +825,7 @@ def test_tenant_adversario_por_cabecera_no_contamina(mundo_multitenant):
 def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
     """AC-3: un campo de tenant en el cuerpo no desvia la escritura fuera de A.
 
-    El movimiento se registra contra el inventario de A (el de la identidad); el
+    El movimiento se registra contra el stock_sede de A (el de la identidad); el
     tenant B conserva su stock y su auditoria sin cambios.
     """
     from app.api import dependencies
@@ -845,7 +839,7 @@ def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
             json={
                 "tipo_movimiento": "SALIDA",
                 "cantidad": 1,
-                "inventario_id": mundo_multitenant["ids_a"]["inventario_id"],
+                "stock_sede_id": mundo_multitenant["ids_a"]["stock_sede_id"],
                 "observacion": "intento de envenenamiento de tenant",
                 "institucion_id": "INST-B",
                 "nombre_esquema": mundo_multitenant["esq_b"],
@@ -861,7 +855,7 @@ def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
     sesion_b = Session(bind=motor_b)
     try:
         stock_b = sesion_b.execute(
-            select(Base.metadata.tables["inventario"].c.stock_actual)
+            select(Base.metadata.tables["stock_sede"].c.stock_actual)
         ).scalar()
         movimientos_b = sesion_b.execute(
             select(Base.metadata.tables["movimiento_inventario"].c.movimiento_id)
@@ -880,7 +874,7 @@ def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
     sesion_a = Session(bind=motor_a)
     try:
         stock_a = sesion_a.execute(
-            select(Base.metadata.tables["inventario"].c.stock_actual)
+            select(Base.metadata.tables["stock_sede"].c.stock_actual)
         ).scalar()
     finally:
         sesion_a.close()

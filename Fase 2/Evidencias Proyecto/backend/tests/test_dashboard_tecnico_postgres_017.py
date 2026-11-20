@@ -365,7 +365,6 @@ def test_clasificacion_no_consulta_datos_de_negocio(mundo_dashboard):
         "ticket",
         "movimiento_inventario",
         "stock_sede",
-        "inventario",
         "producto",
         "categoria",
         "estado_ticket",

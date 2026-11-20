@@ -40,7 +40,7 @@ from app.models import (
     DetalleTicket,
     EstadoTicket,
     Institucion,
-    Inventario,
+    StockSede,
     MovimientoInventario,
     Producto,
     Rol,
@@ -162,15 +162,6 @@ def particion(motor, datos_base):
         )
         db.add(producto_ajeno)
         db.flush()
-        inventario_ajeno = Inventario(
-            stock_actual=7,
-            ubicacion="Bodega Sur - C1",
-            departamento_id=departamento_ajeno.departamento_id,
-            producto_id=producto_ajeno.producto_id,
-            institucion_id="INST02",
-        )
-        db.add(inventario_ajeno)
-        db.flush()
 
         # Homonimo propio (INST01) con su existencia.
         producto_propio = Producto(
@@ -182,15 +173,6 @@ def particion(motor, datos_base):
             institucion_id="INST01",
         )
         db.add(producto_propio)
-        db.flush()
-        inventario_propio = Inventario(
-            stock_actual=40,
-            ubicacion="Operaciones - C1",
-            departamento_id=datos_base["departamento_id"],
-            producto_id=producto_propio.producto_id,
-            institucion_id="INST01",
-        )
-        db.add(inventario_propio)
         db.flush()
 
         # Producto INST01 cuya unica existencia vive en un departamento ajeno.
@@ -204,49 +186,39 @@ def particion(motor, datos_base):
         )
         db.add(producto_cruce_inventario)
         db.flush()
-        inventario_cruzado = Inventario(
-            stock_actual=5,
-            ubicacion="Deposito ajeno",
-            departamento_id=departamento_ajeno.departamento_id,
-            producto_id=producto_cruce_inventario.producto_id,
-            institucion_id="INST02",
-        )
-        db.add(inventario_cruzado)
-        db.flush()
 
         # Feature 011 (T9): existencias por sede de INST01. La del producto propio
         # sostiene el despacho valido y el de falta de stock; la del producto
         # cruzado declara `institucion_id` INST02 (cruce, FK desactivada) para que
         # el servicio la rechace al no pertenecer a la institucion del ticket.
-        db.add(
-            StockSede(
-                sede_id=sede_propia.sede_id,
-                producto_id=producto_propio.producto_id,
-                stock_actual=40,
-                institucion_id="INST01",
-            )
+        stock_propio = StockSede(
+            sede_id=sede_propia.sede_id,
+            producto_id=producto_propio.producto_id,
+            stock_actual=40,
+            institucion_id="INST01",
         )
-        db.add(
-            StockSede(
-                sede_id=sede_propia.sede_id,
-                producto_id=producto_cruce_inventario.producto_id,
-                stock_actual=5,
-                institucion_id="INST02",
-            )
+        db.add(stock_propio)
+        # Cruce deliberado: el producto es de INST01 pero la fila de saldo declara
+        # INST02; el servicio debe rechazar el despacho con 409 sin mutar.
+        stock_cruzado = StockSede(
+            sede_id=sede_propia.sede_id,
+            producto_id=producto_cruce_inventario.producto_id,
+            stock_actual=5,
+            institucion_id="INST02",
         )
+        db.add(stock_cruzado)
         # Feature 011 (M2): el catalogo de INST02 agrega su saldo por sede, no el
         # inventario departamental legado. Se siembra el homonimo ajeno con su sede.
         sede_ajena = Sede(nombre="Bodega Sur", institucion_id="INST02")
         db.add(sede_ajena)
         db.flush()
-        db.add(
-            StockSede(
-                sede_id=sede_ajena.sede_id,
-                producto_id=producto_ajeno.producto_id,
-                stock_actual=7,
-                institucion_id="INST02",
-            )
+        stock_ajeno = StockSede(
+            sede_id=sede_ajena.sede_id,
+            producto_id=producto_ajeno.producto_id,
+            stock_actual=7,
+            institucion_id="INST02",
         )
+        db.add(stock_ajeno)
         db.flush()
 
         def nuevo_ticket(
@@ -282,11 +254,11 @@ def particion(motor, datos_base):
             "dep_ajeno_id": departamento_ajeno.departamento_id,
             "categoria_ajena_id": categoria_ajena.categoria_id,
             "producto_ajeno_id": producto_ajeno.producto_id,
-            "inventario_ajeno_id": inventario_ajeno.inventario_id,
+            "stock_sede_ajeno_id": stock_ajeno.stock_sede_id,
             "producto_propio_id": producto_propio.producto_id,
-            "inventario_propio_id": inventario_propio.inventario_id,
-            "producto_cruce_inventario_id": producto_cruce_inventario.producto_id,
-            "inventario_cruzado_id": inventario_cruzado.inventario_id,
+            "stock_sede_propio_id": stock_propio.stock_sede_id,
+            "producto_cruce_stock_sede_id": producto_cruce_inventario.producto_id,
+            "stock_sede_cruzado_id": stock_cruzado.stock_sede_id,
             "estado_pendiente_id": estados["Pendiente"],
             "estado_en_revision_id": estados["EnRevision"],
             "estado_en_curso_id": estados["EnCurso"],
@@ -307,7 +279,7 @@ def particion(motor, datos_base):
                 institucion_id="INST01",
                 sede_id=sede_propia.sede_id,
             ),
-            "ticket_cruce_inventario_id": nuevo_ticket(
+            "ticket_cruce_stock_sede_id": nuevo_ticket(
                 solicitante.usuario_id,
                 estados["EnCurso"],
                 "Cruce de inventario",
@@ -412,12 +384,12 @@ def _stock_sede(motor, sede_id: int, producto_id: int) -> int:
         return fila.stock_actual
 
 
-def _stock_persistido(motor, inventario_id: int) -> int:
+def _stock_persistido(motor, stock_sede_id: int) -> int:
     """`stock_actual` leido de la fila: sirve para inventarios fuera del alcance
     del actor, que el endpoint de saldo por sede no expone."""
     db = sessionmaker(bind=motor)()
     try:
-        return db.get(Inventario, inventario_id).stock_actual
+        return db.get(StockSede, stock_sede_id).stock_actual
     finally:
         db.close()
 
@@ -431,7 +403,6 @@ def _salidas_del_ticket(motor, ticket_id: int) -> list[dict]:
                 "movimiento_id": m.movimiento_id,
                 "tipo_movimiento": m.tipo_movimiento,
                 "cantidad": m.cantidad,
-                "inventario_id": m.inventario_id,
                 "stock_sede_id": m.stock_sede_id,
                 "observacion": m.observacion,
             }
@@ -498,9 +469,9 @@ def _verificar_sin_efectos(cliente, motor, ticket_id, estado_esperado, stock_esp
     assert all(
         d["cantidad_entregada"] == 0 for d in ticket["detalles"]
     ), "un rechazo no deja entregas"
-    for inventario_id, esperado in stock_esperado.items():
+    for stock_sede_id, esperado in stock_esperado.items():
         assert (
-            _stock_persistido(motor, inventario_id) == esperado
+            _stock_persistido(motor, stock_sede_id) == esperado
         ), "un rechazo no rebaja stock"
     assert _salidas_del_ticket(motor, ticket_id) == [], "un rechazo no audita"
 
@@ -692,8 +663,8 @@ def test_despacho_producto_cruzado_409_sin_efectos(motor, particion):
             particion["ticket_cruce_producto_id"],
             particion["estado_en_curso_id"],
             {
-                particion["inventario_ajeno_id"]: 7,
-                particion["inventario_propio_id"]: 40,
+                particion["stock_sede_ajeno_id"]: 7,
+                particion["stock_sede_propio_id"]: 40,
             },
         )
 
@@ -704,15 +675,15 @@ def test_despacho_producto_cruzado_409_sin_efectos(motor, particion):
 def test_despacho_inventario_cruzado_409_sin_efectos(motor, particion):
     with _cliente(motor, "Bodeguero", particion["departamento_id"]) as cliente:
         respuesta = cliente.post(
-            f"{RUTA_TICKETS}{particion['ticket_cruce_inventario_id']}/despacho",
+            f"{RUTA_TICKETS}{particion['ticket_cruce_stock_sede_id']}/despacho",
             json={"usuario_id": particion["usuario_id"]},
         )
         _verificar_sin_efectos(
             cliente,
             motor,
-            particion["ticket_cruce_inventario_id"],
+            particion["ticket_cruce_stock_sede_id"],
             particion["estado_en_curso_id"],
-            {particion["inventario_cruzado_id"]: 5},
+            {particion["stock_sede_cruzado_id"]: 5},
         )
 
     assert respuesta.status_code == 409, respuesta.text
@@ -730,7 +701,7 @@ def test_despacho_falta_stock_409_sin_efectos(motor, particion):
             motor,
             particion["ticket_falta_stock_id"],
             particion["estado_en_curso_id"],
-            {particion["inventario_propio_id"]: 40},
+            {particion["stock_sede_propio_id"]: 40},
         )
 
     assert respuesta.status_code == 409, respuesta.text
@@ -772,7 +743,6 @@ def test_despacho_valido_actualiza_stock_entrega_estado_y_auditoria(motor, parti
         assert len(salidas) == 1
         assert salidas[0]["tipo_movimiento"] == "SALIDA"
         assert salidas[0]["cantidad"] == 3
-        assert salidas[0]["inventario_id"] is None
         assert salidas[0]["stock_sede_id"] is not None
 
 
@@ -826,7 +796,7 @@ def test_despacho_revierte_todo_si_el_commit_falla(motor, particion):
             motor,
             ticket_id,
             particion["estado_en_curso_id"],
-            {particion["inventario_propio_id"]: 40},
+            {particion["stock_sede_propio_id"]: 40},
         )
         assert (
             _stock_sede(
@@ -834,3 +804,5 @@ def test_despacho_revierte_todo_si_el_commit_falla(motor, particion):
             )
             == stock_inicial
         ), "el rollback debe conservar el saldo por sede"
+
+

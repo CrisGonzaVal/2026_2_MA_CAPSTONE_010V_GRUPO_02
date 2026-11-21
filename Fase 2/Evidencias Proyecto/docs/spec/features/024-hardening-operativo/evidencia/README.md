@@ -48,7 +48,7 @@ prometheus-client==0.26.0
 ```text
 pip install -r requirements.txt  → prometheus-client 0.26.0 instalado
 pip check                        → No broken requirements found.
-pytest tests/test_dependencias_024.py -q → 4 passed
+pytest tests/funcional/unitarios/test_dependencias_024.py -q → 4 passed
 ```
 
 No hay dependencias directas nuevas fuera de `prometheus-client`.

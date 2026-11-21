@@ -33,7 +33,7 @@ omiten sin `POSTGRES_TEST_URL`.
 Suites focalizadas de referencia:
 
 ```powershell
-.venv/Scripts/python.exe -m pytest -q tests/api/test_compras.py tests/api/test_cobertura_021.py tests/api/test_compras_endpoints_020.py
+.venv/Scripts/python.exe -m pytest -q tests/funcional/integracion/test_compras.py tests/funcional/integracion/test_cobertura_021.py tests/funcional/integracion/test_compras_endpoints_020.py
 ```
 
 ### 2.2 Frontend
@@ -49,7 +49,7 @@ confirma que el cierre parte del mismo estado que dejó la 022.
 
 ### 2.3 Test de contrato estructural
 
-Archivo nuevo: `backend/tests/services/test_compra_service_estructura.py`.
+Archivo nuevo: `backend/tests/funcional/unitarios/test_compra_service_estructura.py`.
 
 Fija tres cosas sin probar comportamiento de negocio:
 
@@ -131,8 +131,8 @@ _comun  ←  necesidades  ←  cobertura  ←  recepcion
 
 ```powershell
 cd backend
-.venv/Scripts/python.exe -m pytest -q tests/services/test_compra_service_estructura.py
-.venv/Scripts/python.exe -m pytest -q tests/api/test_compras.py tests/api/test_cobertura_021.py tests/api/test_compras_endpoints_020.py
+.venv/Scripts/python.exe -m pytest -q tests/funcional/unitarios/test_compra_service_estructura.py
+.venv/Scripts/python.exe -m pytest -q tests/funcional/integracion/test_compras.py tests/funcional/integracion/test_cobertura_021.py tests/funcional/integracion/test_compras_endpoints_020.py
 .venv/Scripts/python.exe -m pytest -q
 ```
 

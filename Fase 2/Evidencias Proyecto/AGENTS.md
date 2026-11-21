@@ -34,10 +34,11 @@ Las rutas son relativas a la raíz de `Fase 2/Evidencias Proyecto/` (donde vive 
 - `docs/spec/` — Documentación viva de Spec-Driven Development (única fuente de verdad): `constitucion.md`, `roadmap.md`, `stack.md`.
 - `docs/diagramas/` — Diagramas en **HTML + PNG** generados con el skill `diagram-design`: casos de uso por actor y vista general del sistema.
 - `docs/spec/features/` — Especificaciones por incremento (`spec.md`, `plan.md`, `tasks.md`).
-- `backend/` — API REST FastAPI: `app/main.py`, `app/core/` (`config.py`, `security.py`, `permisos.py`), `app/db/database.py`, `app/models/` (por entidad), `app/schemas/` (DTOs), `app/services/` (lógica ACID), `app/api/dependencies.py`, `app/api/v1/api.py`, `app/api/v1/endpoints/` (auth, usuarios, inventario, tickets, dashboard, organizacion, compras, control) y `tests/` (pytest). Desde la Feature 010 el esquema efectivo de cada petición se resuelve en el esquema de control (`schema_translate_map` por ejecución).
-- `frontend/` — Aplicación web Angular: `src/app/core/` (guards, interceptors, services), `src/app/shared/` (components, config, interfaces, utils), `src/app/features/` (dashboard, inventario, tickets, administracion, compras y control — cada una con `<feature>.routes.ts` y, cuando aplica, `services/`; más `auth` y `acceso-denegado`, sin `routes.ts` propio) y `public/`.
+- `backend/` — API REST FastAPI: `app/main.py`, `app/core/` (`config.py`, `security.py`, `permisos.py`), `app/db/database.py`, `app/models/` (por entidad), `app/schemas/` (DTOs), `app/services/` (lógica ACID), `app/api/dependencies.py`, `app/api/v1/api.py`, `app/api/v1/endpoints/` (auth, usuarios, inventario, tickets, dashboard, organizacion, compras, control) y `tests/` (pytest, **organizados por tipo de prueba**: `tests/funcional/` con `unitarios`, `integracion`, `sistema`, `e2e`, `aceptacion` y `humo`; `tests/no_funcional/` con `rendimiento`, `seguridad`, `carga_estres`, `escalabilidad`, `usabilidad` y `compatibilidad`. Ver `backend/tests/README.md`). Desde la Feature 010 el esquema efectivo de cada petición se resuelve en el esquema de control (`schema_translate_map` por ejecución).
+- `frontend/` — Aplicación web Angular: `src/app/core/` (guards, interceptors, services), `src/app/shared/` (components, config, interfaces, utils), `src/app/features/` (dashboard, inventario, tickets, administracion, compras y control — cada una con `<feature>.routes.ts` y, cuando aplica, `services/`; más `auth` y `acceso-denegado`, sin `routes.ts` propio) y `public/`. La clasificación de sus pruebas por tipo vive en `src/app/features/funcional/README.md` (índice navegable: los specs Angular se quedan junto a su sujeto por convención) y en `src/app/features/no_funcional/` (`usabilidad` y `compatibilidad`, pendientes).
 - `database/` — Dos scripts SQL, sin migraciones. El prefijo numérico **es funcional**: `docker-compose.yml` monta esta carpeta en `/docker-entrypoint-initdb.d` y PostgreSQL los ejecuta **en orden alfabético** al crear el volumen, con `ON_ERROR_STOP=1`. `01_esquema.sql` crea el DDL completo (`control` con 26 tablas + un esquema `tenant_<slug>_<hash>` por institución con las 23 tablas de negocio) y siembra la topología de instituciones; `02_datos_semilla.sql` llena la semilla QA, la reparte a los tenants, puebla el mapa y fija la versión `026.0`, con guardia fail-closed y `BEGIN/COMMIT`. Los cambios de esquema se resuelven recreando el volumen (`down -v`), nunca con migraciones. Ver `database/README.md`.
 - `.agents/skills/` — Skills del proyecto (ver §9). `opencode.json` y `skills-lock.json` configuran tooling.
+- `docs/spec/deuda-tecnica.md` — Registro único de deuda técnica abierta: hallazgos, severidad dev/producción y cierre propuesto. Fuente única; ningun otro archivo (`roadmap.md`, `MEMORY.md`) repite su contenido.
 
 > **Fuera de alcance**: `../../Fase 1/` y `../../Fase 3/` existen en el mismo repositorio pero **no se leen** (ver §0). No son fuente de verdad para este trabajo.
 
@@ -63,6 +64,11 @@ Las rutas son relativas a la raíz de `Fase 2/Evidencias Proyecto/` (donde vive 
   pytest
   ```
   La suite corre sobre SQLite en memoria, asi que no necesita el contenedor `db`.
+  **Los tests están organizados por tipo de prueba** en `backend/tests/`:
+  `funcional/` (`unitarios`, `integracion`, `sistema`, `e2e`, `aceptacion`, `humo`)
+  y `no_funcional/` (`rendimiento`, `seguridad`, `carga_estres`, `escalabilidad`,
+  `usabilidad`, `compatibilidad`). Ver `backend/tests/README.md`. Para correr un
+  grupo: `pytest tests/funcional/unitarios`, `pytest tests/no_funcional/seguridad`, etc.
   Ojo: `backend/.dockerignore` excluye `tests/` y `requirements-dev.txt`, asi que
   los tests **no** viven dentro de la imagen; hay que correrlos desde el host.
   Los tests gated de PostgreSQL 16 corren con

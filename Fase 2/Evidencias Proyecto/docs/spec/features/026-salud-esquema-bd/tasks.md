@@ -117,7 +117,7 @@
 - [x] Actualizar `test_ciclo_vida_catalogo_014.py`, `test_ambito_institucional_008.py`, `api/test_ambito_institucional.py`.
 - [x] Actualizar `test_detalle_producto_019.py`, `test_lectura_global_tickets_011.py` y los fixtures de tickets que usen `Inventario`.
 - [x] Actualizar `test_integracion_multitenant_010.py` y cualquier `VersionEsquema` que dependa de los conteos.
-- [x] Crear `tests/test_salud_esquema_026.py` con los cinco bloques del plan (§10.3).
+- [x] Crear `tests/funcional/sistema/test_salud_esquema_026.py` con los cinco bloques del plan (§10.3).
 - [x] Verificar que los tests de metadatos cubren los 15 índices y las 6 constraints nuevas.
 - [x] Confirmar que ningún test relaja una constraint para pasar.
 
@@ -130,7 +130,7 @@
 - [x] Actualizar `test_control_instituciones_010.py` (tenants en caliente con 23 tablas e índices).
 - [x] Actualizar `test_ciclo_vida_catalogo_postgres_014.py` y `test_compras_postgres_020.py`.
 - [x] Actualizar `test_bootstrap_control_postgres_010.py` y `test_esquema_postgres.py`.
-- [x] Crear `tests/test_salud_esquema_postgres_026.py` con los ocho bloques del plan (§11.2).
+- [x] Crear `tests/funcional/sistema/test_salud_esquema_postgres_026.py` con los ocho bloques del plan (§11.2).
 - [x] Confirmar que U-07 rechaza una segunda fila en PostgreSQL.
 - [x] Confirmar que la base temporal se borra y `apt_erp` no se toca.
 

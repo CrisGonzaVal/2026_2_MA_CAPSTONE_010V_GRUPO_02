@@ -49,7 +49,7 @@ las tres Clerk con `${VAR:-}` sin secretos. Creado único `frontend/src/environm
 
 ## T2 — Tests rojos para autenticación backend y vínculo (AC-5…AC-9, AC-11, AC-13)
 
-- [x] Crear `backend/tests/api/test_auth.py` con fixture de par de claves, JWKS simulado y
+- [x] Crear `backend/tests/no_funcional/seguridad/test_auth.py` con fixture de par de claves, JWKS simulado y
   Backend API Clerk mockeado. Inyectar/overridear fuente JWKS y transporte Backend API.
   Escribir primero pruebas de aceptación JWT, firma/JWKS, `iss`, vigencia `exp`/`nbf`,
   allowlist de algoritmo, `azp` permitido para 4200/8080 (ausente/no permitido rechazado),
@@ -62,7 +62,7 @@ las tres Clerk con `${VAR:-}` sin secretos. Creado único `frontend/src/environm
 no por imports/fixtures; no usan credenciales reales y el JWKS mock verifica una firma con
 clave fixture.
 
-**Evidencia T2 (hecha):** creado `backend/tests/api/test_auth.py` (38 casos, seam HTTP
+**Evidencia T2 (hecha):** creado `backend/tests/no_funcional/seguridad/test_auth.py` (38 casos, seam HTTP
 `TestClient`). Par de claves RSA efímero + JWKS simulado generados en el test; auto-chequeo
 en la fixture `par_de_claves` firma una sonda con la clave privada y la verifica con el JWK
 (`jwt.decode` + `RSAAlgorithm.from_jwk`), de modo que el JWKS mock verifica una firma fixture
@@ -70,7 +70,7 @@ sin red ni credenciales. Transporte hacia `api.clerk.com` con `httpx.MockTranspo
 transporte se inyectan por `app.dependency_overrides` sobre las costuras
 `app.api.dependencies.obtener_fuente_jwks` (callable `fuente(issuer)->dict`) y
 `obtener_transporte_clerk` (httpx.BaseTransport), documentadas en la cabecera del test.
-Comandos: `cd backend; .venv\Scripts\python.exe -m pytest tests/api/test_auth.py -q` →
+Comandos: `cd backend; .venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad/test_auth.py -q` →
 **38 failed, 0 passed**; suite completa `.venv\Scripts\python.exe -m pytest -q` →
 **140 passed, 38 failed** (los 38 rojos son exclusivamente de `test_auth.py`; la suite
 legacy sigue verde). Motivo del rojo: funcionalidad ausente, no imports/colección —
@@ -103,7 +103,7 @@ https://api.clerk.com/v1/users/{sub}` vía transporte inyectable y extracción d
 primario verificado) y reescrito `backend/app/services/auth_service.py` como orquestador
 `resolver_identidad` + vínculo ORM `vincular_usuario_por_correo` (se retiró el stub
 `autenticar`; no queda emisión/aceptación HS256). Comando: `cd backend;
-.venv\Scripts\python.exe -m pytest tests/api/test_auth.py -q` → **29 passed, 9 failed** (los
+.venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad/test_auth.py -q` → **29 passed, 9 failed** (los
 9 rojos son exclusivamente de protección de rutas de negocio/OpenAPI de negocio, T6). Todos
 los casos JWT (firma/`iss`/`exp`/`nbf`/algoritmo/`azp`/sin `aud`), JWKS (cache/kid/rotación/
 TTL), Clerk/vínculo y `/auth/me` pasan. El diff solo toca `app/`; sin cambios en `models/`
@@ -128,7 +128,7 @@ identidad resuelta y que la dependencia puede ser overrideada; no existe respues
 `auth_service.resolver_identidad` y devuelve `IdentidadAutenticada(usuario, sub)`; se
 eliminó el stub 501. La credencial ausente se responde con `HTTPException(401)` explícito
 (`WWW-Authenticate: Bearer`) y todo `ErrorAutenticacion` se normaliza a 401 sin causa
-interna. Comando: `cd backend; .venv\Scripts\python.exe -m pytest tests/api/test_auth.py -q`
+interna. Comando: `cd backend; .venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad/test_auth.py -q`
 → **29 passed, 9 failed** (T6). `test_costura_inyectable_de_autenticacion_existe`,
 `test_auth_me_sin_bearer_responde_401` (401, no 403) y el override de la dependencia en
 `cliente_auth` pasan; sin respuesta 501.
@@ -150,7 +150,7 @@ consume `Depends(get_current_user)` y arma el DTO. Registrado en `backend/app/ap
 antes de los routers de negocio (la protección del router agregado es T6 y no se aplicó en
 esta corrida). Verificado vía `app.openapi()`: `securitySchemes` publica `HTTPBearer`;
 `/api/v1/auth/me` exige el esquema y documenta `200`+`401`; `/health` sin `security`.
-Comando: `cd backend; .venv\Scripts\python.exe -m pytest tests/api/test_auth.py -q` →
+Comando: `cd backend; .venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad/test_auth.py -q` →
 **29 passed, 9 failed** (T6). Pasan `test_auth_me_devuelve_usuario_id_y_sub`,
 `test_auth_me_sin_bearer_responde_401`, `test_auth_me_con_bearer_invalido_responde_401`,
 `test_openapi_auth_me_documenta_200_y_401` y `test_openapi_salud_no_requiere_seguridad_y_publica_bearer`.
@@ -179,7 +179,7 @@ fuera del router agregado y sin protección. CORS en `backend/app/main.py` restr
 `allow_headers=["Authorization", "Content-Type", "Accept"]` y `allow_methods=["*"]`. `git diff`
 solo toca `app/api/v1/api.py` y `app/main.py`; el diff de `app/api/v1/endpoints/` está vacío
 (no se alteró la lógica de tickets/inventario/usuarios). Comandos: `cd backend;
-.venv\Scripts\python.exe -m pytest tests/api/test_auth.py -q` → **38 passed** (incluye los 9
+.venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad/test_auth.py -q` → **38 passed** (incluye los 9
 rojos de T6: 7 rutas de negocio sin Bearer→401, con Bearer válido→200 y OpenAPI de negocio
 protegido). Suite completa `.venv\Scripts\python.exe -m pytest -q` → **59 passed, 119 failed**;
 los 119 rojos son legacy que llaman a `/api/v1/*` sin token y reciben `401 "No autenticado"` —
@@ -209,7 +209,7 @@ módulo ahora define su propio fixture `cliente` que sombrea el de `conftest.py`
 protección real, y `cliente_auth` (T2) tampoco lo hereda. El override vive solo en el
 harness de tests; `git diff` toca únicamente `backend/tests/`. Comandos: `cd backend;
 .venv\Scripts\python.exe -m pytest -q` → **178 passed, 2 warnings** (antes de T7: 59 passed,
-119 failed); `.venv\Scripts\python.exe -m pytest tests/api/test_auth.py -q` → **38 passed**
+119 failed); `.venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad/test_auth.py -q` → **38 passed**
 (protección/401 demostrada de verdad).
 
 ## T8 — OpenAPI completo y retiro backend de autenticación local (AC-4, AC-11, AC-12, AC-13)
@@ -224,7 +224,7 @@ harness de tests; `git diff` toca únicamente `backend/tests/`. Comandos: `cd ba
 **Hecho cuando:** tests fijan el esquema y seguridad por operación; no queda camino que
 emita/acepte autenticación local y pytest permanece verde.
 
-**Evidencia T8 (hecha):** ampliada la sección OpenAPI de `backend/tests/api/test_auth.py`
+**Evidencia T8 (hecha):** ampliada la sección OpenAPI de `backend/tests/no_funcional/seguridad/test_auth.py`
 (38 → 52 casos) con: `securityScheme` HTTP bearer publicado; `test_openapi_toda_operacion_de_negocio_exige_bearer`
 (recorre **todas** las operaciones bajo `/api/v1`, incluida `/auth/me`); `test_openapi_marca_operaciones_de_negocio_protegidas`
 (parametrizado por las 7 rutas de `RUTAS_NEGOCIO`); `test_openapi_auth_me_exige_bearer`;
@@ -241,7 +241,7 @@ confirmado por grep en `backend/app/**`: **sin coincidencias** de `HS256`, `jwt.
 `app/core/security.py` y `app/services/auth_service.py` que aún mencionaban "HS256"/"stub";
 `auth_service.py` conserva solo el rol de orquestador de identidad (sin stub `autenticar`).
 Config/ejemplo/Compose ya solo exponen `CLERK_*` (T1). `git diff` no toca `backend/app/models/`
-ni `database/`. Comandos: `cd backend; .venv\Scripts\python.exe -m pytest tests/api/test_auth.py -q`
+ni `database/`. Comandos: `cd backend; .venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad/test_auth.py -q`
 → **52 passed**; suite completa `.venv\Scripts\python.exe -m pytest -q` → **192 passed, 2 warnings**.
 
 ## T9 — Angular: servicio de sesión Clerk y pruebas unitarias (AC-1…AC-4, AC-13)
@@ -372,7 +372,7 @@ dos puertos; no se usa ningún valor de clave en esta evidencia.
   previos verdes; `/openapi.json` publica los seis campos y excluye `rol_id`; el diff no toca
   modelos, DDL ni semilla y el endpoint no contiene consultas/lógica de negocio.
 
-**Evidencia T14 (hecha):** TDD rojo→verde. En `backend/tests/api/test_auth.py` se añadieron
+**Evidencia T14 (hecha):** TDD rojo→verde. En `backend/tests/no_funcional/seguridad/test_auth.py` se añadieron
 `test_auth_me_devuelve_identidad_local_completa` (200 con `usuario_id`, `sub`, `nombre="Ana"`,
 `apellido="Perez"`, `correo` local y `rol == datos_base["rol_nombre"]`, es decir
 `rol.nombre_rol`), `test_auth_me_no_expone_rol_id` (conjunto exacto de claves del cuerpo y

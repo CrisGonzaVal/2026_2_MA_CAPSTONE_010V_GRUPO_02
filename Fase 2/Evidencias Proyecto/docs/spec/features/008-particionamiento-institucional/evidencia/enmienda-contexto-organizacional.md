@@ -39,14 +39,14 @@ histórica de AC-1…AC-21 no se altera.
 - **Sin entrada del cliente:** query y body no alteran los campos; el servidor los deriva de
   la identidad autenticada.
 - **Tests (rojo → verde):**
-  - `backend/tests/api/test_auth_me_institucion.py::test_auth_me_bodeguero_expone_su_sede_sin_departamento`
+  - `backend/tests/no_funcional/seguridad/test_auth_me_institucion.py::test_auth_me_bodeguero_expone_su_sede_sin_departamento`
   - `::test_auth_me_solicitante_expone_departamento_y_sede_del_departamento` (fixture con
     `usuario.sede_id` contradictorio: prevalece la sede del departamento)
   - `::test_auth_me_contexto_organizacional_nulo_sin_asignacion`
   - `::test_auth_me_administrador_y_superadmin_sin_contexto_organizacional`
   - `::test_openapi_auth_me_publica_sede_y_departamento_opcionales`
   - `::test_auth_me_no_acepta_sede_ni_departamento_del_cliente`
-  - `backend/tests/api/test_auth.py::test_auth_me_no_expone_rol_id` (set exacto de nueve claves)
+  - `backend/tests/no_funcional/seguridad/test_auth.py::test_auth_me_no_expone_rol_id` (set exacto de nueve claves)
   - Rojo inicial: **9 failed / 71 passed** por `KeyError: 'sede'`/`'departamento'`, propiedades
     ausentes en OpenAPI y set de claves incompleto. Verde posterior: **80 passed** en los dos
     archivos.

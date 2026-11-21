@@ -56,10 +56,10 @@ Spec: [`spec.md`](spec.md), aprobada por el usuario. Este plan concreta su imple
 ### 1.4 Matriz y suites heredadas
 
 - La matriz pasa de 60 a 61 entradas: una ruta nueva exclusiva de Administrador+Bodeguero; no cambia roles de ninguna ruta existente.
-- En `backend/tests/api/test_ciclo_vida_autorizacion_014.py`, actualizar explícitamente a 61 las aserciones absolutas `test_matriz_tiene_exactamente_60_operaciones_tras_014` y `test_openapi_tiene_60_operaciones_tras_014`. Registrar el cambio en evidencia como ampliación de 014 por Feature 018, no como reescritura silenciosa.
-- En `backend/tests/api/test_permisos.py`, preservar la referencia histórica independiente `MATRIZ_ESPERADA` de 55 y su `len == 55`; agregar una referencia aditiva independiente para la nueva operación, como patrón de `test_permisos_012.py`.
-- Ampliar contrato/capacidad en `backend/tests/api/test_capacidades_gating_012.py` y los seams de igualdad entre rutas OpenAPI/matriz. Las transcripciones históricas 008/010/012/013/014 se conservan salvo las dos aserciones absolutas mencionadas y la extensión independiente nueva.
-- Prueba 403 de departamento de otra institución: puede afirmarse en SQLite/harness en `backend/tests/api/test_ambito_institucional.py` (el fixture comparte esquema); **no** crear test gated PostgreSQL esperando 403. En PostgreSQL cross-tenant la entidad no existe en el esquema del actor y el resultado es 200/`[]`.
+- En `backend/tests/funcional/integracion/test_ciclo_vida_autorizacion_014.py`, actualizar explícitamente a 61 las aserciones absolutas `test_matriz_tiene_exactamente_60_operaciones_tras_014` y `test_openapi_tiene_60_operaciones_tras_014`. Registrar el cambio en evidencia como ampliación de 014 por Feature 018, no como reescritura silenciosa.
+- En `backend/tests/no_funcional/seguridad/test_permisos.py`, preservar la referencia histórica independiente `MATRIZ_ESPERADA` de 55 y su `len == 55`; agregar una referencia aditiva independiente para la nueva operación, como patrón de `test_permisos_012.py`.
+- Ampliar contrato/capacidad en `backend/tests/no_funcional/seguridad/test_capacidades_gating_012.py` y los seams de igualdad entre rutas OpenAPI/matriz. Las transcripciones históricas 008/010/012/013/014 se conservan salvo las dos aserciones absolutas mencionadas y la extensión independiente nueva.
+- Prueba 403 de departamento de otra institución: puede afirmarse en SQLite/harness en `backend/tests/funcional/integracion/test_ambito_institucional.py` (el fixture comparte esquema); **no** crear test gated PostgreSQL esperando 403. En PostgreSQL cross-tenant la entidad no existe en el esquema del actor y el resultado es 200/`[]`.
 
 ### 1.5 Frontend
 
@@ -87,12 +87,12 @@ Spec: [`spec.md`](spec.md), aprobada por el usuario. Este plan concreta su imple
 | `backend/app/api/v1/endpoints/inventario.py` | GET ámbito, query `sede_id`, response models/status/OpenAPI, dependencias de matriz y capacidad. | AC-1, AC-3, AC-4, AC-8, AC-9 |
 | `backend/app/core/permisos.py` | Una entrada aditiva Admin+Bodeguero; total 61 sin cambios en roles de operaciones previas. | AC-8 |
 | `backend/app/core/capacidades.py` | Asociar GET ámbito con `inventario`. | AC-8 |
-| `backend/tests/api/test_filtros_inventario_018.py` | Contratos HTTP, response codes, filtros y casos de rol/ámbito. | AC-1…AC-4, AC-6, AC-8, AC-9 |
-| `backend/tests/services/test_filtros_inventario_018.py` | Consultas de opciones y regla de `condicion_stock`, agregados y productos sin stock. | AC-1…AC-4, AC-6 |
-| `backend/tests/api/test_ambito_institucional.py` | Afirmar 403 departamental cross-institution en el harness SQLite donde ambas instituciones son visibles. | AC-4 |
-| `backend/tests/api/test_ciclo_vida_autorizacion_014.py` | Ampliar a 61 las dos aserciones absolutas de matriz/OpenAPI, con registro explícito de ampliación Feature 014. | AC-8, AC-9 |
-| `backend/tests/api/test_permisos.py` | Mantener referencia histórica de 55; agregar expectativa aditiva independiente de nueva operación. | AC-8 |
-| `backend/tests/api/test_capacidades_gating_012.py` | Gating `inventario` y 403 con capacidad deshabilitada para nueva operación y existencias. | AC-8 |
+| `backend/tests/funcional/integracion/test_filtros_inventario_018.py` | Contratos HTTP, response codes, filtros y casos de rol/ámbito. | AC-1…AC-4, AC-6, AC-8, AC-9 |
+| `backend/tests/funcional/integracion/test_filtros_inventario_018.py` | Consultas de opciones y regla de `condicion_stock`, agregados y productos sin stock. | AC-1…AC-4, AC-6 |
+| `backend/tests/funcional/integracion/test_ambito_institucional.py` | Afirmar 403 departamental cross-institution en el harness SQLite donde ambas instituciones son visibles. | AC-4 |
+| `backend/tests/funcional/integracion/test_ciclo_vida_autorizacion_014.py` | Ampliar a 61 las dos aserciones absolutas de matriz/OpenAPI, con registro explícito de ampliación Feature 014. | AC-8, AC-9 |
+| `backend/tests/no_funcional/seguridad/test_permisos.py` | Mantener referencia histórica de 55; agregar expectativa aditiva independiente de nueva operación. | AC-8 |
+| `backend/tests/no_funcional/seguridad/test_capacidades_gating_012.py` | Gating `inventario` y 403 con capacidad deshabilitada para nueva operación y existencias. | AC-8 |
 | Otros tests `test_permisos_*.py`, OpenAPI y `test_gobierno_lecturas_017.py` | Mantener baselines históricos; extender comparación aditiva donde sea necesaria sin debilitar asserts. | AC-8, AC-9 |
 | `frontend/src/app/shared/interfaces/index.ts` | Tipos respuesta de ámbito y filtros de existencias. | AC-1…AC-4, AC-8 |
 | `frontend/src/app/core/auth/roles.ts` / `roles.spec.ts` | Helper `puedeVerFiltrosInventario` y tabla de permisos visual probada. | AC-5, AC-8, AC-9 |

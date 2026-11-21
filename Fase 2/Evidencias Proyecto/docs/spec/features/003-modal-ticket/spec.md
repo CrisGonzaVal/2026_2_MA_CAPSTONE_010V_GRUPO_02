@@ -25,8 +25,8 @@ Seis huecos concretos, verificados en el código:
   `DESPACHADO`, `ENTREGADO`) **no coinciden** con los de `estado_ticket` (`Pendiente`,
   `EnRevision`, `EnCurso`, `Cerrado`).
 - **`POST /api/v1/tickets/` responde 500 ante una FK inválida.** Es H-1 de la Feature 001,
-  sigue vivo a propósito y lo fijan dos tests: `tests/api/test_smoke.py:152` y
-  `tests/api/test_transaccion_ticket.py:27`.
+  sigue vivo a propósito y lo fijan dos tests: `tests/funcional/humo/test_smoke.py:152` y
+  `tests/funcional/e2e/test_transaccion_ticket.py:27`.
 - **`TicketCrear` no valida nada.** `backend/app/schemas/ticket_schema.py:9-30`: `asunto`
   sin `max_length` contra un `VARCHAR(150) NOT NULL`, `detalles` admite lista vacía (un
   ticket sin ningún ítem) y `cantidad_solicitada` admite `0` y negativos, que el DDL

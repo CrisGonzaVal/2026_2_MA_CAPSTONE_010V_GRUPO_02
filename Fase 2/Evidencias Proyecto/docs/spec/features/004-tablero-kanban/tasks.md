@@ -16,7 +16,7 @@ Comandos de verificación (AGENTS.md §5):
 
 ## T1 — Fixture canónico y tests rojos de flujo (AC-9, AC-10, AC-13, AC-14, AC-15 — red)
 
-- [x] Crear `backend/tests/api/test_tablero_kanban.py` con la fixture `datos_flujo_canonico`
+- [x] Crear `backend/tests/funcional/integracion/test_tablero_kanban.py` con la fixture `datos_flujo_canonico`
       (apoyada en `datos_base`, patrón de `datos_catalogo_ticket`): 4 estados en orden
       canónico `Pendiente → EnRevision → EnCurso → Cerrado` + helper local de payload.
 - [x] Tests rojos: avanzar/retroceder un paso; salto, estado repetido y retroceso desde el

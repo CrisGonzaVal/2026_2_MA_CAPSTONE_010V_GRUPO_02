@@ -336,7 +336,7 @@ migración, matriz ni permisos.
 
 | Verificación | Resultado real |
 |---|---|
-| `tests/api/test_ciclo_vida_alta_inicial_013.py` | **9 passed** — 409 en `EnRevision`/`EnCurso`/`Cerrado`/`Anulado` sin dejar tickets; 404 con id inexistente (la referencia precede a la regla); 422 sin `estado_id`; 409 con catálogo sin `Pendiente`; 201 con `Pendiente` y `fecha_cierre: null`; el `PATCH /estado` posterior sigue en 200; `Pendiente` fuera de la primera posición también resuelve |
+| `tests/funcional/integracion/test_ciclo_vida_alta_inicial_013.py` | **9 passed** — 409 en `EnRevision`/`EnCurso`/`Cerrado`/`Anulado` sin dejar tickets; 404 con id inexistente (la referencia precede a la regla); 422 sin `estado_id`; 409 con catálogo sin `Pendiente`; 201 con `Pendiente` y `fecha_cierre: null`; el `PATCH /estado` posterior sigue en 200; `Pendiente` fuera de la primera posición también resuelve |
 | `pytest` (SQLite, suite completa) | **1459 passed / 83 skipped / 0 failed** en 4:06 min |
 | `pytest` gated PostgreSQL 16 (`POSTGRES_TEST_URL`, base desechable) | **1542 passed / 0 skipped / 0 failed** en 9:17 min; `apt_erp` intacta |
 | Ajustes de regresión | `conftest.datos_base` renombra `INGRESADO`/`CERRADO` a `Pendiente`/`Cerrado`; `test_tablero_kanban.py` siembra por ORM los escenarios no-`Pendiente` y los dos casos de alta en `Cerrado` pasan a exigir **409**; `test_ciclo_vida_flujo_013.py` ídem; `test_ticket_sede_011.py` crea en `Pendiente` y transiciona con `PATCH`; `test_modal_ticket.py` afirma `Pendiente` como primer estado |

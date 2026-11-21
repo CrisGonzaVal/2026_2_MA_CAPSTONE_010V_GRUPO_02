@@ -13,7 +13,7 @@
 - [x] Confirmar con `pip show` el estado actual de `redis` (no debe figurar como dependencia directa) y que las diez dependencias actuales conservan su versión. → *Package(s) not found*.
 - [x] Añadir `redis==8.1.0` como undécima línea de `backend/requirements.txt`. → hecho.
 - [x] Instalar `-r requirements.txt` en el venv y ejecutar `pip check` sin conflictos. → `Successfully installed redis-8.1.0`; `No broken requirements found.`
-- [x] Actualizar `backend/tests/test_dependencias_024.py` a once dependencias, incluyendo `redis==8.1.0`, conservando su intención. → hecho.
+- [x] Actualizar `backend/tests/funcional/unitarios/test_dependencias_024.py` a once dependencias, incluyendo `redis==8.1.0`, conservando su intención. → hecho.
 - [x] Crear `docs/spec/features/025-limite-tasa-distribuido/evidencia/README.md` con la línea base y el estado del árbol. → hecho.
 - [x] Ejecutar el test de dependencias y confirmar 11/11. → **4 passed** con 11 dependencias declaradas.
 
@@ -26,7 +26,7 @@
 - [x] Añadir `REDIS_URL`, `LIMITE_TASA_HABILITADO`, `LIMITE_TASA_MAX_PETICIONES`, `LIMITE_TASA_VENTANA_SEGUNDOS` y `LIMITE_TASA_CONFIAR_PROXY` a `backend/app/core/config.py` con los defaults de D-8. → hecho.
 - [x] Implementar `validar_limite_positivo` para máximo y ventana (enteros ≥ 1). → hecho.
 - [x] Implementar `validar_url_redis` con `model_validator(mode="after")`, solo activo con el limitador encendido. → hecho.
-- [x] Escribir `backend/tests/test_configuracion_025.py` con defaults (limpiando las cinco variables de entorno), cuatro casos inválidos, `rediss://` y apagado con URL no Redis. → 11 pruebas.
+- [x] Escribir `backend/tests/funcional/unitarios/test_configuracion_025.py` con defaults (limpiando las cinco variables de entorno), cuatro casos inválidos, `rediss://` y apagado con URL no Redis. → 11 pruebas.
 - [x] Ejecutar los tests focalizados de configuración. → **58 passed** (11 nuevas + 47 de la 024).
 
 **Hecho cuando:** `Settings()` trae `True/120/60/False/redis://127.0.0.1:6380/0`, los valores inválidos impiden construir con un mensaje que nombra la variable y la suite heredada sigue verde.
@@ -40,8 +40,8 @@
 - [x] Implementar `es_ruta_limitada` por segmento y `es_preflight` (método, `Origin` y `Access-Control-Request-Method`). → hecho.
 - [x] Definir el protocolo `AlmacenLimite` e implementar `AlmacenRedis` con `redis.asyncio`, cliente creado en la primera evaluación, timeouts de 200 ms, pool de 20 y cero reintentos. → `from_url` **no** acepta `timeout` en 8.1.0; la cota del *pool* queda en `asyncio.wait_for(0.5)`, corregido en T8.
 - [x] Implementar `ResultadoLimite` y `LimitadorTasa.evaluar` con la clave por IP, el contador y el reinicio derivado del TTL. → incluye la métrica best-effort; la familia se creó aquí y T6 la verifica.
-- [x] Escribir `backend/tests/soporte_limite_tasa_025.py` con `AlmacenFalso` (reloj propio, `avanzar`, `error`, `llamadas` y `cerrar` no-op) y las fábricas de app. → hecho.
-- [x] Escribir `backend/tests/test_limite_tasa_unidad_025.py` con IP, rutas, preflight, conteo, no renovación del TTL y clave con prefijo. → 30 pruebas.
+- [x] Escribir `backend/tests/no_funcional/rendimiento/soporte_limite_tasa_025.py` con `AlmacenFalso` (reloj propio, `avanzar`, `error`, `llamadas` y `cerrar` no-op) y las fábricas de app. → hecho.
+- [x] Escribir `backend/tests/funcional/unitarios/test_limite_tasa_unidad_025.py` con IP, rutas, preflight, conteo, no renovación del TTL y clave con prefijo. → 30 pruebas.
 - [x] Ejecutar los tests unitarios focalizados. → **30 passed**.
 
 **Hecho cuando:** la IP se resuelve según la confianza, el preflight y las rutas operativas quedan fuera, y el falso reproduce el conteo y la expiración sin Docker.
@@ -56,7 +56,7 @@
 - [x] Extender `crear_app(cliente_limite=None)` para construir el limitador y añadirlo **antes** de CORS y observabilidad; registrar `cerrar` en el `shutdown`. → FastAPI 0.142 ya no expone `add_event_handler` en la app: se usa `aplicacion.router.add_event_handler`.
 - [x] Apagar el limitador en `backend/tests/conftest.py` antes de importar `app.main`, mutando el singleton. → hecho.
 - [x] Añadir la marca `rate_limited` a `_ruta_plantilla` en `backend/app/middleware/observabilidad.py`. → hecho.
-- [x] Escribir `backend/tests/api/test_limite_tasa_025.py` (conteo, cabeceras, CORS, dos IP, confianza, rutas fuera, preflight, dos apps con el mismo falso). → 11 pruebas.
+- [x] Escribir `backend/tests/no_funcional/rendimiento/test_limite_tasa_025.py` (conteo, cabeceras, CORS, dos IP, confianza, rutas fuera, preflight, dos apps con el mismo falso). → 11 pruebas.
 - [x] Confirmar que un `POST` a `/api/v1` consume presupuesto igual que un `GET`. → 405 contado, después 429.
 - [x] Confirmar que con `LIMITE_TASA_HABILITADO=false` no hay middleware y el falso no recibe llamadas. → hecho.
 - [x] Ejecutar los tests de API focalizados. → **11 passed**; **138 passed** con las suites heredadas (024 + auth).
@@ -70,7 +70,7 @@
 - [x] Envolver el paso por Redis de `LimitadorTasa.evaluar` en `try/except Exception` con `asyncio.wait_for` de 0,5 s y devolver `permitida=True` con `resultado="error"`. → hecho.
 - [x] Añadir `LOGGER_LIMITE = "compustock.limite"` a `backend/app/core/observabilidad.py`. → hecho.
 - [x] Implementar el aviso acotado a uno cada 10 s, con `request_id` y `error_type`, sin IP, host, mensaje ni traza. → `intervalo_aviso` configurable; `_ultimo_aviso` nace en `-inf`.
-- [x] Escribir `backend/tests/api/test_limite_tasa_failopen_025.py` con falso que lanza, captura de log, métrica `error`, medición de cota con `192.0.2.1` y `/ready` 200 sin llamar al almacén. → 3 pruebas.
+- [x] Escribir `backend/tests/no_funcional/rendimiento/test_limite_tasa_failopen_025.py` con falso que lanza, captura de log, métrica `error`, medición de cota con `192.0.2.1` y `/ready` 200 sin llamar al almacén. → 3 pruebas.
 - [x] Ejecutar los tests de fail-open focalizados. → **3 passed**; **44 passed** con T3 y T4.
 
 **Hecho cuando:** un fallo del limitador nunca cambia el estado ni el cuerpo de la ruta, la métrica cuenta todos los fallos y el log avisa una sola vez por ventana.
@@ -82,7 +82,7 @@
 - [x] Añadir `RUTA_LIMITADA = "rate_limited"` a `backend/app/core/metricas.py`. → hecho.
 - [x] Añadir `compustock_rate_limit_requests_total{resultado}` y `registrar_limite`. → creados en T3 (el limitador los consume) y verificados aquí.
 - [x] Incrementar la familia con `permitida`, `limitada` y `error` en el limitador. → hecho.
-- [x] Escribir `backend/tests/api/test_metricas_limite_tasa_025.py` (incrementos, etiqueta exacta, cinco familias de la 024, `route="rate_limited"`, sin PII y apagado). → 6 pruebas.
+- [x] Escribir `backend/tests/no_funcional/rendimiento/test_metricas_limite_tasa_025.py` (incrementos, etiqueta exacta, cinco familias de la 024, `route="rate_limited"`, sin PII y apagado). → 6 pruebas.
 - [x] Ejecutar los tests de métricas focalizados. → **6 passed**.
 
 **Hecho cuando:** `/metrics` expone seis familias, la etiqueta nueva es exactamente `{resultado}`, el 429 se registra como `rate_limited` y ninguna superficie contiene la IP ni la clave.
@@ -105,7 +105,7 @@
 
 **ACs:** AC-4, AC-16.
 
-- [x] Crear `backend/tests/test_limite_tasa_redis_025.py` con omisión limpia si falta `REDIS_TEST_URL`. → 3 pruebas; **3 skipped** sin la variable.
+- [x] Crear `backend/tests/no_funcional/rendimiento/test_limite_tasa_redis_025.py` con omisión limpia si falta `REDIS_TEST_URL`. → 3 pruebas; **3 skipped** sin la variable.
 - [x] Implementar los escenarios con `asyncio.run` (sin `pytest-asyncio`). → hecho.
 - [x] Verificar 3 permitidas y cuarta rechazada con ventana de 1 s, `PTTL` entre 1 y 1000 ms y clave con la IP. → hecho.
 - [x] Verificar reinicio por `DEL`, por expiración, que los rechazos no renuevan el TTL y que `Retry-After` decrece con el TTL. → hecho.

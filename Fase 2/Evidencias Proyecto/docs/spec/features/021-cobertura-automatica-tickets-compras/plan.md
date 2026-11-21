@@ -220,10 +220,10 @@ una octava capacidad. Las operaciones existentes conservan sus roles.
 
 Tests que hoy fijan 72 y deben subir a 73 al cierre:
 
-- `backend/tests/api/test_compras_endpoints_020.py`
-- `backend/tests/api/test_ciclo_vida_autorizacion_014.py`
-- `backend/tests/api/test_detalle_producto_019.py`
-- `backend/tests/api/test_filtros_inventario_018.py`
+- `backend/tests/funcional/integracion/test_compras_endpoints_020.py`
+- `backend/tests/funcional/integracion/test_ciclo_vida_autorizacion_014.py`
+- `backend/tests/funcional/integracion/test_detalle_producto_019.py`
+- `backend/tests/funcional/integracion/test_filtros_inventario_018.py`
 
 ### DT-11 — Helper de etiquetas y renombrado visible
 
@@ -475,7 +475,7 @@ y busca la fila del pedido.
 
 ### Backend (pytest — SQLite en memoria)
 
-`backend/tests/api/test_cobertura_021.py`:
+`backend/tests/funcional/integracion/test_cobertura_021.py`:
 
 - **AC-1:** necesidades con `stock_comprometido`, `stock_borrador`, sugerido
   neto, tickets anidados y filtro de sede inválido.
@@ -492,12 +492,13 @@ y busca la fila del pedido.
 - **AC-10:** 403 por rol y por capacidad; matriz/OpenAPI 73.
 - **AC-11/AC-12:** FK compuestas (gated), preview y emisión coinciden.
 
-`backend/tests/api/test_tickets.py` y `test_compras.py` se amplían con los
+`backend/tests/funcional/integracion/test_tickets_alcance.py`,
+`test_tickets_institucional.py` y `test_compras.py` se amplían con los
 campos aditivos sin romper los contratos existentes.
 
 ### Backend gated (PostgreSQL 16)
 
-`backend/tests/test_cobertura_postgres_021.py`:
+`backend/tests/funcional/sistema/test_cobertura_postgres_021.py`:
 
 - Conteos 27/24, versión `021.1`, tabla e índices.
 - FK compuestas y `UNIQUE` del plan.

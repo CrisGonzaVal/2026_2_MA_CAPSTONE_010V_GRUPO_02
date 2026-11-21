@@ -39,4 +39,5 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 ## Próximos pasos
 - **Sprint 7 (03/Nov – 11/Dic/2026):** quedan **015** (informes PDF/Excel) y **016** (notificaciones in-app); **027–029** después. **Hito 2** el **11/Dic/2026**.
 - **Diagramas:** 5+5 casos de uso, 8 del modelo 4+1 y 12 flujos por actor en `docs/diagramas/`.
-- Hallazgo abierto: `admin017.test+clerk_test@example.com` existe en Clerk pero no está mapeado en la BD; aviso de accesibilidad en el buscador operativo de inventario; `/ready` tarda 3–7 s con `db` detenido por DNS de Docker Desktop.
+- **Deuda técnica:** registro único en `docs/spec/deuda-tecnica.md` (auditoría de seguridad del 16/Nov/2026 incluida). Los items `admin017` y el aviso de accesibilidad se mudaron al registro; quedan fuera de `MEMORY.md` por mantenerlo ≤50 líneas.
+- **Tests por tipo:** `backend/tests/funcional/` (`unitarios`, `integracion`, `sistema`, `e2e`, `aceptacion`, `humo`) y `backend/tests/no_funcional/` (`rendimiento`, `seguridad`, + 4 pendientes). Índice en `backend/tests/README.md`; el frontend se clasifica por índice en `frontend/src/app/features/funcional/README.md` (specs Angular siguen junto a su sujeto).

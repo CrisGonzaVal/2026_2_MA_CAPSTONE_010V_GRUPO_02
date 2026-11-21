@@ -230,7 +230,7 @@ Esperado: 537 tests previos + los nuevos, 0 fallos; build limpio.
 
 ### 6.1 Test primero (rojo)
 
-Crear `backend/tests/services/test_auth_service.py` con tres casos:
+Crear `backend/tests/funcional/integracion/test_auth_service.py` con tres casos:
 
 1. `identidad=None` → `"sistema"`.
 2. `IdentidadAutenticada(usuario=None, sub="...")` → `"sistema"`.
@@ -263,7 +263,7 @@ No cambiar la firma ni el valor de retorno: el contrato de auditoría
 
 ```powershell
 cd backend
-.venv/Scripts/python.exe -m pytest tests/services/test_auth_service.py -q
+.venv/Scripts/python.exe -m pytest tests/funcional/integracion/test_auth_service.py -q
 .venv/Scripts/python.exe -m pytest -q
 ```
 
@@ -337,7 +337,7 @@ sin rebuild da falsos negativos.
 | `backend/app/services/auth_service.py` | T5 | Añadir `correo_del_actor` |
 | `backend/app/services/organizacion_service.py` | T5 | Usar helper |
 | `backend/app/services/usuario_service.py` | T5 | Usar helper |
-| `backend/tests/services/test_auth_service.py` | T5 | Crear |
+| `backend/tests/funcional/integracion/test_auth_service.py` | T5 | Crear |
 | `docs/spec/features/022-mantenimiento-tecnico/evidencia/README.md` | T6 | Crear |
 | `MEMORY.md` | T6 | Actualizar |
 

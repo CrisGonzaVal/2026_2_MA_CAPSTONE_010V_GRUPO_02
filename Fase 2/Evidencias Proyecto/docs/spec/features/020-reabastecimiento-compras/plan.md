@@ -222,7 +222,7 @@ frontend/src/app/
 
 ### Backend (pytest — SQLite en memoria)
 
-`tests/api/test_compras.py`:
+`tests/funcional/integracion/test_compras.py`:
 
 - **AC-1:** necesidades agrupadas por sede/producto; fórmula `max(0, min + demanda - stock)`; solo `EnCurso`; `sede_id` ajeno → 200/`[]`.
 - **AC-2:** 201 al crear proveedor como Administrador; 201 como Superadmin; 409 por RUT duplicado; 403 como Bodeguero/Solicitante; el proveedor creado por Superadmin no crea réplica tenant.

@@ -185,8 +185,8 @@ carrera real en **409** y no en un 500.
 | `ng build` | limpio (23,67 s) |
 | `/openapi.json` | **75 operaciones** en 62 rutas; **37** declaran 409 |
 | `MATRIZ_PERMISOS` | **73** — sin diff |
-| `backend/tests/test_salud_esquema_026.py` (SQLite) | **3 passed** — metadatos, índices y constraints |
-| `backend/tests/test_salud_esquema_postgres_026.py` (gated) | **14 passed** — 26/23, `026.0`, 14/3, 45/12, los 17 P0, U-01…U-07, K-01…K-04 y N-01 |
+| `backend/tests/funcional/sistema/test_salud_esquema_026.py` (SQLite) | **3 passed** — metadatos, índices y constraints |
+| `backend/tests/funcional/sistema/test_salud_esquema_postgres_026.py` (gated) | **14 passed** — 26/23, `026.0`, 14/3, 45/12, los 17 P0, U-01…U-07, K-01…K-04 y N-01 |
 
 El archivo gated nuevo cubre: conteo 26/23 y ausencia de `inventario`; versión `026.0` en
 `control` y en los 4 tenants; 14 saldos / 3 movimientos / 45-12; los **17 índices P0** (15

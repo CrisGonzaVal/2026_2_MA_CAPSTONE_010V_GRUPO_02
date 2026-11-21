@@ -44,7 +44,7 @@ redis==8.1.0
 - `redis==8.1.0` es *pure Python* (`py3-none-any`), MIT, Python ≥ 3.10; no arrastra
   `hiredis` ni `fakeredis`.
 - `pip check` sin conflictos tras instalar.
-- `pytest tests/test_dependencias_024.py -q` → **4 passed** con once dependencias.
+- `pytest tests/funcional/unitarios/test_dependencias_024.py -q` → **4 passed** con once dependencias.
 - `Successfully installed redis-8.1.0`; `No broken requirements found.`
 
 ## 3. Núcleo y middleware (T3/T4)
@@ -88,7 +88,7 @@ redis==8.1.0
 
 ## 5. Suite *gated* contra Redis real (T8)
 
-- `backend/tests/test_limite_tasa_redis_025.py`: tres escenarios con `asyncio.run`, sin
+- `backend/tests/no_funcional/rendimiento/test_limite_tasa_redis_025.py`: tres escenarios con `asyncio.run`, sin
   `pytest-asyncio`; cada uno vacía la base 15 al empezar y al terminar (`finally`) y la
   suite se niega a correr si la URL no apunta a `/15`.
 - Resultados con `REDIS_TEST_URL=redis://127.0.0.1:6380/15`: **3 passed** (3,91 s).
@@ -109,7 +109,7 @@ redis==8.1.0
      default de `REDIS_URL` y todos los comandos pasan a `127.0.0.1:6380`; el alcance
      (loopback) no cambia.
 - Afectados por la corrección: `backend/app/core/limite_tasa.py`,
-  `backend/app/core/config.py`, `backend/tests/test_configuracion_025.py`, `spec.md`,
+  `backend/app/core/config.py`, `backend/tests/funcional/unitarios/test_configuracion_025.py`, `spec.md`,
   `plan.md` y `tasks.md`.
 
 ## 6. Verificación de cierre backend y contrato (T9)

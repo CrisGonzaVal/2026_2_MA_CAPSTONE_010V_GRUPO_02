@@ -410,7 +410,7 @@ del árbol, sin cambios de sistema.
   `/ready`, `/metrics`, una operación autenticada de `/api/v1`, una ruta inexistente y una
   respuesta 4xx de validación), CUANDO se invoca, ENTONCES la respuesta trae `X-Request-ID`
   con un UUID en forma canónica. El cuerpo y el `status` no cambian respecto de la línea base.
-  **Evidencia:** `tests/api/test_correlacion_024.py` cubre `/`, `/health`, operación
+  **Evidencia:** `tests/no_funcional/seguridad/test_correlacion_024.py` cubre `/`, `/health`, operación
   autenticada, 404, 422, preflight y 500; las 59 peticiones del recorrido en 4200 llevaron la
   cabecera.
 - [x] **AC-2 — Identificador entrante respetado y saneado.** Con `X-Request-ID` de UUID válido
@@ -471,7 +471,7 @@ del árbol, sin cambios de sistema.
   suma, y el gauge en vuelo vuelve a 0 al terminar.
   **Evidencia:** `test_metrics_expone_las_cinco_familias` y
   `test_contador_y_histograma_usan_etiquetas_acotadas`, con el parser de
-  `tests/soporte_observabilidad_024.py`.
+  `tests/funcional/integracion/soporte_observabilidad_024.py`.
 - [x] **AC-12 — Etiqueta `route` como plantilla.** Una petición a
   `/api/v1/tickets/{id_real}` produce la etiqueta `route="/api/v1/tickets/{ticket_id}"`; en
   ninguna etiqueta `route` aparece el identificador real. Una petición a una ruta inexistente
@@ -539,7 +539,7 @@ del árbol, sin cambios de sistema.
   instalación en entorno limpio resuelve sin conflictos y `pip check` no reporta problemas; no
   hay dependencias directas nuevas fuera de `prometheus-client`.
   **Evidencia:** diez líneas con `==`, `pip check` → `No broken requirements found.` y
-  `tests/test_dependencias_024.py` → **4 passed**.
+  `tests/funcional/unitarios/test_dependencias_024.py` → **4 passed**.
 - [x] **AC-23 — Contrato, datos y permisos intactos.** Se conservan las **73** operaciones de
   la matriz, las **75** de OpenAPI, la versión `021.1`, las 27/24 tablas, los `response_model`
   y los textos visibles. No cambian `database/`, `backend/app/models/**`, `permisos.py`, los

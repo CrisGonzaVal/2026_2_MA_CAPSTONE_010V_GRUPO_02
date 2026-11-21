@@ -146,7 +146,7 @@ comportamiento de salida/retroceso desde el último estado quedan **sustituidos*
 del ciclo de vida de tickets, por la resolución por nombre canónico: `Cerrado` es terminal
 aunque no sea el último del catálogo, y ningún otro estado lo es por ocupar la última
 posición. En consecuencia, el caso degenerado del test de la 004
-`test_reentrar_en_cerrado_conserva_la_fecha_original` (`backend/tests/api/test_tablero_kanban.py`),
+`test_reentrar_en_cerrado_conserva_la_fecha_original` (`backend/tests/funcional/integracion/test_tablero_kanban.py`),
 que exige que un `Cerrado` que no es el último del catálogo admita salida (`Cerrado → Archivado`
 = 200), **queda derogado**: esa misma petición responde hoy 409. La 004 permanece sin editar
 como registro histórico de su release; esta enmienda regula el comportamiento vigente.
@@ -395,7 +395,7 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
       en `Anulado` con `fecha_cierre` nula, su stock y sus movimientos quedan intactos, y el
       historial registra una fila con el actor, la marca de tiempo, `EnRevision/Pendiente →
       Anulado` y el motivo literal.
-  - **Evidencia:** `backend/tests/api/test_ciclo_vida_flujo_013.py` — `test_anulacion_desde_pendiente_responde_200_con_historial_ac_1` y `test_anulacion_desde_en_revision_tambien_es_200_ac_1`; recorrido 4200 con escritura real: `evidencia/README.md` §3.1 #2 (ticket 13 → `Anulado`, `fecha_cierre` NULL, stock/movimientos intactos y fila con motivo literal, todo verificado por SQL).
+  - **Evidencia:** `backend/tests/funcional/e2e/test_ciclo_vida_flujo_013.py` — `test_anulacion_desde_pendiente_responde_200_con_historial_ac_1` y `test_anulacion_desde_en_revision_tambien_es_200_ac_1`; recorrido 4200 con escritura real: `evidencia/README.md` §3.1 #2 (ticket 13 → `Anulado`, `fecha_cierre` NULL, stock/movimientos intactos y fila con motivo literal, todo verificado por SQL).
 - [x] **AC-2** SI el ticket está en `EnCurso`, `Cerrado` o ya en `Anulado`, ENTONCES la
       anulación responde 409 y no modifica el ticket ni agrega filas al historial.
   - **Evidencia:** `test_ciclo_vida_flujo_013.py::test_anulacion_desde_estado_inadmisible_responde_409_sin_efectos_ac_2`; recorrido `evidencia/README.md` §3.3 #12–#14 (409 desde `EnCurso`/`Cerrado`/`Anulado`, sin filas nuevas por SQL).
@@ -430,7 +430,7 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
 - [x] **AC-8** SI el motivo de anulación o rechazo falta, está vacío o excede la longitud
       máxima, ENTONCES responde 422 sin modificar estado, fechas ni historial; CON un motivo
       válido, ENTONCES la fila del historial de esa transición contiene el motivo literal.
-  - **Evidencia:** `backend/tests/api/test_ciclo_vida_motivo_013.py` (4 tests AC-8: `test_motivo_faltante_responde_422_ac_8`, `test_motivo_vacio_responde_422_ac_8`, `test_motivo_sobre_la_longitud_maxima_responde_422_ac_8`, `test_motivo_en_el_limite_maximo_es_aceptado_y_se_persiste_literal_ac_8`); recorrido `evidencia/README.md` §3.1 #2/#7 (motivos literales persistidos por SQL) y §3.3 #19 (422 sin efectos).
+  - **Evidencia:** `backend/tests/funcional/integracion/test_ciclo_vida_motivo_013.py` (4 tests AC-8: `test_motivo_faltante_responde_422_ac_8`, `test_motivo_vacio_responde_422_ac_8`, `test_motivo_sobre_la_longitud_maxima_responde_422_ac_8`, `test_motivo_en_el_limite_maximo_es_aceptado_y_se_persiste_literal_ac_8`); recorrido `evidencia/README.md` §3.1 #2/#7 (motivos literales persistidos por SQL) y §3.3 #19 (422 sin efectos).
 
 ### Historial de transiciones
 
@@ -439,7 +439,7 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
       de estado de la 004, el despacho de la 005, la anulación y el rechazo. Cada fila expone
       ticket, estado de origen, estado de destino, actor, marca de tiempo y motivo (nulo cuando
       la operación no lo exige).
-  - **Evidencia:** `backend/tests/api/test_ciclo_vida_historial_013.py` — `test_alta_registra_fila_de_creacion_con_origen_nulo_ac_9`, `test_cambio_de_estado_suma_exactamente_una_fila_ac_9` y `test_anulacion_y_rechazo_suman_exactamente_una_fila_ac_9`; recorrido `evidencia/README.md` §3.1 #1/#4, §3.2 #9 (1 fila por PATCH) y #11 (fila del despacho).
+  - **Evidencia:** `backend/tests/funcional/integracion/test_ciclo_vida_historial_013.py` — `test_alta_registra_fila_de_creacion_con_origen_nulo_ac_9`, `test_cambio_de_estado_suma_exactamente_una_fila_ac_9` y `test_anulacion_y_rechazo_suman_exactamente_una_fila_ac_9`; recorrido `evidencia/README.md` §3.1 #1/#4, §3.2 #9 (1 fila por PATCH) y #11 (fila del despacho).
 - [x] **AC-10** El historial es de solo lectura: no existe operación pública de creación,
       edición o borrado de sus filas fuera de las transiciones mismas, y su lectura ordena de
       forma determinista (más reciente primero, desempate estable).
@@ -461,7 +461,7 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
       200 con asunto, descripción, prioridad y detalles reflejados tal como se enviaron, con el
       conjunto de ítems reemplazado por completo; el estado, el solicitante, la sede y la
       institución no cambian.
-  - **Evidencia:** `backend/tests/api/test_ciclo_vida_edicion_013.py` — `test_edicion_en_pendiente_reemplaza_cabecera_y_detalles_ac_13` y `test_edicion_conserva_estado_solicitante_sede_e_institucion_ac_13`; recorrido `evidencia/README.md` §3.1 #6 (PUT del ticket 14: ítems previos borrados, cabecera nueva y estado/sede/solicitante intactos por SQL).
+  - **Evidencia:** `backend/tests/funcional/integracion/test_ciclo_vida_edicion_013.py` — `test_edicion_en_pendiente_reemplaza_cabecera_y_detalles_ac_13` y `test_edicion_conserva_estado_solicitante_sede_e_institucion_ac_13`; recorrido `evidencia/README.md` §3.1 #6 (PUT del ticket 14: ítems previos borrados, cabecera nueva y estado/sede/solicitante intactos por SQL).
 - [x] **AC-14** SI el ticket no está en `Pendiente`, ENTONCES la edición responde 409 y no
       modifica cabecera ni detalles.
   - **Evidencia:** `test_ciclo_vida_edicion_013.py::test_edicion_fuera_de_pendiente_responde_409_sin_efectos_ac_14`; recorrido `evidencia/README.md` §3.3 #21 (PUT sobre ticket `Anulado` → 409).
@@ -482,7 +482,7 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
       (Solicitante, Administrador), lectura de detalle e historial (los cuatro roles); el
       Superadmin obtiene 403 en toda escritura de ticket y una operación ausente de la matriz no
       concede permiso a nadie.
-  - **Evidencia:** `backend/tests/api/test_ciclo_vida_autorizacion_013.py` (12 tests AC-17): matriz exacta (`test_matriz_tiene_exactamente_49_operaciones_ac_17`, `test_matriz_conserva_las_44_operaciones_previas_intactas_ac_17`, `test_matriz_declara_las_cinco_operaciones_con_los_roles_exactos_ac_17`), Superadmin sin escritura (`test_superadmin_no_obtiene_ninguna_escritura_nueva_ac_17`, `test_superadmin_obtiene_403_en_toda_escritura_nueva_ac_17`) y gating (`test_capacidad_kanban_apagada_bloquea_anulacion_y_rechazo_sin_mutar_ac_17`, `test_capacidad_tickets_apagada_bloquea_edicion_detalle_e_historial_ac_17`); contrato vivo: `/openapi.json` con **49 operaciones** v1 (51 totales con `GET /` y `/health`), las 5 nuevas aditivas con 401/403/404 (+409/422 en escrituras) — `evidencia/README.md` §4.
+  - **Evidencia:** `backend/tests/funcional/integracion/test_ciclo_vida_autorizacion_013.py` (12 tests AC-17): matriz exacta (`test_matriz_tiene_exactamente_49_operaciones_ac_17`, `test_matriz_conserva_las_44_operaciones_previas_intactas_ac_17`, `test_matriz_declara_las_cinco_operaciones_con_los_roles_exactos_ac_17`), Superadmin sin escritura (`test_superadmin_no_obtiene_ninguna_escritura_nueva_ac_17`, `test_superadmin_obtiene_403_en_toda_escritura_nueva_ac_17`) y gating (`test_capacidad_kanban_apagada_bloquea_anulacion_y_rechazo_sin_mutar_ac_17`, `test_capacidad_tickets_apagada_bloquea_edicion_detalle_e_historial_ac_17`); contrato vivo: `/openapi.json` con **49 operaciones** v1 (51 totales con `GET /` y `/health`), las 5 nuevas aditivas con 401/403/404 (+409/422 en escrituras) — `evidencia/README.md` §4.
 - [x] **AC-18** La autorización resuelve en dos pasos, y ninguno revela existencia: (a) SI la
       operación no concede el rol —p. ej. un Solicitante que intenta rechazar, o el Superadmin
       que intenta escribir—, ENTONCES responde 403 por la matriz (AC-17), **antes** de
@@ -506,7 +506,7 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
       DADO una instalación existente, ENTONCES la migración operacional idempotente bajo
       `database/migraciones/` lo añade sin pérdida de datos, es re-ejecutable sin cambios y
       eleva el token de versión de control y de cada tenant existente a `013.1`.
-  - **Evidencia:** gated `backend/tests/test_ciclo_vida_ticket_postgres_013.py` (7/7 en verde contra PG 16 sobre base desechable): `test_instalacion_nueva_replica_anulado_e_historial_en_control_y_tenants`, `test_instalacion_nueva_no_siembra_historial_fabricado`, `test_migracion_013_transiciona_012_1_preservando_datos_sin_fabricar_historial`, `test_migracion_013_es_idempotente`, `test_migracion_013_aborta_ante_estructura_parcial_sin_marcar_version`; estado real de `apt_erp` en `evidencia/README.md` §1 (versión `013.1`, quinta fila `Anulado`, respaldo previo `respaldos/apt_erp_pre_013.dump`).
+  - **Evidencia:** gated `backend/tests/funcional/sistema/test_ciclo_vida_ticket_postgres_013.py` (7/7 en verde contra PG 16 sobre base desechable): `test_instalacion_nueva_replica_anulado_e_historial_en_control_y_tenants`, `test_instalacion_nueva_no_siembra_historial_fabricado`, `test_migracion_013_transiciona_012_1_preservando_datos_sin_fabricar_historial`, `test_migracion_013_es_idempotente`, `test_migracion_013_aborta_ante_estructura_parcial_sin_marcar_version`; estado real de `apt_erp` en `evidencia/README.md` §1 (versión `013.1`, quinta fila `Anulado`, respaldo previo `respaldos/apt_erp_pre_013.dump`).
 - [x] **AC-21** Solo se enrutan tenants cuya versión es exactamente `013.1`; una versión
       distinta, ausente o duplicada deniega cerrado (patrón 010/011/012) y el catálogo
       replicado de todo tenant enrutado contiene el estado `Anulado` presente.
@@ -518,7 +518,7 @@ tablero de solo lectura no lo invoca y su contrato no cambia.
       nombre canónico es `Cerrado` o `Anulado` (resolución por nombre, sin ids fijos): un
       ticket anulado no cuenta como activo para ningún rol; el resto de los KPI, el log de
       alertas y el ámbito por rol no cambian.
-  - **Evidencia:** `backend/tests/api/test_ciclo_vida_dashboard_013.py` — `test_kpi_tickets_activos_excluye_anulado_por_nombre_ac_22`, `test_kpi_del_solicitante_no_cuenta_sus_anulados_ac_22` y `test_kpi_resto_del_dashboard_intacto_ac_22`; recorrido `evidencia/README.md` §3.3 #25 (`tickets_activos=3` para el Solicitante, contrastado con SQL por estado).
+  - **Evidencia:** `backend/tests/funcional/integracion/test_ciclo_vida_dashboard_013.py` — `test_kpi_tickets_activos_excluye_anulado_por_nombre_ac_22`, `test_kpi_del_solicitante_no_cuenta_sus_anulados_ac_22` y `test_kpi_resto_del_dashboard_intacto_ac_22`; recorrido `evidencia/README.md` §3.3 #25 (`tickets_activos=3` para el Solicitante, contrastado con SQL por estado).
 
 ### Interfaz
 
@@ -586,7 +586,7 @@ capacidad de priorizar.
       catálogo; el backend responde **409** si el `estado_id` no es `Pendiente` (o si el catálogo
       no lo contiene) y **201** con `Pendiente` en el resto de casos, sin sellar `fecha_cierre`
       jamás en el alta.
-  - **Evidencia:** `backend/tests/api/test_ciclo_vida_alta_inicial_013.py` (409 en `EnRevision`/`EnCurso`/`Cerrado`/`Anulado` sin efectos, 201 con `Pendiente` y `fecha_cierre` nula con `PATCH /estado` posterior intacto, 409 con catálogo sin `Pendiente`, 404 con id inexistente —la referencia precede a la regla—, 422 sin `estado_id` y resolución por nombre con `Pendiente` fuera de la primera posición) + ajustes en `test_tablero_kanban.py`/`test_ciclo_vida_flujo_013.py`/`test_ticket_sede_011.py` y `test_modal_ticket.py`; `frontend/src/app/features/tickets/tickets.component.spec.ts` (estado fijo sin selector, resolución por nombre en catálogo hostil, `Media` predeterminada y cambiable, vuelta a los valores por defecto tras crear); recorrido `evidencia/README.md` §9 «Enmienda post-cierre (05/Nov/2026)» en 4200 y humo 8080 reconstruido.
+  - **Evidencia:** `backend/tests/funcional/integracion/test_ciclo_vida_alta_inicial_013.py` (409 en `EnRevision`/`EnCurso`/`Cerrado`/`Anulado` sin efectos, 201 con `Pendiente` y `fecha_cierre` nula con `PATCH /estado` posterior intacto, 409 con catálogo sin `Pendiente`, 404 con id inexistente —la referencia precede a la regla—, 422 sin `estado_id` y resolución por nombre con `Pendiente` fuera de la primera posición) + ajustes en `test_tablero_kanban.py`/`test_ciclo_vida_flujo_013.py`/`test_ticket_sede_011.py` y `test_modal_ticket.py`; `frontend/src/app/features/tickets/tickets.component.spec.ts` (estado fijo sin selector, resolución por nombre en catálogo hostil, `Media` predeterminada y cambiable, vuelta a los valores por defecto tras crear); recorrido `evidencia/README.md` §9 «Enmienda post-cierre (05/Nov/2026)» en 4200 y humo 8080 reconstruido.
 
 ## 8. Restricciones
 
@@ -616,7 +616,7 @@ capacidad de priorizar.
   la resolución por nombre canónico: `Cerrado` y `Anulado` son terminales por nombre y ninguno
   admite transición de salida vía `PATCH /estado` (409) en **cualquier** catálogo (AC-26). Su
   test degenerado `test_reentrar_en_cerrado_conserva_la_fecha_original`
-  (`backend/tests/api/test_tablero_kanban.py`), que exige `Cerrado → Archivado` = 200 cuando
+  (`backend/tests/funcional/integracion/test_tablero_kanban.py`), que exige `Cerrado → Archivado` = 200 cuando
   `Cerrado` no es el último del catálogo, queda derogado: esa petición responde hoy 409. El
   resto de la 004 —flujo lineal entre operativos, orden de validación ticket→estado→flujo,
   sellado de `fecha_cierre` y cierre reservado al despacho (005)— permanece intacto. La 004 se

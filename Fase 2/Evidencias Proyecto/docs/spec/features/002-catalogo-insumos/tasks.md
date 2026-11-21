@@ -78,7 +78,7 @@ frontend **12 tests en verde** (4 previos + 8 nuevos) · `npm run build` compila
 
 ## Fase C — Tests backend
 
-- [x] Crear `backend/tests/api/test_catalogo_consulta.py`
+- [x] Crear `backend/tests/funcional/integracion/test_catalogo_consulta.py`
 - [x] Fixture `datos_catalogo` (2 categorías, 2 departamentos, 5 insumos con los casos
       borde del `plan.md` §5.1). **Sin ids fijos** salvo `institucion_id="INST01"`
 - [x] `test_existencias_responde_200` (AC-1)
@@ -107,7 +107,7 @@ frontend **12 tests en verde** (4 previos + 8 nuevos) · `npm run build` compila
 | Prueba | Resultado |
 |---|---|
 | `pytest` antes de la Fase A (test en rojo) | 17 fallos, todos por `assert 404 == 200` — la ruta, no un error de colección |
-| `pytest tests/api/test_catalogo_consulta.py` | 17 en verde |
+| `pytest tests/funcional/integracion/test_catalogo_consulta.py` | 17 en verde |
 | `pytest` completo | **43 en verde** = 25 previos + 17 + 1 |
 | Mutación: quitar el `outerjoin` de `Inventario` | 5 fallos → el test de AC-4 (y 4 más) muerden |
 | Mutación: cambiar `<=` por `<` en `es_stock_critico` | 2 fallos → el de la frontera muerde |

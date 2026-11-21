@@ -34,8 +34,8 @@ T1  línea base + inventario de referencias
 | `docs/spec/features/026-salud-esquema-bd/plan.md` | Este plan |
 | `docs/spec/features/026-salud-esquema-bd/tasks.md` | Checklist de ejecución |
 | `docs/spec/features/026-salud-esquema-bd/evidencia/README.md` | Evidencia de cierre |
-| `backend/tests/test_salud_esquema_026.py` | Paridad ORM, constraints y B2 en SQLite |
-| `backend/tests/test_salud_esquema_postgres_026.py` | Gated: instalación limpia, índices, constraints y versión única |
+| `backend/tests/funcional/sistema/test_salud_esquema_026.py` | Paridad ORM, constraints y B2 en SQLite |
+| `backend/tests/funcional/sistema/test_salud_esquema_postgres_026.py` | Gated: instalación limpia, índices, constraints y versión única |
 
 > No se crean archivos de migración. No se crean endpoints ni componentes nuevos.
 
@@ -586,23 +586,23 @@ Línea 163:
 
 | Archivo | Cambio |
 |---|---|
-| `tests/services/test_dashboard_service.py` | Eliminar la población legada; ajustar la actividad a solo sede |
-| `tests/api/test_dashboard_analitico.py` | Ajustar conteos y campos de la actividad |
-| `tests/api/test_dashboard_sede_011.py` | Quitar `inventario_id` de los movimientos |
-| `tests/test_historial_movimientos.py` | Quitar la prueba de la unión legada; conservar la de movimientos por sede |
-| `tests/models/test_modelo_sede_011.py` | Reemplazar `Inventario` por `StockSede`; `stock_sede_id` obligatorio |
-| `tests/test_modelo_particionamiento.py` | Ajustar conteos 27/24 → 26/23 y tablas |
-| `tests/test_esquema_postgres.py` | Ajustar conteos y lista de tablas |
-| `tests/test_ciclo_vida_catalogo_014.py` | Ajustar referencias a `inventario` |
-| `tests/test_ambito_institucional_008.py` | Reemplazar `Inventario` por `StockSede` |
-| `tests/api/test_ambito_institucional.py` | Reemplazar `Inventario` por `StockSede` |
-| `tests/api/test_detalle_producto_019.py` | Ajustar movimientos a `stock_sede_id` |
-| `tests/test_lectura_global_tickets_011.py` | Ajustar movimientos |
-| `tests/api/test_tickets_alcance.py` / `test_tickets_institucional.py` | Si crean `Inventario`, migrar a `StockSede` |
-| `tests/test_integracion_multitenant_010.py` | Ajustar `VersionEsquema` y tablas; agregar `stock_sede_id` |
-| `tests/test_dependencias_024.py` | No cambia (no hay dependencia nueva) |
+| `tests/funcional/integracion/test_dashboard_service.py` | Eliminar la población legada; ajustar la actividad a solo sede |
+| `tests/funcional/integracion/test_dashboard_analitico.py` | Ajustar conteos y campos de la actividad |
+| `tests/funcional/integracion/test_dashboard_sede_011.py` | Quitar `inventario_id` de los movimientos |
+| `tests/funcional/integracion/test_historial_movimientos.py` | Quitar la prueba de la unión legada; conservar la de movimientos por sede |
+| `tests/funcional/unitarios/test_modelo_sede_011.py` | Reemplazar `Inventario` por `StockSede`; `stock_sede_id` obligatorio |
+| `tests/funcional/unitarios/test_modelo_particionamiento.py` | Ajustar conteos 27/24 → 26/23 y tablas |
+| `tests/funcional/sistema/test_esquema_postgres.py` | Ajustar conteos y lista de tablas |
+| `tests/funcional/integracion/test_ciclo_vida_catalogo_014.py` | Ajustar referencias a `inventario` |
+| `tests/funcional/integracion/test_ambito_institucional_008.py` | Reemplazar `Inventario` por `StockSede` |
+| `tests/funcional/integracion/test_ambito_institucional.py` | Reemplazar `Inventario` por `StockSede` |
+| `tests/funcional/integracion/test_detalle_producto_019.py` | Ajustar movimientos a `stock_sede_id` |
+| `tests/funcional/integracion/test_lectura_global_tickets_011.py` | Ajustar movimientos |
+| `tests/funcional/integracion/test_tickets_alcance.py` / `test_tickets_institucional.py` | Si crean `Inventario`, migrar a `StockSede` |
+| `tests/funcional/sistema/test_integracion_multitenant_010.py` | Ajustar `VersionEsquema` y tablas; agregar `stock_sede_id` |
+| `tests/funcional/unitarios/test_dependencias_024.py` | No cambia (no hay dependencia nueva) |
 
-### 10.3 Nuevo `tests/test_salud_esquema_026.py`
+### 10.3 Nuevo `tests/funcional/sistema/test_salud_esquema_026.py`
 
 Cubrir:
 
@@ -624,15 +624,15 @@ Ningún test debe relajar una constraint para pasar. Si un fixture choca con una
 
 | Archivo | Cambio |
 |---|---|
-| `tests/test_instalacion_limpia_postgres.py` | 26/23 tablas, `026.0`, 0 `inventario`, 14 saldos, 3 movimientos, 45/12 |
-| `tests/test_cobertura_postgres_021.py` | Ajustar la cobertura de tablas e índices; agregar los 15 P0 |
-| `tests/test_control_instituciones_010.py` | Los tenants aprovisionados en caliente deben tener 23 tablas y los 15 índices |
-| `tests/test_ciclo_vida_catalogo_postgres_014.py` | Ajustar conteos y cualquier `Inventario` |
-| `tests/test_compras_postgres_020.py` | Ajustar RUTs duplicados si usa formatos equivalentes |
-| `tests/test_bootstrap_control_postgres_010.py` | Ajustar conteos/versión |
-| `tests/test_esquema_postgres.py` | Ajustar 26/23 |
+| `tests/funcional/sistema/test_instalacion_limpia_postgres.py` | 26/23 tablas, `026.0`, 0 `inventario`, 14 saldos, 3 movimientos, 45/12 |
+| `tests/funcional/sistema/test_cobertura_postgres_021.py` | Ajustar la cobertura de tablas e índices; agregar los 15 P0 |
+| `tests/funcional/integracion/test_control_instituciones_010.py` | Los tenants aprovisionados en caliente deben tener 23 tablas y los 15 índices |
+| `tests/funcional/sistema/test_ciclo_vida_catalogo_postgres_014.py` | Ajustar conteos y cualquier `Inventario` |
+| `tests/funcional/sistema/test_compras_postgres_020.py` | Ajustar RUTs duplicados si usa formatos equivalentes |
+| `tests/funcional/sistema/test_bootstrap_control_postgres_010.py` | Ajustar conteos/versión |
+| `tests/funcional/sistema/test_esquema_postgres.py` | Ajustar 26/23 |
 
-### 11.2 Nuevo `tests/test_salud_esquema_postgres_026.py`
+### 11.2 Nuevo `tests/funcional/sistema/test_salud_esquema_postgres_026.py`
 
 Con `POSTGRES_TEST_URL` y base temporal desechable (nunca `apt_erp`):
 
@@ -844,15 +844,15 @@ Crear `evidencia/README.md` con:
 
 | Archivo | Tipo | Qué cubre |
 |---|---|---|
-| `tests/test_salud_esquema_026.py` | SQLite | ORM, índices, checks, B2, DTOs |
-| `tests/test_salud_esquema_postgres_026.py` | Gated PG | Instalación limpia, índices reales, constraints, versión única |
-| `tests/test_instalacion_limpia_postgres.py` | Gated PG | Conteos y semilla |
-| `tests/test_cobertura_postgres_021.py` | Gated PG | Cobertura de tablas/índices |
-| `tests/test_control_instituciones_010.py` | Gated PG | Tenants aprovisionados en caliente |
-| `tests/services/test_dashboard_service.py` | SQLite | Actividad sin legado |
-| `tests/api/test_dashboard_analitico.py` | SQLite | Contrato de dashboard |
-| `tests/test_historial_movimientos.py` | SQLite | Historial por sede |
-| `tests/models/test_modelo_sede_011.py` | SQLite | `stock_sede_id` obligatorio |
+| `tests/funcional/sistema/test_salud_esquema_026.py` | SQLite | ORM, índices, checks, B2, DTOs |
+| `tests/funcional/sistema/test_salud_esquema_postgres_026.py` | Gated PG | Instalación limpia, índices reales, constraints, versión única |
+| `tests/funcional/sistema/test_instalacion_limpia_postgres.py` | Gated PG | Conteos y semilla |
+| `tests/funcional/sistema/test_cobertura_postgres_021.py` | Gated PG | Cobertura de tablas/índices |
+| `tests/funcional/integracion/test_control_instituciones_010.py` | Gated PG | Tenants aprovisionados en caliente |
+| `tests/funcional/integracion/test_dashboard_service.py` | SQLite | Actividad sin legado |
+| `tests/funcional/integracion/test_dashboard_analitico.py` | SQLite | Contrato de dashboard |
+| `tests/funcional/integracion/test_historial_movimientos.py` | SQLite | Historial por sede |
+| `tests/funcional/unitarios/test_modelo_sede_011.py` | SQLite | `stock_sede_id` obligatorio |
 | `frontend/.../dashboard.service.spec.ts` | Karma | Mock sin campos legados |
 
 ### 17.2 Aislamiento

@@ -13,7 +13,7 @@
 - [x] Confirmar con `pip show` las nueve versiones instaladas de D-8.
 - [x] Reescribir `backend/requirements.txt` con las diez dependencias y `==` (D-8 + `prometheus-client==0.26.0`).
 - [x] Instalar `-r requirements.txt` en el venv y ejecutar `pip check` sin conflictos.
-- [x] Crear `backend/tests/test_dependencias_024.py` (diez líneas, todas `==`, conjunto de versiones).
+- [x] Crear `backend/tests/funcional/unitarios/test_dependencias_024.py` (diez líneas, todas `==`, conjunto de versiones).
 - [x] Crear `docs/spec/features/024-hardening-operativo/evidencia/README.md` con la línea base.
 
 **Hecho cuando:** el test de dependencias pasa, `pip check` está limpio y no cambió ninguna versión existente fuera del pineo.
@@ -25,7 +25,7 @@
 - [x] Añadir `VERSION_APLICACION = "1.0.0"` a `backend/app/core/config.py`.
 - [x] Añadir `ALLOWED_ORIGINS`, `LOG_LEVEL` y `LOG_FORMAT` con los defaults de D-6.
 - [x] Implementar `validar_origenes` (trim, descarte de vacíos, error si queda vacío) y `origenes_permitidos`.
-- [x] Escribir `backend/tests/test_configuracion_024.py` con defaults, recorte, lista vacía y variables desconocidas.
+- [x] Escribir `backend/tests/funcional/unitarios/test_configuracion_024.py` con defaults, recorte, lista vacía y variables desconocidas.
 - [x] Ejecutar los tests focalizados de configuración.
 
 **Hecho cuando:** `Settings()` trae los dos orígenes locales, `ALLOWED_ORIGINS=""` impide construir con un mensaje que nombra la variable y los valores de log desconocidos no rompen.
@@ -53,7 +53,7 @@
 - [x] Inyectar la cabecera en `http.response.start`; usar plantilla de ruta o `unmatched`.
 - [x] Registrar una línea de acceso por petición con método, path, status y duración.
 - [x] Añadir el manejador de `Exception` con cuerpo `Internal Server Error` y `X-Request-ID`.
-- [x] Escribir `backend/tests/api/test_correlacion_024.py` (éxitos, 4xx, 404, 500, UUID entrante, dos peticiones, PII).
+- [x] Escribir `backend/tests/no_funcional/seguridad/test_correlacion_024.py` (éxitos, 4xx, 404, 500, UUID entrante, dos peticiones, PII).
 - [x] Confirmar que `/health` sigue devolviendo `{"status":"healthy"}`.
 
 **Hecho cuando:** toda respuesta de las rutas probadas lleva UUID canónico, el UUID válido se respeta, no hay fuga entre peticiones y el 500 conserva su cuerpo.
@@ -65,7 +65,7 @@
 - [x] Crear `backend/app/core/cors.py` con `CORSEstricto` (recorte de `Access-Control-Allow-Headers`).
 - [x] Cablear `CORSEstricto` en `crear_app()` con orígenes, métodos y cabeceras de D-6.
 - [x] Añadir la guarda de arranque para una lista de orígenes vacía.
-- [x] Escribir `backend/tests/api/test_cors_024.py` (default, ajeno, entorno alterno, vacío, preflight).
+- [x] Escribir `backend/tests/no_funcional/seguridad/test_cors_024.py` (default, ajeno, entorno alterno, vacío, preflight).
 - [x] Verificar que métodos y cabeceras del preflight son exactamente los declarados y que no hay `*`.
 
 **Hecho cuando:** el default permite 4200/8080, el origen ajeno no recibe ACAO, el entorno alterno se aplica y el preflight devuelve las listas exactas.
@@ -80,7 +80,7 @@
 - [x] Crear `backend/app/api/operativo.py` con `/ready` fuera de OpenAPI (`/metrics` se añade en T7).
 - [x] Incluir `router_operativo` en `crear_app()`.
 - [x] Añadir el override de `obtener_motor_readiness` en `backend/tests/conftest.py`.
-- [x] Escribir `backend/tests/api/test_salud_024.py` (200, 503 saneado, log correlacionado, `/health` sin base, timeout configurado).
+- [x] Escribir `backend/tests/funcional/humo/test_salud_024.py` (200, 503 saneado, log correlacionado, `/health` sin base, timeout configurado).
 
 **Hecho cuando:** `/ready` responde 200 con SQLite y 503 sin detalle con un motor caído; `/health` sigue 200 y documentado; ninguna de las dos rutas operativas entra en OpenAPI.
 
@@ -91,9 +91,9 @@
 - [x] Crear `backend/app/core/metricas.py` con registro propio, cinco familias y `RUTA_NO_RESUELTA`.
 - [x] Instrumentar el middleware: contador, histograma, gauge en vuelo y errores; omitir `/metrics`.
 - [x] Exponer `/metrics` con `generate_latest` y `CONTENT_TYPE_LATEST`.
-- [x] Escribir `backend/tests/soporte_observabilidad_024.py` (parser, lector de series, fake de motor).
-- [x] Escribir `backend/tests/api/test_metricas_024.py` (cinco familias, etiquetas, plantilla, ruta desconocida, no autoinstrumentación, app_info).
-- [x] Escribir `backend/tests/api/test_contrato_024.py` (75/73, `/metrics` y `/ready` fuera, `/health` sin security).
+- [x] Escribir `backend/tests/funcional/integracion/soporte_observabilidad_024.py` (parser, lector de series, fake de motor).
+- [x] Escribir `backend/tests/no_funcional/rendimiento/test_metricas_024.py` (cinco familias, etiquetas, plantilla, ruta desconocida, no autoinstrumentación, app_info).
+- [x] Escribir `backend/tests/funcional/unitarios/test_contrato_024.py` (75/73, `/metrics` y `/ready` fuera, `/health` sin security).
 
 **Hecho cuando:** las cinco familias se parsean, la etiqueta `route` es plantilla, `/metrics` no se cuenta a sí mismo, no hay datos sensibles y el contrato sigue en 75/73.
 

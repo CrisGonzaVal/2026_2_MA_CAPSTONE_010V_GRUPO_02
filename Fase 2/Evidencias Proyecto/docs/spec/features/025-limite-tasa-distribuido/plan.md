@@ -5,7 +5,7 @@
 **Enfoque:** trece tareas secuenciales; cada una deja la suite en verde y no toca el contrato de negocio.
 **Regla:** no se reabre ninguna feature anterior. No cambia ningún archivo bajo `frontend/`, ni
 `database/`, ni `backend/app/models/**`, ni `permisos.py`. El único archivo preexistente de
-prueba que cambia por la dependencia nueva es `tests/test_dependencias_024.py`; además,
+prueba que cambia por la dependencia nueva es `tests/funcional/unitarios/test_dependencias_024.py`; además,
 `tests/conftest.py` apaga el limitador para la suite heredada.
 
 ## 1. Orden de ejecución
@@ -38,13 +38,13 @@ no cambian código. T13 no cierra nada que T9–T12 no hayan verificado.
 |---|---|
 | `backend/app/core/limite_tasa.py` | Constantes, script Lua, resolución de IP, protocolo de almacén y `AlmacenRedis`. |
 | `backend/app/middleware/limite_tasa.py` | Middleware ASGI que decide y emite el 429. |
-| `backend/tests/soporte_limite_tasa_025.py` | `AlmacenFalso`, reloj controlable y fábricas de app con límite. |
-| `backend/tests/test_configuracion_025.py` | Defaults y validaciones de `Settings`. |
-| `backend/tests/test_limite_tasa_unidad_025.py` | IP, alcance de ruta, preflight y semántica del limitador con el falso. |
-| `backend/tests/api/test_limite_tasa_025.py` | Conteo, 429, cabeceras, CORS, alcance y estado compartido. |
-| `backend/tests/api/test_limite_tasa_failopen_025.py` | Fail-open, aviso único y `/ready` intacto. |
-| `backend/tests/api/test_metricas_limite_tasa_025.py` | Familia nueva y `route="rate_limited"`. |
-| `backend/tests/test_limite_tasa_redis_025.py` | Suite *gated* con `REDIS_TEST_URL`. |
+| `backend/tests/no_funcional/rendimiento/soporte_limite_tasa_025.py` | `AlmacenFalso`, reloj controlable y fábricas de app con límite. |
+| `backend/tests/funcional/unitarios/test_configuracion_025.py` | Defaults y validaciones de `Settings`. |
+| `backend/tests/funcional/unitarios/test_limite_tasa_unidad_025.py` | IP, alcance de ruta, preflight y semántica del limitador con el falso. |
+| `backend/tests/no_funcional/rendimiento/test_limite_tasa_025.py` | Conteo, 429, cabeceras, CORS, alcance y estado compartido. |
+| `backend/tests/no_funcional/rendimiento/test_limite_tasa_failopen_025.py` | Fail-open, aviso único y `/ready` intacto. |
+| `backend/tests/no_funcional/rendimiento/test_metricas_limite_tasa_025.py` | Familia nueva y `route="rate_limited"`. |
+| `backend/tests/no_funcional/rendimiento/test_limite_tasa_redis_025.py` | Suite *gated* con `REDIS_TEST_URL`. |
 | `docs/spec/features/025-limite-tasa-distribuido/evidencia/README.md` | Evidencia de cierre. |
 
 ### 2.2 Archivos modificados
@@ -57,7 +57,7 @@ no cambian código. T13 no cierra nada que T9–T12 no hayan verificado.
 | `backend/app/middleware/observabilidad.py` | `_ruta_plantilla` devuelve `rate_limited` cuando el limitador marcó el rechazo. |
 | `backend/app/main.py` | `crear_app(cliente_limite=None)`, cableado y orden de capas. |
 | `backend/tests/conftest.py` | Apaga el limitador en el singleton antes de importar `app.main`. |
-| `backend/tests/test_dependencias_024.py` | 10 → 11 dependencias; nombre y docstring. |
+| `backend/tests/funcional/unitarios/test_dependencias_024.py` | 10 → 11 dependencias; nombre y docstring. |
 | `backend/requirements.txt` | `redis==8.1.0`. |
 | `docker-compose.yml` | Servicio `redis` y cinco variables en `backend`. |
 | `docs/spec/stack.md` | Nuevo apartado §1.2. |
@@ -103,7 +103,7 @@ transitivas obligatorias en 3.11.3/3.12. No se instala `hiredis` ni `fakeredis`.
 .venv/Scripts/python.exe -m pip check
 ```
 
-### 3.3 `backend/tests/test_dependencias_024.py`
+### 3.3 `backend/tests/funcional/unitarios/test_dependencias_024.py`
 
 La prueba de la feature cerrada cambia **solo el conteo y el conjunto**:
 
@@ -169,7 +169,7 @@ encendido: apagarlo permite arrancar con una URL cualquiera sin abrir conexiones
 
 ### 4.2 Pruebas
 
-`backend/tests/test_configuracion_025.py`, con `monkeypatch.delenv` de las cinco variables
+`backend/tests/funcional/unitarios/test_configuracion_025.py`, con `monkeypatch.delenv` de las cinco variables
 para que un shell de verificación no altere los defaults:
 
 - `Settings()` trae `True`, `120`, `60`, `False` y `redis://127.0.0.1:6380/0`.
@@ -331,7 +331,7 @@ convertir un fail-open ni una petición permitida en un 5xx.
 
 ### 5.5 Pruebas unitarias
 
-`backend/tests/test_limite_tasa_unidad_025.py`:
+`backend/tests/funcional/unitarios/test_limite_tasa_unidad_025.py`:
 
 - `resolver_ip` sin confianza ignora `X-Real-IP`; con confianza usa una IPv4 y una IPv6
   válidas; `abc`, `1.2.3.4:80` y `"1.1.1.1, 2.2.2.2"` caen al par; sin par devuelve
@@ -461,7 +461,7 @@ cardinalidad. `unmatched` se conserva para las rutas desconocidas.
 
 ### 6.5 Pruebas
 
-`backend/tests/api/test_limite_tasa_025.py`, con `crear_app(cliente_limite=falso)` y
+`backend/tests/no_funcional/rendimiento/test_limite_tasa_025.py`, con `crear_app(cliente_limite=falso)` y
 `monkeypatch` sobre el singleton para máximo/ventana:
 
 - **AC-2:** máximo 3; tres peticiones a `/api/v1/auth/me` devuelven 401 (sin Bearer) y la
@@ -546,7 +546,7 @@ excepción ni traza. El aviso es por instancia de limitador y, por tanto, por pr
 
 ### 7.3 Pruebas
 
-`backend/tests/api/test_limite_tasa_failopen_025.py`:
+`backend/tests/no_funcional/rendimiento/test_limite_tasa_failopen_025.py`:
 
 - **AC-9:** con `AlmacenFalso(error=ConnectionError("..."))`, 20 peticiones a `/api/v1/auth/me`
   devuelven 401 (ni 429 ni 5xx), la serie `resultado="error"` incrementa 20 y se emite **un**
@@ -586,8 +586,8 @@ instrumentación sea best-effort, igual que en el middleware de la 024.
 
 ### 8.2 Pruebas
 
-`backend/tests/api/test_metricas_limite_tasa_025.py`, con el parser de
-`tests/soporte_observabilidad_024.py`:
+`backend/tests/no_funcional/rendimiento/test_metricas_limite_tasa_025.py`, con el parser de
+`tests/funcional/integracion/soporte_observabilidad_024.py`:
 
 - **AC-12:** lectura antes/después de una petición permitida y una rechazada; las series
   `{resultado="permitida"}` y `{resultado="limitada"}` incrementan exactamente 1. La etiqueta
@@ -684,7 +684,7 @@ escucha en loopback.
 
 ## 10. T8 — Pruebas gated contra Redis real
 
-`backend/tests/test_limite_tasa_redis_025.py`:
+`backend/tests/no_funcional/rendimiento/test_limite_tasa_redis_025.py`:
 
 ```python
 URL = os.environ.get("REDIS_TEST_URL")
@@ -715,7 +715,7 @@ Comando:
 ```powershell
 $env:REDIS_TEST_URL = "redis://127.0.0.1:6380/15"
 cd backend
-.venv/Scripts/python.exe -m pytest tests/test_limite_tasa_redis_025.py -q
+.venv/Scripts/python.exe -m pytest tests/no_funcional/rendimiento/test_limite_tasa_redis_025.py -q
 ```
 
 **Hecho cuando:** la suite gated pasa con Redis arriba y se omite limpiamente sin la variable.
@@ -876,15 +876,15 @@ AC y el commit contiene solo los archivos de la feature.
 
 | Archivo | ACs |
 |---|---|
-| `tests/test_dependencias_024.py` | AC-22 |
-| `tests/test_configuracion_025.py` | AC-14 |
-| `tests/test_limite_tasa_unidad_025.py` | AC-5, AC-6 |
-| `tests/api/test_limite_tasa_025.py` | AC-2, AC-3, AC-5, AC-6, AC-7, AC-8, AC-14 (apagado), AC-15 |
-| `tests/api/test_limite_tasa_failopen_025.py` | AC-9, AC-10, AC-11 |
-| `tests/api/test_metricas_limite_tasa_025.py` | AC-12, AC-13 |
-| `tests/test_limite_tasa_redis_025.py` | AC-4, AC-16 |
+| `tests/funcional/unitarios/test_dependencias_024.py` | AC-22 |
+| `tests/funcional/unitarios/test_configuracion_025.py` | AC-14 |
+| `tests/funcional/unitarios/test_limite_tasa_unidad_025.py` | AC-5, AC-6 |
+| `tests/no_funcional/rendimiento/test_limite_tasa_025.py` | AC-2, AC-3, AC-5, AC-6, AC-7, AC-8, AC-14 (apagado), AC-15 |
+| `tests/no_funcional/rendimiento/test_limite_tasa_failopen_025.py` | AC-9, AC-10, AC-11 |
+| `tests/no_funcional/rendimiento/test_metricas_limite_tasa_025.py` | AC-12, AC-13 |
+| `tests/no_funcional/rendimiento/test_limite_tasa_redis_025.py` | AC-4, AC-16 |
 
-`tests/soporte_limite_tasa_025.py` (helper, no test) concentra:
+`tests/no_funcional/rendimiento/soporte_limite_tasa_025.py` (helper, no test) concentra:
 
 - `AlmacenFalso`: contadores por clave, expiración con reloj propio, `avanzar(segundos)`,
   `error` programable, `llamadas` y `cerrar()` no-op;

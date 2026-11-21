@@ -95,9 +95,9 @@ dentro de `auth_service.py`, cuyo proposito documentado es emitir JWT (Feature 0
 ## Fase C — Tests
 
 - [x] Crear `requirements-dev.txt` con `pytest`, `httpx`
-- [x] Crear `tests/__init__.py`, `tests/api/__init__.py`
+- [x] Crear `tests/__init__.py`, `tests/funcional/integracion/__init__.py`
 - [x] Crear `tests/conftest.py` — sesión SQLite en memoria + `TestClient`
-- [x] Crear `tests/api/test_smoke.py` — los 15 endpoints responden
+- [x] Crear `tests/funcional/humo/test_smoke.py` — los 15 endpoints responden
 - [x] Crear test de ACID: error en el 2º detalle no deja ticket huérfano
 - [x] `cd backend && pytest` en verde (AC-7)
 
@@ -131,7 +131,7 @@ La Feature 001 **no lo corrige** porque su mandato es reordenar codigo sin
 cambiar el contrato (AC-2), y un 500 -> 400 es un cambio de comportamiento que
 corresponde a la feature que implemente la validacion del requerimiento.
 Queda registrado en
-`tests/api/test_smoke.py::test_ticket_con_producto_inexistente_responde_500_defecto_conocido`
+`tests/funcional/humo/test_smoke.py::test_ticket_con_producto_inexistente_responde_500_defecto_conocido`
 y en los 3 tests de `test_transaccion_ticket.py` que dependen de el. Cuando se
 corrija, esos 4 tests deben pasar a 400.
 

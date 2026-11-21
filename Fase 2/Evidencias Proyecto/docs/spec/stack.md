@@ -208,7 +208,7 @@ backend/app/services/compra_service/
   caracterización y el contrato HTTP son la garantía.
 - **Costura privada excepcional.** `_simular_claves` se conserva en
   `necesidades.py` y se reexporta porque `ticket_service` y
-  `tests/api/test_cobertura_021.py` lo consumen como `compra_service._simular_claves`; es una
+  `tests/funcional/integracion/test_cobertura_021.py` lo consumen como `compra_service._simular_claves`; es una
   excepción documentada, no una invitación a exportar privados nuevos.
 
 #### Autorización por rol (Feature 007)

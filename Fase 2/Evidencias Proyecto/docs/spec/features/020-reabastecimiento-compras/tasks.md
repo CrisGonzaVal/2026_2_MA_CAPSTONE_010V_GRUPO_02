@@ -96,7 +96,7 @@
 
 ### T4 — Servicio de compras — Parte 1: catálogo, necesidades y CRUD de OC
 **AC cubre:** AC-1, AC-2, AC-3, AC-4, AC-5, AC-12  
-**Archivos:** `backend/app/services/compra_service.py`, `backend/tests/api/test_compras.py` (sección T4)
+**Archivos:** `backend/app/services/compra_service.py`, `backend/tests/funcional/integracion/test_compras.py` (sección T4)
 
 - [x] Tests primero (rojo): necesidades, alta de proveedor (Admin/Superadmin/RUT duplicado), crear OC, editar borrador, emitir, factura (alta/edición/duplicado/futura), cancelar (actor/fecha/motivo), producto inactivo.
 - [x] `listar_necesidades_reabastecimiento(db, institucion_id, sede_id=None)` — agrupa por `(sede, producto)`, solo productos activos y tickets `EnCurso`; `sugerido = max(0, stock_minimo + demanda - stock_actual)`; `sede_id` ajeno → `[]`.
@@ -115,7 +115,7 @@
 
 ### T5 — Servicio de compras — Parte 2: recepción ACID y cobertura de tickets
 **AC cubre:** AC-7, AC-8, AC-9, AC-10, AC-11  
-**Archivos:** `backend/app/services/compra_service.py` (continuación), `backend/app/services/ticket_service.py`, `backend/tests/api/test_compras.py` (sección T5)
+**Archivos:** `backend/app/services/compra_service.py` (continuación), `backend/app/services/ticket_service.py`, `backend/tests/funcional/integracion/test_compras.py` (sección T5)
 
 - [x] Tests primero (rojo): recepción exitosa, sin factura, concurrente (gated), producto inactivo, prioridad/FIFO, ticket que no cabe completo, fila de historial, creación de fila de stock.
 - [x] `calcular_cobertura_tickets(db, sede_id, producto_ids=None)` — solo `EnCurso`; orden `prioridad_id ASC`, `fecha_creacion ASC`, `ticket_id ASC`; asignación por producto y todo o nada por ticket.
@@ -147,7 +147,7 @@
 
 **Hecho cuando:** `pytest` pasa; `/openapi.json` lista las 10 operaciones; 403 correcto para todos los roles no autorizados; la matriz tiene 72 entradas.
 
-**Evidencia (03/Nov/2026):** `tests/api/test_compras_endpoints_020.py` **26/26** en verde; matriz **72** y `/openapi.json` publica las 10 rutas; suite SQLite completa **1447 passed, 83 skipped**; gated 020 **6/6**. En SQLite la ausencia de réplica del Superadmin no es observable (control y tenant comparten la tabla física `proveedor`); esa evidencia queda en el gated `test_administrador_replica_y_superadmin_no_replica`.
+**Evidencia (03/Nov/2026):** `tests/funcional/integracion/test_compras_endpoints_020.py` **26/26** en verde; matriz **72** y `/openapi.json` publica las 10 rutas; suite SQLite completa **1447 passed, 83 skipped**; gated 020 **6/6**. En SQLite la ausencia de réplica del Superadmin no es observable (control y tenant comparten la tabla física `proveedor`); esa evidencia queda en el gated `test_administrador_replica_y_superadmin_no_replica`.
 
 ---
 

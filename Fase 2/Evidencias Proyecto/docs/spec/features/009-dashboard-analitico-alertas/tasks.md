@@ -7,28 +7,28 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
 ## Tareas de implementación
 
 - [x] **T1 — Especificar pruebas HTTP de contrato, permisos y casos base**
-  - Archivos: `backend/tests/api/test_dashboard_analitico.py` (nuevo), `backend/tests/api/test_permisos_endpoints.py`.
+  - Archivos: `backend/tests/funcional/integracion/test_dashboard_analitico.py` (nuevo), `backend/tests/no_funcional/seguridad/test_permisos_endpoints.py`.
   - Escribir primero casos rojos para GET consolidado, response model/status, sin datos, roles permitidos, Solicitante sin actividad y mantenimiento de 403 en `/inventario/movimientos`; ampliar matriz independiente de referencia.
   - **AC:** AC-10, AC-13, AC-14.
   - **Verificación:** las pruebas nuevas fallan solo por la ruta/contrato todavía inexistentes (no por imports, fixture inválido ni errores de sintaxis).
   - **Hecho cuando:** el conjunto rojo fija ruta, roles, 200/401/403 y el no cambio del permiso vigente de movimientos.
 
 - [x] **T2 — Probar primero reglas de KPI y filas críticas**
-  - Archivos: `backend/tests/api/test_dashboard_analitico.py`.
+  - Archivos: `backend/tests/funcional/integracion/test_dashboard_analitico.py`.
   - Cubrir unidades totales, tickets excluidos solo por nombre literal «Cerrado», departamentos contados por PK incluso sin inventario, filas críticas M-1/M/M+1/min=0, homónimos y ausencia de producto sin inventario.
   - **AC:** AC-1, AC-2, AC-3, AC-4.
   - **Verificación:** pytest rojo por ausencia del servicio/endpoint, con fixtures válidas y expectativas observables por HTTP.
   - **Hecho cuando:** cada borde del conteo está representado por datos semilla diferenciables sin IDs fijos.
 
 - [x] **T3 — Probar primero aislamiento, atribución y cambio de umbral sin alertas persistidas**
-  - Archivos: `backend/tests/api/test_dashboard_analitico.py`, `backend/tests/conftest.py` solo si se requieren fixtures reutilizables adicionales.
+  - Archivos: `backend/tests/funcional/integracion/test_dashboard_analitico.py`, `backend/tests/conftest.py` solo si se requieren fixtures reutilizables adicionales.
   - Cubrir dos instituciones, homónimos, filtros de los cuatro roles, ámbito irresoluble 403, lista KPI-alertas idéntica, cruce del umbral por movimiento real y conteo/auditoría sin filas de alerta duplicadas. Comprobar que el escalar global de unidades puede sumar instituciones, y que filas de alerta/actividad conservan atribución.
   - **AC:** AC-5, AC-7, AC-8, AC-11, AC-12, AC-13.
   - **Verificación:** casos rojos con assertions contra respuesta HTTP y conteos auditables; ninguna prueba depende de que SQLite acredite una constraint PostgreSQL no relacionada.
   - **Hecho cuando:** todas las garantías multiinstitución y de ausencia de persistencia tienen una expectativa reproducible.
 
 - [x] **T4 — Probar primero actividad, límite, orden y permiso de Solicitante**
-  - Archivos: `backend/tests/api/test_dashboard_analitico.py`.
+  - Archivos: `backend/tests/funcional/integracion/test_dashboard_analitico.py`.
   - Sembrar movimientos con fechas iguales/distintas y dos instituciones. Verificar los diez más recientes en orden fecha DESC/id DESC, campos de ubicación/institución y 403 directo de Solicitante al historial existente.
   - **AC:** AC-6, AC-7, AC-10.
   - **Verificación:** pytest rojo por endpoint ausente, no por fecha o fixture; prueba directa de movimientos conserva 403 en estado actual.

@@ -79,7 +79,7 @@ prometheus-client==0.26.0
 
 ### 2.4 Test de reproducibilidad
 
-`backend/tests/test_dependencias_024.py` lee `requirements.txt` y fija:
+`backend/tests/funcional/unitarios/test_dependencias_024.py` lee `requirements.txt` y fija:
 
 - exactamente diez dependencias directas;
 - todas con `==`;
@@ -134,7 +134,7 @@ el arranque. La normalización ocurre en `core/observabilidad.py` (T3): formato 
 
 ### 3.2 Pruebas
 
-`backend/tests/test_configuracion_024.py`:
+`backend/tests/funcional/unitarios/test_configuracion_024.py`:
 
 - default de `ALLOWED_ORIGINS` → dos orígenes;
 - `" http://a , , http://b "` → `["http://a", "http://b"]`;
@@ -198,8 +198,8 @@ campos y **no** es JSON válido.
 
 ### 4.2 Pruebas
 
-`backend/tests/test_configuracion_024.py` (formato/nivel) y
-`backend/tests/api/test_correlacion_024.py` (integración):
+`backend/tests/funcional/unitarios/test_configuracion_024.py` (formato/nivel) y
+`backend/tests/no_funcional/seguridad/test_correlacion_024.py` (integración):
 
 - formatear un `LogRecord` con los nueve campos → `json.loads` correcto;
 - `FormateadorTexto` → `json.loads` falla;
@@ -288,7 +288,7 @@ respuesta.
 
 ### 5.4 Pruebas
 
-`backend/tests/api/test_correlacion_024.py`:
+`backend/tests/no_funcional/seguridad/test_correlacion_024.py`:
 
 - cabecera UUID canónica en `/`, `/health`, `/ready`, `/metrics`, una operación autenticada de
   `/api/v1`, 404, 422 y 500;
@@ -346,7 +346,7 @@ un futuro cargador.
 
 ### 6.3 Pruebas
 
-`backend/tests/api/test_cors_024.py`:
+`backend/tests/no_funcional/seguridad/test_cors_024.py`:
 
 - default: `Origin: http://localhost:4200` y `http://localhost:8080` reciben ACAO y
   `Access-Control-Allow-Credentials: true`;
@@ -434,7 +434,7 @@ Así la suite ordinaria usa SQLite en memoria y no toca PostgreSQL.
 
 ### 7.5 Pruebas
 
-`backend/tests/api/test_salud_024.py`:
+`backend/tests/funcional/humo/test_salud_024.py`:
 
 - `/health` 200 con el motor de readiness caído (se overridea a un fake que lanza
   `OperationalError`); no exige Bearer; sigue en OpenAPI sin `security`;
@@ -498,7 +498,7 @@ scrape no se cuenta a sí mismo y el gauge vuelve a 0 al terminar.
 
 ### 8.3 Pruebas
 
-`backend/tests/api/test_metricas_024.py`:
+`backend/tests/no_funcional/rendimiento/test_metricas_024.py`:
 
 - tras peticiones controladas, `/metrics` responde con `Content-Type` de Prometheus y las cinco
   familias;
@@ -518,7 +518,7 @@ es de proceso y la suite completa acumula series.
 
 ### 8.4 Contrato y matriz
 
-`backend/tests/api/test_contrato_024.py`:
+`backend/tests/funcional/unitarios/test_contrato_024.py`:
 
 - `/openapi.json` publica **75** operaciones: 73 de `/api/v1` + `/` + `/health`;
 - no contiene `/metrics` ni `/ready`;
@@ -661,15 +661,15 @@ spec D-7 deja registrado que en producción no se publica.
 
 | Archivo | Cobertura |
 |---|---|
-| `backend/tests/test_dependencias_024.py` | AC-22 (pineo) |
-| `backend/tests/test_configuracion_024.py` | AC-6, AC-17 (validación), AC-10 (config del motor) |
-| `backend/tests/api/test_correlacion_024.py` | AC-1, AC-2, AC-3, AC-4, AC-5, AC-7 (estático), AC-8 (health) |
-| `backend/tests/api/test_cors_024.py` | AC-17, AC-18 |
-| `backend/tests/api/test_salud_024.py` | AC-8, AC-9, AC-10 |
-| `backend/tests/api/test_metricas_024.py` | AC-11, AC-12, AC-13, AC-14, AC-16 |
-| `backend/tests/api/test_contrato_024.py` | AC-15, AC-23 |
+| `backend/tests/funcional/unitarios/test_dependencias_024.py` | AC-22 (pineo) |
+| `backend/tests/funcional/unitarios/test_configuracion_024.py` | AC-6, AC-17 (validación), AC-10 (config del motor) |
+| `backend/tests/no_funcional/seguridad/test_correlacion_024.py` | AC-1, AC-2, AC-3, AC-4, AC-5, AC-7 (estático), AC-8 (health) |
+| `backend/tests/no_funcional/seguridad/test_cors_024.py` | AC-17, AC-18 |
+| `backend/tests/funcional/humo/test_salud_024.py` | AC-8, AC-9, AC-10 |
+| `backend/tests/no_funcional/rendimiento/test_metricas_024.py` | AC-11, AC-12, AC-13, AC-14, AC-16 |
+| `backend/tests/funcional/unitarios/test_contrato_024.py` | AC-15, AC-23 |
 
-`backend/tests/soporte_observabilidad_024.py` (helper, no test) concentra:
+`backend/tests/funcional/integracion/soporte_observabilidad_024.py` (helper, no test) concentra:
 
 - el regex de UUID canónico;
 - un `contextmanager` que adjunta un handler `StringIO` al logger `compustock` y devuelve las

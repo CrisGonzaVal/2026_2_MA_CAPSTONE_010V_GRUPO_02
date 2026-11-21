@@ -79,7 +79,7 @@ verificación fijo `424242`):
    ordinaria (SQLite, contexto lógico único) no lo detectaba.
    **Fix:** `GET /auth/me` usa `get_db_negocio` (tenant resuelto; `control` para
    Superadmin). **Test de regresión gated:**
-   `tests/test_gestion_administrativa_http_postgres_012.py::test_auth_me_resuelve_identidad_de_tenant`
+   `tests/funcional/sistema/test_gestion_administrativa_http_postgres_012.py::test_auth_me_resuelve_identidad_de_tenant`
    (rojo sin el fix, verde con él).
 
 ## Correcciones posteriores al recorrido original

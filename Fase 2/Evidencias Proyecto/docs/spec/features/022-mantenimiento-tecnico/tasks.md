@@ -56,12 +56,12 @@
 
 ## T5 — Dedup backend de `_correo_actor` (test primero)
 
-- [x] Crear `backend/tests/services/test_auth_service.py` con los casos identidad ausente, usuario ausente y correo con espacios/mayúsculas.
+- [x] Crear `backend/tests/funcional/integracion/test_auth_service.py` con los casos identidad ausente, usuario ausente y correo con espacios/mayúsculas.
 - [x] Confirmar que el test falla antes de crear `correo_del_actor` (rojo).
 - [x] Añadir `correo_del_actor` a `backend/app/services/auth_service.py`.
 - [x] Eliminar `_correo_actor` de `backend/app/services/organizacion_service.py` y reemplazar sus llamadas.
 - [x] Eliminar `_correo_actor` de `backend/app/services/usuario_service.py` y reemplazar sus llamadas.
-- [x] Ejecutar `pytest tests/services/test_auth_service.py -q` y confirmar verde.
+- [x] Ejecutar `pytest tests/funcional/integracion/test_auth_service.py -q` y confirmar verde.
 - [x] Ejecutar `pytest -q` completo y confirmar 1496 previos + nuevos en verde, 88 skipped, 0 fallos.
 
 **Cierre T5:** una sola implementación de la regla, sin duplicados y suite completa verde. **Verificado (12/Nov/2026):** rojo inicial por `ImportError`; test focalizado 3 passed; suite completa **1499 passed, 88 skipped, 0 failed**; 0 referencias a `_correo_actor`.

@@ -9,7 +9,7 @@
 - [x] Correr `pytest` completo y registrar la línea base (**1499 passed/88 skipped**).
 - [x] Correr las suites focalizadas `test_compras.py`, `test_cobertura_021.py` y `test_compras_endpoints_020.py`.
 - [x] Correr `ng test` y confirmar **549 SUCCESS**.
-- [x] Crear `backend/tests/services/test_compra_service_estructura.py` con paquete, módulos, fachada y firmas.
+- [x] Crear `backend/tests/funcional/unitarios/test_compra_service_estructura.py` con paquete, módulos, fachada y firmas.
 - [x] Ejecutar el test nuevo y confirmar el **rojo esperado** (`compra_service` aún no tiene `__path__`).
 - [x] Registrar la 023 en `docs/spec/roadmap.md` (índice y Sprint 7 con `[ ]`, sin mover 015/016 ni el Hito 2).
 

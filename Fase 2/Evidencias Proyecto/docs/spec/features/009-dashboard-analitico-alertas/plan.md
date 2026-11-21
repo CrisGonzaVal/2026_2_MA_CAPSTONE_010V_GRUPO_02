@@ -113,8 +113,8 @@ Los nombres de archivo son técnicos y no alteran el alcance funcional aprobado.
 | `backend/app/core/permisos.py` | Añadir exclusivamente `GET /api/v1/dashboard/` para `_TODOS`; no alterar `GET /inventario/movimientos`. | AC-8…AC-11, AC-14 |
 | `backend/app/services/ambito_service.py` | Preferir reutilización directa de `alcance_institucional` y helpers existentes; modificar solo si una abstracción general necesaria se demuestra compartible y no altera las reglas 007/008. | AC-8, AC-11 |
 | `backend/app/services/inventario_service.py` | Reutilizar `es_stock_critico`; solo extraer helper de read model si evita duplicar una consulta/filtro y mantiene intactos contratos existentes. | AC-4, AC-5, AC-12 |
-| `backend/tests/api/test_dashboard_analitico.py` (nuevo) | Contrato HTTP, KPI, alertas, actividad, ámbito por rol, 403 y prueba de no persistencia de alertas. | AC-1…AC-14 |
-| `backend/tests/api/test_permisos_endpoints.py` | Actualizar matriz de referencia independiente, operación de éxito/denegación y OpenAPI para total de rutas actualizado. | AC-13, AC-14 |
+| `backend/tests/funcional/integracion/test_dashboard_analitico.py` (nuevo) | Contrato HTTP, KPI, alertas, actividad, ámbito por rol, 403 y prueba de no persistencia de alertas. | AC-1…AC-14 |
+| `backend/tests/no_funcional/seguridad/test_permisos_endpoints.py` | Actualizar matriz de referencia independiente, operación de éxito/denegación y OpenAPI para total de rutas actualizado. | AC-13, AC-14 |
 | `backend/tests/conftest.py` (solo si hace falta) | Extender fixtures reutilizables de instituciones, roles, departamentos y tickets sin cambiar datos/base compartidos de pruebas no relacionadas. | AC-1…AC-12 |
 | `frontend/src/app/shared/interfaces/index.ts` | Interfaces TypeScript espejo del contrato Pydantic. | AC-1…AC-8, AC-13 |
 | `frontend/src/app/features/dashboard/services/dashboard.service.ts` (nuevo) | Una petición HTTP tipada al endpoint consolidado. | AC-13, AC-15 |
@@ -131,7 +131,7 @@ Si durante implementación aparece que hacen falta cambios de modelo, migración
 
 ### Backend — pytest
 
-1. **Servicio y read model vía HTTP:** probar solo el seam HTTP (`TestClient`), siguiendo el patrón de `tests/api/`; el fixture SQL puede preparar filas, pero los resultados se asertan a través del endpoint. Verificar nombres/campos del DTO y lista vacía donde corresponda.
+1. **Servicio y read model vía HTTP:** probar solo el seam HTTP (`TestClient`), siguiendo el patrón de `tests/funcional/integracion/`; el fixture SQL puede preparar filas, pero los resultados se asertan a través del endpoint. Verificar nombres/campos del DTO y lista vacía donde corresponda.
 2. **KPI:** casos con suma de unidades, stock cero, tickets en estados no cerrados/cerrado literal, departamentos sin inventario, IDs distintos con nombres homónimos y ámbito global/institucional. Asegurar que el conteo de departamento incluye solo la PK y cada PK una vez.
 3. **Críticos y log único:** stock `M-1`, `M`, `M+1` y mínimo cero; múltiples departamentos para mismo producto; agregar filas y comprobar que KPI equivale exactamente a `len(alertas)`. Mutar stock en una operación real de movimiento y consultar antes/después; comprobar que no se crea tabla/fila de alerta y que la cantidad de registros de movimiento solo cambia por el movimiento esperado.
 4. **Roles y aislamiento:** cuatro roles por HTTP. Solicitante puede consultar el dashboard, obtiene KPI/alertas propios del ámbito y `actividad_disponible=false`, lista vacía; petición directa a `/inventario/movimientos` sigue 403. Superadmin recibe actividad/alertas de ambas instituciones con `institucion_id` y nombre; sus agregados no mezclan objetos por homónimo y el KPI de unidades es un escalar global único. Administrador/Bodeguero reciben solo su institución. Para rol limitado sin departamento/ámbito resoluble, dashboard responde 403, nunca global.

@@ -30,9 +30,9 @@ Con el conjunto validado, por cada detalle se decrementa el inventario único, s
 | `backend/app/services/inventario_service.py` | Consulta de historial por joins explícitos, mapping al DTO y orden determinista; conserva intacto el registro manual existente. | AC-17…AC-20, AC-22, AC-23 |
 | `backend/app/api/v1/endpoints/tickets.py` | Declarar ruta POST con `TicketRespuesta`, código 200, resumen/descripción y errores contractuales; documentar el PATCH restringido. Sin lógica de negocio. | AC-1, AC-5…AC-8, AC-15, AC-21 |
 | `backend/app/api/v1/endpoints/inventario.py` | Exponer GET de movimientos con `list[MovimientoInventarioRespuesta]`, 200 y documentación de orden/campos. Mantener POST manual. | AC-17…AC-22 |
-| `backend/tests/api/test_despacho_transaccional.py` (nuevo) | Pruebas HTTP y fixtures de catálogo/datos para despacho, errores, atomicidad y casos degenerados. | AC-1…AC-14, AC-23 |
-| `backend/tests/api/test_historial_movimientos.py` (nuevo) | Pruebas HTTP del listado vacío, campos relacionados, orden e integración con salidas de despacho. | AC-17…AC-23 |
-| `backend/tests/api/test_tablero_kanban.py` | Migrar los casos de cierre manual (`EnCurso→Cerrado`) a 409 exacto y verificar que las otras transiciones válidas siguen operando. | AC-15, AC-23 |
+| `backend/tests/funcional/e2e/test_despacho_transaccional.py` (nuevo) | Pruebas HTTP y fixtures de catálogo/datos para despacho, errores, atomicidad y casos degenerados. | AC-1…AC-14, AC-23 |
+| `backend/tests/funcional/integracion/test_historial_movimientos.py` (nuevo) | Pruebas HTTP del listado vacío, campos relacionados, orden e integración con salidas de despacho. | AC-17…AC-23 |
+| `backend/tests/funcional/integracion/test_tablero_kanban.py` | Migrar los casos de cierre manual (`EnCurso→Cerrado`) a 409 exacto y verificar que las otras transiciones válidas siguen operando. | AC-15, AC-23 |
 | `frontend/src/app/features/tickets/tickets.component.ts` | Resolver canónicamente `EnCurso` por nombre/id menor y no ofrecer avance desde esa columna; conservar retroceso y controles de otras columnas. | AC-16, AC-25 |
 | `frontend/src/app/features/tickets/tickets.component.spec.ts` | Añadir casos de control ausente en `EnCurso`, retroceso disponible, demás columnas sin regresión y nombres duplicados. | AC-16, AC-25 |
 | `docs/spec/features/005-despacho-transaccional/tasks.md` | Checklist ordenado; cada implementación marca su propia tarea con evidencia. | AC-23…AC-28 |
@@ -82,7 +82,7 @@ El cálculo de controles mantiene la lógica por posición existente y añade un
 
 ## 4. Estrategia de pruebas y cobertura
 
-- Backend: tests HTTP nuevos y migrados en `backend/tests/api/`, primero rojos y luego `cd backend && pytest`. Casos: despacho satisfactorio, líneas repetidas, stock insuficiente sin efectos, inexistencias, estados faltantes/duplicados/case-insensitive, inventario 0/varias filas, detalle vacío, producto no resoluble, rollback, PATCH 409 exacto y transiciones no afectadas; historial vacío/campos/orden/salidas. Suite completa obligatoria.
+- Backend: tests HTTP nuevos y migrados en `backend/tests/funcional/integracion/`, primero rojos y luego `cd backend && pytest`. Casos: despacho satisfactorio, líneas repetidas, stock insuficiente sin efectos, inexistencias, estados faltantes/duplicados/case-insensitive, inventario 0/varias filas, detalle vacío, producto no resoluble, rollback, PATCH 409 exacto y transiciones no afectadas; historial vacío/campos/orden/salidas. Suite completa obligatoria.
 - PostgreSQL: reproducir despacho concurrente de un mismo ticket desde dos conexiones independientes; exactamente 200 y 409, y consulta SQL/HTTP posterior evidencia un solo juego de movimientos, rebaja, cantidades entregadas y cierre (AC-24).
 - Frontend: añadir test de AC-16 en `tickets.component.spec.ts`, verificando ausencia del control de avance en `EnCurso`, presencia de retroceso y controles válidos en el resto; ejecutar `npx ng test --watch=false --browsers=ChromeHeadless` (Edge vía `CHROME_BIN` según AGENTS.md §5).
 - OpenAPI: inspeccionar `/openapi.json` para los tres endpoints, esquemas de payload/respuesta, códigos explícitos, resumen, descripción y errores relevantes; revisar también que el POST manual de movimientos conserva su contrato.

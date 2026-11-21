@@ -1,8 +1,12 @@
 """Fixtures compartidas para la suite de la Feature 001.
 
 El seam bajo prueba es la **interfaz HTTP** (`TestClient`), nunca la capa de
-servicios ni la sesion de SQLAlchemy. `tests/api/` verifica unicamente
+servicios ni la sesion de SQLAlchemy. `tests/funcional/` verifica unicamente
 comportamiento observable desde la API.
+
+La suite esta organizada por tipo de prueba en `tests/funcional/` (unitarios,
+integracion, sistema, e2e, aceptacion, humo) y `tests/no_funcional/`
+(rendimiento, seguridad y los pendientes). Ver `tests/README.md`.
 
 La base es SQLite en memoria para que la suite corra sin depender del
 contenedor de PostgreSQL. Las aserciones no consultan la base directamente:
@@ -100,7 +104,7 @@ def identidad_de_prueba() -> IdentidadAutenticada:
     `departamento_id=1`, que en estas pruebas pertenece a INST01 (la unica
     institucion que siembra la suite funcional). Las pruebas de autorizacion
     construyen su propia identidad por rol (ver
-    `tests/api/test_permisos_endpoints.py`).
+    `tests/no_funcional/seguridad/test_permisos_endpoints.py`).
     """
     usuario = Usuario(
         usuario_id=1,
@@ -143,7 +147,7 @@ def _cliente_de_prueba(motor, **opciones):
     app.dependency_overrides[dependencies.obtener_verificador_correo_clerk] = (
         lambda: (lambda _correo: True)
     )
-    from tests.soporte_frontera_017 import instalar_frontera_clerk
+    from tests.funcional.integracion.soporte_frontera_017 import instalar_frontera_clerk
 
     instalar_frontera_clerk(identidad_existente=True)
     try:

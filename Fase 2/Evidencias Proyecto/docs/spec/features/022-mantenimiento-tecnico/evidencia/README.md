@@ -30,7 +30,7 @@ No se transcriben tokens ni secretos.
 | Suite | Resultado |
 |---|---|
 | `pytest -q` | **1499 passed, 88 skipped, 0 failed** (1496 previos + 3 nuevos) |
-| `pytest tests/services/test_auth_service.py -q` | **3 passed** |
+| `pytest tests/funcional/integracion/test_auth_service.py -q` | **3 passed** |
 | `ng test --watch=false --browsers=ChromeHeadless` | **549 SUCCESS** (537 previos + 12 nuevos) |
 | `ng build` | Limpio (21.5 s en host) |
 | `docker compose build frontend` | Imagen reconstruida; build de producción limpio (51.4 s) |
@@ -83,7 +83,7 @@ Imagen reconstruida con `docker compose build frontend` y recreada con
 (incluye el borrado de 32 líneas del servicio muerto). Además quedan como
 nuevos:
 
-- `backend/tests/services/test_auth_service.py`
+- `backend/tests/funcional/integracion/test_auth_service.py`
 - `frontend/src/app/shared/utils/errores-http.ts`
 - `frontend/src/app/shared/utils/errores-http.spec.ts`
 - `docs/spec/features/022-mantenimiento-tecnico/` (`spec.md`, `plan.md`,

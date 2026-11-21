@@ -17,8 +17,8 @@ sede. `/inventario/stock` no se toca. El modelo de datos no se toca.
 | `backend/app/schemas/inventario_schema.py` | + 2 schemas | Nulo (aditivo) |
 | `backend/app/services/inventario_service.py` | + 3 funciones, 3 funciones ajustadas, H-1 | Bajo (`AC-12` lo cubre) |
 | `backend/app/api/v1/endpoints/inventario.py` | + 1 ruta, `status_code` en 3 GET | Nulo |
-| `backend/tests/api/test_catalogo_consulta.py` | **nuevo** | Nulo |
-| `backend/tests/api/test_smoke.py` | + 1 caso en `CASOS_LECTURA` | Nulo |
+| `backend/tests/funcional/integracion/test_catalogo_consulta.py` | **nuevo** | Nulo |
+| `backend/tests/funcional/humo/test_smoke.py` | + 1 caso en `CASOS_LECTURA` | Nulo |
 | `frontend/src/app/shared/interfaces/index.ts` | + 2 interfaces | Nulo |
 | `frontend/src/app/features/inventario/services/inventario.service.ts` | + 1 método | Nulo |
 | `frontend/src/app/features/inventario/inventario.component.ts` | reescritura | Medio (es la vista) |
@@ -320,7 +320,7 @@ este archivo. Sin este chequeo, la FK viola en el `commit()` y FastAPI responde 
 
 ## 5. Fase C — Tests backend
 
-Un archivo nuevo: `backend/tests/api/test_catalogo_consulta.py`. Cubre tanto la ruta
+Un archivo nuevo: `backend/tests/funcional/integracion/test_catalogo_consulta.py`. Cubre tanto la ruta
 nueva como las mejoras de las rutas existentes, porque todas son "consulta de catálogo".
 `conftest.py` **no se toca**.
 
@@ -688,7 +688,7 @@ leer el DOM.
 | # | Fase | Compuerta para pasar a la siguiente |
 |---|---|---|
 | 1 | Test backend nuevo, en rojo | Falla por 404 (la ruta no existe) |
-| 2 | Schemas → service → router | `pytest tests/api/test_catalogo_consulta.py` en verde |
+| 2 | Schemas → service → router | `pytest tests/funcional/integracion/test_catalogo_consulta.py` en verde |
 | 3 | Ajustes a rutas existentes + sus tests | `pytest` completo en verde, **los 25 casos viejos sin reescribir** |
 | 4 | Interfaces + servicio Angular | `npm run build` compila |
 | 5 | Componente + template | `npm run build` compila, la vista se ve en el navegador |

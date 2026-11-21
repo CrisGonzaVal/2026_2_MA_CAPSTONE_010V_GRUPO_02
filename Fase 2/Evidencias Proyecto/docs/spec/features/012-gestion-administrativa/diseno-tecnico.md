@@ -384,9 +384,9 @@ organizacional) y no modifican roles de ninguna de las 28.
 Escritas y en rojo por las ausencias previstas (T3+), nunca por import roto ni
 sintaxis (patrón 010/011):
 
-- `backend/tests/api/test_permisos_012.py` — matriz 012 (28 + nuevas) y no-regresión.
-- `backend/tests/api/test_contrato_control_012.py` — `/openapi.json` de las rutas `/control`.
-- `backend/tests/api/test_capacidades_gating_012.py` — mapa capacidad↔operación y gating 403.
-- `backend/tests/api/test_institucion_inactiva_012.py` — institución inactiva → 401 antes de versión.
-- `backend/tests/api/test_espejo_institucion_012.py` — espejo tenant de dos columnas y canónico control-only.
-- `backend/tests/test_gestion_administrativa_postgres_012.py` — gated PostgreSQL: DDL/migración/nuevas columnas y capacidades.
+- `backend/tests/no_funcional/seguridad/test_permisos_012.py` — matriz 012 (28 + nuevas) y no-regresión.
+- `backend/tests/funcional/integracion/test_contrato_control_012.py` — `/openapi.json` de las rutas `/control`.
+- `backend/tests/no_funcional/seguridad/test_capacidades_gating_012.py` — mapa capacidad↔operación y gating 403.
+- `backend/tests/no_funcional/seguridad/test_institucion_inactiva_012.py` — institución inactiva → 401 antes de versión.
+- `backend/tests/funcional/integracion/test_espejo_institucion_012.py` — espejo tenant de dos columnas y canónico control-only.
+- `backend/tests/funcional/sistema/test_gestion_administrativa_postgres_012.py` — gated PostgreSQL: DDL/migración/nuevas columnas y capacidades.

@@ -10,9 +10,9 @@ Spec: `spec.md` (**aprobada**). Este plan no toca código de negocio hasta que `
 |---|---|
 | `app/services/ticket_service.py` | Núcleo de la feature: reglas de flujo y sellado en `actualizar_estado_ticket()`; sellado de alta en `crear_ticket()`; orden + eager loading en `listar_tickets()`; **borrar** `ESTADO_CERRADO_ID` y su comentario (L29-33) |
 | `app/api/v1/endpoints/tickets.py` | Solo documentación OpenAPI: `description` de `PATCH /tickets/{id}/estado` (flujo lineal, 404/409, sellado) y de `GET /tickets/` (orden de respuesta). Sin lógica |
-| `tests/api/test_tablero_kanban.py` | **Nuevo**: fixture de catálogo canónico + todos los tests de flujo, sellado, orden y conteo de queries |
+| `tests/funcional/integracion/test_tablero_kanban.py` | **Nuevo**: fixture de catálogo canónico + todos los tests de flujo, sellado, orden y conteo de queries |
 | `tests/conftest.py` | Solo el comentario de L104-107 (mención a `ESTADO_CERRADO_ID`, AC-25) |
-| `tests/api/test_smoke.py` | Verificar que sigue verde (INGRESADO→CERRADO es un paso adyacente en su catálogo de 2 estados); sin cambios salvo que falle |
+| `tests/funcional/humo/test_smoke.py` | Verificar que sigue verde (INGRESADO→CERRADO es un paso adyacente en su catálogo de 2 estados); sin cambios salvo que falle |
 
 `app/schemas/ticket_schema.py` **no cambia**: `TicketRespuesta` ya expone todo lo que la tarjeta necesita y el contrato de la 003 se conserva.
 
@@ -98,7 +98,7 @@ Después de `_verificar_referencia(estado)`, si el estado recuperado (`db.get`, 
 
 ## 4. Casos de prueba
 
-### 4.1 Backend — `tests/api/test_tablero_kanban.py` (nuevo)
+### 4.1 Backend — `tests/funcional/integracion/test_tablero_kanban.py` (nuevo)
 
 Fixture `datos_flujo_canonico` (apoyada en `datos_base`, patrón de `datos_catalogo_ticket`): 4 estados en orden canónico con `Cerrado` al final.
 

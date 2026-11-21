@@ -108,7 +108,7 @@ La sección «Ciclo de vida del ticket: estado `Anulado` e historial de transici
 
 ### PostgreSQL gated (`POSTGRES_TEST_URL`, obligatorio para cierre)
 
-- Nuevo módulo `tests/test_ciclo_vida_ticket_postgres_013.py` con el patrón de los gated de 011/012 (`skip` sin la variable):
+- Nuevo módulo `tests/funcional/sistema/test_ciclo_vida_ticket_postgres_013.py` con el patrón de los gated de 011/012 (`skip` sin la variable):
   - **Migración `012.1 → 013.1`** sobre una base construida con el mismo harness de la 012 (cadena `01 → 02 → 03` + migraciones `001`–`003` hasta `012.1`, aspecto real de una instalación existente): `Anulado` presente en control y cada tenant, tabla creada, datos/mapas/historial previo intactos, segunda ejecución sin cambios, fallo de preflight sin versión parcial.
   - **Constructor/initdb** (`01 → 02 → 03` recién levantado): tenants nacen en `013.1` con `Anulado` replicado y la tabla creada.
   - **Token de versión:** un tenant en `012.1` (sin los cambios 013) **deniega cerrado** en el routing con el objetivo `013.1`, y solo se enrutan tenants exactamente en `013.1` (AC-21).

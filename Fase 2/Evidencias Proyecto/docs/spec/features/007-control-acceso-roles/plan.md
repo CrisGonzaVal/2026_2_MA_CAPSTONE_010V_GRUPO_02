@@ -42,7 +42,7 @@ Crear un script SQL versionado e idempotente bajo `database/` posterior a los sc
 | `backend/app/models/usuario.py` y `backend/app/models/institucion.py` | Eliminar atributo ORM `password`; corregir el `__init__.py` de modelos solo si el proyecto requiere registrar la matriz/dependencias nuevas (sin alterar entidades). | AC-8, AC-12, AC-14 |
 | `backend/app/schemas/usuario_schema.py` | Quitar contraseña de `UsuarioCrear`; conservar los demás campos del contrato. | AC-12, AC-14 |
 | `backend/app/schemas/ticket_schema.py` | Corregir docstring de `TicketDespacho` que califica autenticación como decorativa. | AC-11 |
-| `backend/tests/conftest.py`, `backend/tests/api/*.py` y `backend/tests/` (nuevos tests de permisos/migración si aplica) | Fixtures sin contraseña y cobertura HTTP/servicios para matriz, filtros, propiedad, migración y OpenAPI/denegaciones. | AC-6…AC-16 |
+| `backend/tests/conftest.py`, `backend/tests/funcional/integracion/*.py` y `backend/tests/` (nuevos tests de permisos/migración si aplica) | Fixtures sin contraseña y cobertura HTTP/servicios para matriz, filtros, propiedad, migración y OpenAPI/denegaciones. | AC-6…AC-16 |
 | `frontend/src/app/core/guards/role.guard.ts` | Implementar comparación de rol local, espera de identidad y resultado de denegación. | AC-1…AC-5, AC-15 |
 | `frontend/src/app/core/guards/role.guard.spec.ts` | Tests de roles exactos, estado de carga, rol inválido y navegación denegada. | AC-1…AC-5, AC-15 |
 | `frontend/src/app/core/services/auth.service.ts` | Exponer estado de carga/identidad suficiente para que el guard espere sin repetir `/auth/me`. | AC-2, AC-4, AC-15 |
@@ -74,7 +74,7 @@ Crear un script SQL versionado e idempotente bajo `database/` posterior a los sc
 | `backend/app/schemas/ticket_schema.py` | Opcionalidad del campo de alta, manteniendo intacto DTO de despacho. | AC-6, AC-18 |
 | `backend/app/services/ticket_service.py` | Autoatribución para los roles autorizados y ámbito de sesión; conservar productos/sede/ACID. | AC-6, AC-18, AC-20 |
 | `backend/app/api/v1/endpoints/tickets.py` | Precisión documental en OpenAPI; sin cambio de matriz/ruta/status. | AC-6, AC-18 |
-| `backend/tests/api/test_tickets_alcance.py`, `test_tickets_institucional.py`, `test_modal_ticket.py`, `test_ticket_sede_011.py`, `test_transaccion_ticket.py` y cualquier test de alta encontrado con grep | Reescribir expectativas antiguas de payload autor; mantener test de despacho y casos de producto ajeno. | AC-6, AC-18, AC-20 |
+| `backend/tests/funcional/integracion/test_tickets_alcance.py`, `test_tickets_institucional.py`, `test_modal_ticket.py`, `test_ticket_sede_011.py`, `test_transaccion_ticket.py` y cualquier test de alta encontrado con grep | Reescribir expectativas antiguas de payload autor; mantener test de despacho y casos de producto ajeno. | AC-6, AC-18, AC-20 |
 | `frontend/src/app/features/tickets/tickets.component.ts`, `.html`, `.spec.ts`, `frontend/src/app/shared/interfaces/index.ts` | Campo de autor informativo de identidad, sin selector/control, body omite usuario_id, contrato opcional. | AC-19 |
 
 ### TDD, orden y pruebas

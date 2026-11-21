@@ -62,7 +62,7 @@ La Feature 014 (ciclo de vida del catálogo) se cerró el 20/Oct/2026 con eviden
 - [x] Feature 025: Hardening operativo II — límite de tasa distribuido con Redis — carpeta `025-limite-tasa-distribuido/`, cerrada el 15/Nov/2026. La caché de lecturas queda sin feature asignada.
 - [x] Feature 026: Salud del esquema BD — carpeta `026-salud-esquema-bd/`, cerrada el 18/Nov/2026. Puntuaciones: 21 entidades de dominio, 26/23 tablas en control/tenant, token `026.0`. Removido `inventario` y 14 movimientos legados; 14 `stock_sede` + 3 `movimiento_inventario` semilla. 15 indexes P0 + 6 constraints B1/B2. Sin triggers/procedimientos/cursores.
 
-> **Hito 2 (11/Dic/2026)**: Despliegue en producción y entrega del proyecto de título.
+> **Hito 2 (11/Dic/2026)**: Despliegue en producción y entrega del proyecto de título. La deuda técnica abierta —incluida la auditoría de seguridad del 16/Nov/2026— vive en [deuda-tecnica.md](deuda-tecnica.md); los ítems de despliegue son candidatos a feature de hardening antes del Hito 2.
 
 ---
 

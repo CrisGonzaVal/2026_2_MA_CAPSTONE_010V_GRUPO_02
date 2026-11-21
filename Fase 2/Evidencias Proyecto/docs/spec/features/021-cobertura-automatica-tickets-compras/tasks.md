@@ -42,7 +42,7 @@
 
 ### T1 — DDL, semilla, versión `021.1` y arranque limpio
 **AC cubre:** AC-11 (integridad), AC-12 (contrato/DDL)  
-**Archivos:** `database/01_esquema.sql`, `database/02_datos_semilla.sql`, `backend/app/core/config.py`, `backend/tests/test_cobertura_postgres_021.py`
+**Archivos:** `database/01_esquema.sql`, `database/02_datos_semilla.sql`, `backend/app/core/config.py`, `backend/tests/funcional/sistema/test_cobertura_postgres_021.py`
 
 - [x] Tests gated primero (rojo): `27` tablas en `control`, `24` por tenant, versión `021.1`, existencia de `orden_compra_ticket`, columna `orden_compra_id` y sus índices.
 - [x] En `control.historial_transicion_ticket`, agregar la columna nullable `orden_compra_id INTEGER` **sin FK inline** (la tabla se crea antes que `orden_compra`).
@@ -61,7 +61,7 @@
 - [x] Verificar arranque limpio: `docker compose -f docker-compose.yml down -v` y `up -d`; confirmar 4 tenants, **27** tablas en `control`, **24** por tenant, **`021.1`**, tabla nueva vacía en control y en cada tenant, y guardia que no aborta en la primera ejecución.
 - [x] Tests gated en verde.
 
-**Evidencia (07/Nov/2026):** `docker compose down -v` + `up -d` arrancó sin errores; `control` **27** tablas, 4 tenants con **24** cada uno (96 en total), versión **`021.1`** en control y tenants, `control.orden_compra_ticket` vacía. `tests/test_cobertura_postgres_021.py` **5 passed** (conteos, versión, tabla, columna/FK del historial, `UNIQUE`/FKs/índices).
+**Evidencia (07/Nov/2026):** `docker compose down -v` + `up -d` arrancó sin errores; `control` **27** tablas, 4 tenants con **24** cada uno (96 en total), versión **`021.1`** en control y tenants, `control.orden_compra_ticket` vacía. `tests/funcional/sistema/test_cobertura_postgres_021.py` **5 passed** (conteos, versión, tabla, columna/FK del historial, `UNIQUE`/FKs/índices).
 
 **Hecho cuando:** el arranque limpio no aborta; los conteos devuelven 27/24; `control.version_esquema` y cada tenant devuelven `021.1`; la FK del historial y la tabla nueva existen; una segunda ejecución de la semilla aborta por la guardia.
 
@@ -69,7 +69,7 @@
 
 ### T2 — Modelos SQLAlchemy
 **AC cubre:** base para todos los AC  
-**Archivos:** `backend/app/models/compra.py`, `backend/app/models/ticket.py`, `backend/app/models/__init__.py`, `backend/tests/api/test_cobertura_021.py` (sección modelos)
+**Archivos:** `backend/app/models/compra.py`, `backend/app/models/ticket.py`, `backend/app/models/__init__.py`, `backend/tests/funcional/integracion/test_cobertura_021.py` (sección modelos)
 
 - [x] Tests primero (rojo): importación de `OrdenCompraTicket`, creación de una fila con sus FKs lógicas y lectura de `orden.plan` e `historial.orden_compra_id`.
 - [x] Clase `OrdenCompraTicket` mapea `orden_compra_ticket` con PK identity, columnas de DT-1, `UniqueConstraint`, FKs compuestas y `CheckConstraint`.
@@ -78,7 +78,7 @@
 - [x] Registrar `OrdenCompraTicket` en `models/__init__.py`.
 - [x] `pytest` sin errores de importación ni de configuración de mappers.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **1 passed**; `Base.metadata` incluye `orden_compra_ticket`; el plan se lee desde `OrdenCompra.plan` y el historial expone `orden_compra_id` con su relación.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **1 passed**; `Base.metadata` incluye `orden_compra_ticket`; el plan se lee desde `OrdenCompra.plan` y el historial expone `orden_compra_id` con su relación.
 
 ---
 
@@ -86,7 +86,7 @@
 
 ### T3 — Schemas Pydantic v2
 **AC cubre:** contratos de API de AC-1, AC-2, AC-4, AC-5, AC-6, AC-9, AC-10  
-**Archivos:** `backend/app/schemas/compra_schema.py`, `backend/app/schemas/ticket_schema.py`, `backend/tests/api/test_cobertura_021.py` (sección schemas)
+**Archivos:** `backend/app/schemas/compra_schema.py`, `backend/app/schemas/ticket_schema.py`, `backend/tests/funcional/integracion/test_cobertura_021.py` (sección schemas)
 
 - [x] Tests primero (rojo): validación de `CoberturaPreviewSolicitud` (items no vacío, cantidades `> 0`), DTOs de respuesta y campos aditivos sin romper los contratos existentes.
 - [x] `NecesidadTicketRespuesta` con `ticket_id`, `asunto`, `solicitante_*`, `prioridad_nombre`, `fecha_creacion`, `cantidad_solicitada`, `cantidad_cubierta` y `cantidad_faltante`.
@@ -99,13 +99,13 @@
 - [x] Solo Pydantic v2 (`ConfigDict`, `model_validate`); los read models se arman a mano.
 - [x] `pytest` en verde.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **5 passed** (4 de schemas + el de modelos de T2); `test_compras.py`, `test_compras_endpoints_020.py`, `test_tablero_kanban.py`, `test_tickets_alcance.py` y `test_tickets_institucional.py` **110 passed** sin regresiones. `PlanOrdenCompraRespuesta` declara `from_attributes` para que `OrdenCompraRespuesta.model_validate` siga funcionando mientras T6 introduce `orden_a_respuesta`.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **5 passed** (4 de schemas + el de modelos de T2); `test_compras.py`, `test_compras_endpoints_020.py`, `test_tablero_kanban.py`, `test_tickets_alcance.py` y `test_tickets_institucional.py` **110 passed** sin regresiones. `PlanOrdenCompraRespuesta` declara `from_attributes` para que `OrdenCompraRespuesta.model_validate` siga funcionando mientras T6 introduce `orden_a_respuesta`.
 
 ---
 
 ### T4 — Simulación de cobertura y necesidades enriquecidas
 **AC cubre:** AC-1, AC-8, AC-9  
-**Archivos:** `backend/app/services/compra_service.py`, `backend/tests/api/test_cobertura_021.py` (sección algoritmo/necesidades)
+**Archivos:** `backend/app/services/compra_service.py`, `backend/tests/funcional/integracion/test_cobertura_021.py` (sección algoritmo/necesidades)
 
 - [x] Tests primero (rojo): prioridad/FIFO, asignación parcial, stock parcial, `plan_previo`, OC `Recibida` que no se resta, OC `Cancelada` que no cubre, pedido de otra sede o sin sede excluido, estados no `EnCurso` excluidos, faltante y cobertura total/parcial/sin cobertura.
 - [x] Implementar `_simular_claves(db, institucion_id, claves, cantidades_oc=None, bloquear=False)` con la fórmula de DT-2, devolviendo `dict[(sede_id, producto_id), list[SimulacionTicketProducto]]`.
@@ -117,13 +117,13 @@
 - [x] No modificar `calcular_cobertura_tickets` ni `stock_disponible`: la simulación parcial es una función nueva.
 - [x] Tests en verde.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **12 passed** (T2 + T3 + 7 de T4). Cubre prioridad sobre FIFO, faltante parcial, reparto parcial de stock, `plan_previo` de OC `Emitida`, OC `Recibida` que no se resta, exclusión de otra sede/sin sede/estados no `EnCurso`, necesidades con comprometido/borrador/sugerido neto y `orden_a_respuesta` con nombres resueltos. `test_compras.py` + `test_compras_endpoints_020.py` **45 passed** sin regresiones.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **12 passed** (T2 + T3 + 7 de T4). Cubre prioridad sobre FIFO, faltante parcial, reparto parcial de stock, `plan_previo` de OC `Emitida`, OC `Recibida` que no se resta, exclusión de otra sede/sin sede/estados no `EnCurso`, necesidades con comprometido/borrador/sugerido neto y `orden_a_respuesta` con nombres resueltos. `test_compras.py` + `test_compras_endpoints_020.py` **45 passed** sin regresiones.
 
 ---
 
 ### T5 — Preview de cobertura (`POST /compras/cobertura/preview`)
 **AC cubre:** AC-2, AC-10, AC-12  
-**Archivos:** `backend/app/services/compra_service.py`, `backend/app/api/v1/endpoints/compras.py`, `backend/tests/api/test_cobertura_021.py` (sección preview)
+**Archivos:** `backend/app/services/compra_service.py`, `backend/app/api/v1/endpoints/compras.py`, `backend/tests/funcional/integracion/test_cobertura_021.py` (sección preview)
 
 - [x] Tests primero (rojo): 200 con asignación y faltante, idempotencia, no crea filas en `orden_compra_ticket`, no toca `stock_sede`, sede inexistente/ajena → 404, producto ajeno/inexistente → 404, producto inactivo o repetido → 409, cuerpo inválido → 422.
 - [x] Implementar `previsualizar_cobertura(db, datos, identidad)` reutilizando `_simular_claves` con las cantidades simuladas.
@@ -132,13 +132,13 @@
 - [x] Verificar que preview y emisión comparten la misma simulación: con el mismo estado, las cantidades coinciden.
 - [x] Tests en verde.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **22 passed** (10 nuevos de T5). El preview no persiste `orden_compra_ticket` ni cambia `stock_sede`; es idempotente; sin demanda deja `sin_asignar = cantidad_simulada`; sede inexistente/ajena y producto ajeno/inexistente dan 404; producto inactivo o repetido, 409; cuerpo inválido, 422. HTTP: 200 para Administrador y 403 para Bodeguero/Solicitante/Superadmin. Matriz **73** (preview → `compras`) y los cuatro tests de cardinalidad actualizados; `test_compras.py`, `test_compras_endpoints_020.py`, `test_ciclo_vida_autorizacion_014.py`, `test_detalle_producto_019.py` y `test_filtros_inventario_018.py` **186 passed** en conjunto.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **22 passed** (10 nuevos de T5). El preview no persiste `orden_compra_ticket` ni cambia `stock_sede`; es idempotente; sin demanda deja `sin_asignar = cantidad_simulada`; sede inexistente/ajena y producto ajeno/inexistente dan 404; producto inactivo o repetido, 409; cuerpo inválido, 422. HTTP: 200 para Administrador y 403 para Bodeguero/Solicitante/Superadmin. Matriz **73** (preview → `compras`) y los cuatro tests de cardinalidad actualizados; `test_compras.py`, `test_compras_endpoints_020.py`, `test_ciclo_vida_autorizacion_014.py`, `test_detalle_producto_019.py` y `test_filtros_inventario_018.py` **186 passed** en conjunto.
 
 ---
 
 ### T6 — Emisión con plan congelado y cancelación
 **AC cubre:** AC-3, AC-4, AC-7, AC-9  
-**Archivos:** `backend/app/services/compra_service.py`, `backend/tests/api/test_cobertura_021.py` (sección emisión/cancelación)
+**Archivos:** `backend/app/services/compra_service.py`, `backend/tests/funcional/integracion/test_cobertura_021.py` (sección emisión/cancelación)
 
 - [x] Tests primero (rojo): la emisión persiste una fila por `(OC, pedido, producto)` con `asignada > 0`, el `faltante` correcto, plan vacío sin demanda, segunda emisión → 409, plan congelado tras facturar/recepcionar, cancelación que conserva el plan y libera la cobertura.
 - [x] `emitir_orden_compra` bloquea los pedidos `EnCurso` de la sede que demandan los productos de la OC (`FOR UPDATE` solo en PostgreSQL).
@@ -149,13 +149,13 @@
 - [x] `cancelar_orden_compra` conserva las filas y la OC `Cancelada` deja de sumar en `stock_comprometido`, `comprado` y cobertura activa; no replanifica otras OC.
 - [x] Tests en verde.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **28 passed** (6 nuevos de T6). La emisión reparte por prioridad/FIFO y persiste solo `asignada > 0` (`(ticket_alta, 5, 0)`, `(ticket_baja, 1, 3)`); sin demanda emite con plan vacío; una segunda OC resta el plan previo y re-emitir da 409; el plan no cambia al facturar ni con pedidos nuevos; la cancelación conserva la fila y libera la cobertura (`plan_previo = 0`, `stock_comprometido = 0`); la respuesta HTTP de emisión y `GET /compras/ordenes` exponen `plan` con nombres resueltos. `test_compras.py`, `test_compras_endpoints_020.py` y `test_tablero_kanban.py` **92 passed** en conjunto.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **28 passed** (6 nuevos de T6). La emisión reparte por prioridad/FIFO y persiste solo `asignada > 0` (`(ticket_alta, 5, 0)`, `(ticket_baja, 1, 3)`); sin demanda emite con plan vacío; una segunda OC resta el plan previo y re-emitir da 409; el plan no cambia al facturar ni con pedidos nuevos; la cancelación conserva la fila y libera la cobertura (`plan_previo = 0`, `stock_comprometido = 0`); la respuesta HTTP de emisión y `GET /compras/ordenes` exponen `plan` con nombres resueltos. `test_compras.py`, `test_compras_endpoints_020.py` y `test_tablero_kanban.py` **92 passed** en conjunto.
 
 ---
 
 ### T7 — Recepción: enlace de auditoría en el historial
 **AC cubre:** AC-6, AC-7  
-**Archivos:** `backend/app/services/compra_service.py`, `backend/app/schemas/ticket_schema.py`, `backend/app/services/ticket_service.py`, `backend/tests/api/test_cobertura_021.py` (sección recepción)
+**Archivos:** `backend/app/services/compra_service.py`, `backend/app/schemas/ticket_schema.py`, `backend/app/services/ticket_service.py`, `backend/tests/funcional/integracion/test_cobertura_021.py` (sección recepción)
 
 - [x] Tests primero (rojo): la fila `EnCurso → EnCurso` del desbloqueo lleva `orden_compra_id`; las demás filas lo dejan `null`; el historial expone `numero_oc`; el plan de la OC queda intacto; el pedido sigue `EnCurso`.
 - [x] `recepcionar_orden_compra` escribe `orden_compra_id` solo en las filas de desbloqueo que crea.
@@ -163,13 +163,13 @@
 - [x] No se sella `fecha_cierre` ni se escribe un estado nuevo: `Cerrado` sigue siendo el despacho.
 - [x] Tests en verde.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **30 passed** (2 nuevos de T7). La fila de creación del pedido queda con `orden_compra_id` y `numero_oc` nulos; la fila `EnCurso → EnCurso` del desbloqueo lleva la OC (`numero_oc` resuelto en el DTO), el plan congelado de la OC no cambia y el pedido sigue `EnCurso`. HTTP: `GET /tickets/{id}/historial` como Solicitante publica `orden_compra_id`/`numero_oc`; la recepción como Bodeguero responde 200. `test_ciclo_vida_historial_013.py`, `test_ciclo_vida_flujo_013.py`, `test_compras.py`, `test_compras_endpoints_020.py` y `test_despacho_transaccional.py` **108 passed** en conjunto.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **30 passed** (2 nuevos de T7). La fila de creación del pedido queda con `orden_compra_id` y `numero_oc` nulos; la fila `EnCurso → EnCurso` del desbloqueo lleva la OC (`numero_oc` resuelto en el DTO), el plan congelado de la OC no cambia y el pedido sigue `EnCurso`. HTTP: `GET /tickets/{id}/historial` como Solicitante publica `orden_compra_id`/`numero_oc`; la recepción como Bodeguero responde 200. `test_ciclo_vida_historial_013.py`, `test_ciclo_vida_flujo_013.py`, `test_compras.py`, `test_compras_endpoints_020.py` y `test_despacho_transaccional.py` **108 passed** en conjunto.
 
 ---
 
 ### T8 — Detalle del pedido: asignaciones y cadena por producto
 **AC cubre:** AC-5, AC-7, AC-9  
-**Archivos:** `backend/app/services/ticket_service.py`, `backend/tests/api/test_cobertura_021.py` (sección detalle)
+**Archivos:** `backend/app/services/ticket_service.py`, `backend/tests/funcional/integracion/test_cobertura_021.py` (sección detalle)
 
 - [x] Tests primero (rojo): asignaciones incluidas las de OC canceladas, cadena por producto, pedido terminal con faltante 0 y `stock_disponible` intacto.
 - [x] `obtener_ticket_detalle` agrega `asignaciones` con OC, estado, producto, `cantidad_asignada`, `cantidad_faltante` y fecha.
@@ -178,13 +178,13 @@
 - [x] Se conserva el alcance de la 013/017, el 404 idéntico y `stock_disponible` de la 020.
 - [x] Tests en verde.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **34 passed** (4 nuevos de T8). `comprado` incluye las OC activas (`Emitida` + `Facturada` + `Recibida`) y `recibido` solo la `Recibida`; una OC cancelada se expone marcada y no suma; el faltante usa la simulación parcial de stock de `_simular_claves` y queda 0 en pedidos `Cerrado`/`Anulado`; `stock_disponible` no cambia. HTTP: `GET /tickets/{id}` publica `asignaciones` y `cadena_productos`. `test_ciclo_vida_flujo_013.py`, `test_ciclo_vida_historial_013.py`, `test_gobierno_lecturas_017.py`, `test_despacho_dtos.py`, `test_modal_ticket.py`, `test_tickets_alcance.py`, `test_tickets_institucional.py` y `test_compras.py` **223 passed** en conjunto.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **34 passed** (4 nuevos de T8). `comprado` incluye las OC activas (`Emitida` + `Facturada` + `Recibida`) y `recibido` solo la `Recibida`; una OC cancelada se expone marcada y no suma; el faltante usa la simulación parcial de stock de `_simular_claves` y queda 0 en pedidos `Cerrado`/`Anulado`; `stock_disponible` no cambia. HTTP: `GET /tickets/{id}` publica `asignaciones` y `cadena_productos`. `test_ciclo_vida_flujo_013.py`, `test_ciclo_vida_historial_013.py`, `test_gobierno_lecturas_017.py`, `test_despacho_dtos.py`, `test_modal_ticket.py`, `test_tickets_alcance.py`, `test_tickets_institucional.py` y `test_compras.py` **223 passed** en conjunto.
 
 ---
 
 ### T9 — Endpoint, matriz 73 y capacidad `compras`
 **AC cubre:** AC-10, AC-12  
-**Archivos:** `backend/app/core/permisos.py`, `backend/app/core/capacidades.py`, `backend/app/api/v1/endpoints/compras.py`, `backend/tests/api/test_compras_endpoints_020.py`, `backend/tests/api/test_ciclo_vida_autorizacion_014.py`, `backend/tests/api/test_detalle_producto_019.py`, `backend/tests/api/test_filtros_inventario_018.py`, `backend/tests/api/test_cobertura_021.py`
+**Archivos:** `backend/app/core/permisos.py`, `backend/app/core/capacidades.py`, `backend/app/api/v1/endpoints/compras.py`, `backend/tests/funcional/integracion/test_compras_endpoints_020.py`, `backend/tests/funcional/integracion/test_ciclo_vida_autorizacion_014.py`, `backend/tests/funcional/integracion/test_detalle_producto_019.py`, `backend/tests/funcional/integracion/test_filtros_inventario_018.py`, `backend/tests/funcional/integracion/test_cobertura_021.py`
 
 - [x] Tests primero (rojo): 403 Solicitante/Bodeguero/Superadmin en el preview, 403 con la capacidad `compras` apagada, 200 Administrador, matriz y OpenAPI **73**.
 - [x] Agregar `POST /api/v1/compras/cobertura/preview` a `MATRIZ_PERMISOS` con `_COMPRAS_ADMINISTRACION` (72 → 73).
@@ -194,7 +194,7 @@
 - [x] Verificar `/openapi.json`: publica la operación nueva y **73** operaciones v1.
 - [x] Tests en verde.
 
-**Evidencia (07/Nov/2026):** `tests/api/test_cobertura_021.py` **37 passed**; matriz con `("POST", "/api/v1/compras/cobertura/preview")` → `Administrador` y capacidad `compras`; `/openapi.json` publica la ruta con 200/401/403/404/409/422 y **73** operaciones v1; con la capacidad apagada responde 403. Los cuatro tests de cardinalidad (020, 014, 019, 018) quedaron en 73 y `test_gobierno_identidades_017.py` en 24 tablas tenant. Suite completa de backend: **1495 passed, 1 failed → corregido**, 88 skipped. Gated PostgreSQL 16 de la 021: **5 passed**.
+**Evidencia (07/Nov/2026):** `tests/funcional/integracion/test_cobertura_021.py` **37 passed**; matriz con `("POST", "/api/v1/compras/cobertura/preview")` → `Administrador` y capacidad `compras`; `/openapi.json` publica la ruta con 200/401/403/404/409/422 y **73** operaciones v1; con la capacidad apagada responde 403. Los cuatro tests de cardinalidad (020, 014, 019, 018) quedaron en 73 y `test_gobierno_identidades_017.py` en 24 tablas tenant. Suite completa de backend: **1495 passed, 1 failed → corregido**, 88 skipped. Gated PostgreSQL 16 de la 021: **5 passed**.
 
 ---
 

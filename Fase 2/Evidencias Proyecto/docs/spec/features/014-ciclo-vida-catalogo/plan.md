@@ -61,11 +61,11 @@ Los nombres de recursos de historial nuevos son descriptivos para planificar; en
 | `backend/app/core/permisos.py` | Entradas nuevas aditivas y exclusivas de Administrador donde dicta la spec; preservar literalmente las existentes. | AC-2, AC-12, AC-15 |
 | `backend/app/core/capacidades.py` | Asociar cada nueva operación a `catalogo` sin ampliar conjunto cerrado. | AC-2, AC-12, AC-15 |
 | `backend/app/core/config.py` | `VERSION_ESQUEMA_OBJETIVO = "014.1"` y comentario del token. | AC-14 |
-| `backend/tests/api/test_ciclo_vida_catalogo_014.py` (nuevos módulos por tema si crecen) | Tests HTTP SQLite: estado, concurrencia lógica, motivos, idempotencia, autorización, filtros, edición, movimientos, dashboard, UI/API contracts. | AC-1…AC-13, AC-15 |
-| `backend/tests/test_esquema_postgres.py` | Verificar DDL de las nuevas columnas/relaciones/tablas y su paridad. | AC-14 |
-| `backend/tests/test_instalacion_limpia_postgres.py` | Conteos 22/19, filas activas por tenant, tablas de historial vacías en control/tenants, versión objetivo 014.1 y guardia de semilla. | AC-13, AC-14 |
-| `backend/tests/test_ciclo_vida_catalogo_postgres_014.py` (nuevo gated) | Concurrencia real saldo-vs-baja y categoría-vs-alta/reactivación, con barreras/segunda conexión contra PG16; verificar no quedar en estados incoherentes. | AC-6, AC-16 |
-| Tests existentes `backend/tests/api/test_permisos*.py`, `test_gating_capacidades_endpoints_012.py`, pruebas de tickets/inventario/dashboard y gated de versión | Ajustar transcripciones/literales de versión y ampliar casos sin cambiar baseline previo; regresiones relevantes para productos siempre activos. | AC-2…AC-16 |
+| `backend/tests/funcional/integracion/test_ciclo_vida_catalogo_014.py` (nuevos módulos por tema si crecen) | Tests HTTP SQLite: estado, concurrencia lógica, motivos, idempotencia, autorización, filtros, edición, movimientos, dashboard, UI/API contracts. | AC-1…AC-13, AC-15 |
+| `backend/tests/funcional/sistema/test_esquema_postgres.py` | Verificar DDL de las nuevas columnas/relaciones/tablas y su paridad. | AC-14 |
+| `backend/tests/funcional/sistema/test_instalacion_limpia_postgres.py` | Conteos 22/19, filas activas por tenant, tablas de historial vacías en control/tenants, versión objetivo 014.1 y guardia de semilla. | AC-13, AC-14 |
+| `backend/tests/funcional/sistema/test_ciclo_vida_catalogo_postgres_014.py` (nuevo gated) | Concurrencia real saldo-vs-baja y categoría-vs-alta/reactivación, con barreras/segunda conexión contra PG16; verificar no quedar en estados incoherentes. | AC-6, AC-16 |
+| Tests existentes `backend/tests/no_funcional/seguridad/test_permisos*.py`, `test_gating_capacidades_endpoints_012.py`, pruebas de tickets/inventario/dashboard y gated de versión | Ajustar transcripciones/literales de versión y ampliar casos sin cambiar baseline previo; regresiones relevantes para productos siempre activos. | AC-2…AC-16 |
 
 ### Frontend
 

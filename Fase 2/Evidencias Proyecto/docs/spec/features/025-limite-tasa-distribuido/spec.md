@@ -311,7 +311,7 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
 - **Configuración del cliente:** creación perezosa en el bucle de eventos en la primera
   petición que lo necesita, *pool* de conexiones, timeouts de 200 ms, sin reintentos y sin
   `decode_responses` (el script devuelve enteros).
-- **Impacto en la suite de la 024:** `tests/test_dependencias_024.py` afirma exactamente
+- **Impacto en la suite de la 024:** `tests/funcional/unitarios/test_dependencias_024.py` afirma exactamente
   diez dependencias directas y pasará a afirmar **once** con `redis==8.1.0`. Es la única
   prueba de una feature cerrada que cambia; su intención (nivel directo exacto y pineado) se
   conserva. No se reescribe ningún `spec.md`, `plan.md` ni `tasks.md` de la 024: son
@@ -442,7 +442,7 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
 5. `backend/requirements.txt` pasa a tener **11** dependencias directas, todas con `==`.
 6. Los únicos archivos de prueba preexistentes que cambian son `tests/conftest.py`
    (apagado del limitador en la configuración de la suite) y
-   `tests/test_dependencias_024.py` (10 → 11); el resto son pruebas nuevas.
+   `tests/funcional/unitarios/test_dependencias_024.py` (10 → 11); el resto son pruebas nuevas.
 
 ### R-10 — Evidencia y documentación
 
@@ -470,8 +470,8 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
 - [x] **AC-2 — Conteo exacto.** Con máximo 3 y ventana 60 en una app de prueba con falso,
   las tres primeras peticiones a `/api/v1/*` no son 429 y la cuarta sí; las tres primeras
   conservan el estado que produce la ruta (401 sin Bearer).
-  **Evidencia prevista:** `tests/api/test_limite_tasa_025.py`.
-  **Evidencia:** `tests/api/test_limite_tasa_025.py` **11 passed**; 3×401 y cuarta 429.
+  **Evidencia prevista:** `tests/no_funcional/rendimiento/test_limite_tasa_025.py`.
+  **Evidencia:** `tests/no_funcional/rendimiento/test_limite_tasa_025.py` **11 passed**; 3×401 y cuarta 429.
 - [x] **AC-3 — Contrato del 429.** El 429 tiene `Content-Type` JSON, cuerpo con `detail` y el
   texto de R-5.3, `Retry-After` entero entre 1 y 60, `X-RateLimit-Limit` igual al máximo,
   `X-RateLimit-Remaining: 0`, `X-RateLimit-Reset` entre 1 y 60 y `X-Request-ID` con UUID.
@@ -490,7 +490,7 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
 - [x] **AC-5 — Presupuesto por IP.** Con confianza en el proxy activada, dos `X-Real-IP`
   distintas tienen contadores independientes: agotar una no afecta a la otra.
   **Evidencia prevista:** prueba unitaria parametrizada y comprobación de claves en Redis.
-  **Evidencia:** pruebas unitarias de `tests/test_limite_tasa_025.py` (30 en T3); claves
+  **Evidencia:** pruebas unitarias de `tests/no_funcional/rendimiento/test_limite_tasa_025.py` (30 en T3); claves
   independientes verificadas en el escenario *gated* (evidencia §3 y §5).
 - [x] **AC-6 — Confianza en el proxy.** Con `LIMITE_TASA_CONFIAR_PROXY=false`,
   `X-Real-IP` se ignora y todas las peticiones comparten la IP del par; con `true`, una IP
@@ -515,7 +515,7 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
   `resultado="error"` incrementa y se emite **un** `WARNING` en la ventana de 10 s con
   `request_id` y `error_type`, sin IP, host, mensaje ni traza.
   **Evidencia prevista:** prueba unitaria con captura de logs y de la exposición.
-  **Evidencia:** `tests/api/test_limite_tasa_failopen_025.py` **3 passed**; aviso real en
+  **Evidencia:** `tests/no_funcional/rendimiento/test_limite_tasa_failopen_025.py` **3 passed**; aviso real en
   8080 con dos líneas separadas 10,13 s, `request_id` y `error_type` (evidencia §3.1 y §8).
 - [x] **AC-10 — Fail-open acotado.** Con `REDIS_URL` apuntando a un host que no responde
   (`192.0.2.1`), una petición a `/api/v1` termina en menos de 1 s, no es 429 y no es 5xx por
@@ -536,7 +536,7 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
   y `{resultado="limitada"}` respecto de la lectura anterior, la etiqueta es exactamente
   `{resultado}`, las cinco familias de la 024 siguen presentes y el 429 aparece como
   `route="rate_limited"` en `compustock_http_requests_total`.
-  **Evidencia prevista:** parser de `tests/soporte_observabilidad_024.py` y `curl /metrics`.
+  **Evidencia prevista:** parser de `tests/funcional/integracion/soporte_observabilidad_024.py` y `curl /metrics`.
   **Evidencia:** 6 pruebas de T6; seis familias en `/metrics` y `route="rate_limited"` en
   `compustock_http_requests_total` (evidencia §3.2).
 - [x] **AC-13 — Sin PII.** Con una IP de prueba (`203.0.113.7`), ni `/metrics` ni las líneas
@@ -549,8 +549,8 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
   `redis://127.0.0.1:6380/0`; un máximo o una ventana ≤ 0 impiden construir la app; una URL
   que no es Redis con el limitador encendido también; con `LIMITE_TASA_HABILITADO=false` el
   falso no recibe ninguna llamada y no hay middleware.
-  **Evidencia prevista:** `tests/test_configuracion_025.py` y una prueba de apagado.
-  **Evidencia:** `tests/test_configuracion_025.py` **11 passed**, incluida la prueba de
+  **Evidencia prevista:** `tests/funcional/unitarios/test_configuracion_025.py` y una prueba de apagado.
+  **Evidencia:** `tests/funcional/unitarios/test_configuracion_025.py` **11 passed**, incluida la prueba de
   apagado sin middleware ni llamadas al falso (evidencia §2).
 - [x] **AC-15 — Estado compartido entre instancias.** Dos apps construidas con el mismo
   falso y máximo 3 comparten el contador: 2 peticiones en la primera y 2 en la segunda dan
@@ -561,14 +561,14 @@ Se añade `redis==8.1.0` (cliente oficial, asíncrono). Análisis exigido por `A
   permitidas, la cuarta 429, el TTL está entre 1 y 1000 ms y la clave existe con la IP; tras
   vaciar la base o esperar la ventana vuelve a permitir; 20 evaluaciones concurrentes con
   máximo 10 dan exactamente 10 permitidas.
-  **Evidencia prevista:** `tests/test_limite_tasa_redis_025.py` (*skipped* sin la variable).
+  **Evidencia prevista:** `tests/no_funcional/rendimiento/test_limite_tasa_redis_025.py` (*skipped* sin la variable).
   **Evidencia:** **3 passed** con `REDIS_TEST_URL=redis://127.0.0.1:6380/15` y **3 skipped**
   sin la variable; escenarios (a), (b) y (c) en verde (evidencia §5).
 - [x] **AC-17 — Contrato, datos y alcance intactos.** 73 operaciones de matriz, 75 de
   OpenAPI, versión `021.1`, 27/24 tablas; sin cambios en `database/`, modelos, `permisos.py`,
   endpoints, esquemas, `response_model`, textos visibles ni `frontend/`; `requirements.txt`
   con 11 líneas pineadas; solo cambian `tests/conftest.py` y
-  `tests/test_dependencias_024.py` entre los archivos preexistentes de prueba.
+  `tests/funcional/unitarios/test_dependencias_024.py` entre los archivos preexistentes de prueba.
   **Evidencia prevista:** `git diff --stat` de las áreas protegidas y conteos de contrato.
   **Evidencia:** **75** OpenAPI, **73** matriz, `021.1`, **27/24** tablas; `requirements.txt`
   11 líneas todas `==`; diff protegido vacío (evidencia §6).

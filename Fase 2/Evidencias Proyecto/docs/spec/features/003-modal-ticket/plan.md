@@ -20,9 +20,9 @@ Cada AC de `spec.md` §6 tiene aquí su archivo y su caso de prueba.
 | `frontend/src/app/shared/interfaces/index.ts` | +5 tipos de catálogo | Bajo |
 | `frontend/src/app/features/tickets/tickets.component.ts` | signals del modal, `FormGroup` con `FormArray`, abrir/cerrar | Alto: primer formulario |
 | `frontend/src/app/features/tickets/tickets.component.html` | `<dialog>` con el formulario, `(click)` del botón, estado de éxito | Alto |
-| `backend/tests/api/test_modal_ticket.py` | **nuevo** | — |
-| `backend/tests/api/test_smoke.py` | 1 caso migrado de 500 a 404 | — |
-| `backend/tests/api/test_transaccion_ticket.py` | 2 casos migrados de 500 a 404 | — |
+| `backend/tests/funcional/integracion/test_modal_ticket.py` | **nuevo** | — |
+| `backend/tests/funcional/humo/test_smoke.py` | 1 caso migrado de 500 a 404 | — |
+| `backend/tests/funcional/e2e/test_transaccion_ticket.py` | 2 casos migrados de 500 a 404 | — |
 | `frontend/src/app/features/tickets/tickets.component.spec.ts` | **nuevo** | — |
 | `docs/spec/stack.md` §2 y §3 | read model de catálogos + ubicación de `URL_API` | — |
 | `AGENTS.md` §5 | nota de los dos puertos | — |
@@ -48,9 +48,9 @@ Cada AC de `spec.md` §6 tiene aquí su archivo y su caso de prueba.
 | `backend/app/schemas/ticket_schema.py` | Hacer opcional `TicketCrear.usuario_id`; OpenAPI coherente. | AC-33 |
 | `backend/app/services/ticket_service.py` | Aplicar orden definitivo, autoatribución antes de referencias, ámbito/productos/sede de identidad y 409 sin mutación. | AC-33, AC-35 |
 | `backend/app/api/v1/endpoints/tickets.py` | Ajustar documentación del POST sin cambiar matriz ni respuesta. | AC-33 |
-| `backend/tests/api/test_tickets_alcance.py` | Sustituir obligatoriedad/selección por autoatribución de Solicitante, Administrador y Bodeguero, con identidad persistida y ámbito. | AC-33, AC-35 |
-| `backend/tests/api/test_tickets_institucional.py` | Cambiar solicitante ajeno 404 a autoría de sesión; conservar producto ajeno 404 y anclas institucionales. | AC-33, AC-35 |
-| `backend/tests/api/test_modal_ticket.py`, `test_ticket_sede_011.py`, `test_transaccion_ticket.py` y otros hallados por búsqueda `usuario_id` en payload de alta | Actualizar solo altas que asumían usuario payload como identidad/referencia; mantener payloads de despacho (`TicketDespacho.usuario_id`) intactos. | AC-33, AC-35 |
+| `backend/tests/funcional/integracion/test_tickets_alcance.py` | Sustituir obligatoriedad/selección por autoatribución de Solicitante, Administrador y Bodeguero, con identidad persistida y ámbito. | AC-33, AC-35 |
+| `backend/tests/funcional/integracion/test_tickets_institucional.py` | Cambiar solicitante ajeno 404 a autoría de sesión; conservar producto ajeno 404 y anclas institucionales. | AC-33, AC-35 |
+| `backend/tests/funcional/integracion/test_modal_ticket.py`, `test_ticket_sede_011.py`, `test_transaccion_ticket.py` y otros hallados por búsqueda `usuario_id` en payload de alta | Actualizar solo altas que asumían usuario payload como identidad/referencia; mantener payloads de despacho (`TicketDespacho.usuario_id`) intactos. | AC-33, AC-35 |
 | `frontend/src/app/features/tickets/tickets.component.ts` y `.html` | Usar identidad cargada para autor informativo; eliminar control/select y omitir `usuario_id` del cuerpo. | AC-34, AC-35 |
 | `frontend/src/app/features/tickets/tickets.component.spec.ts` | Reescribir aserciones del selector/usuario en body y cubrir identidad, ausencia del select/control y catálogo preservado. | AC-34, AC-35 |
 | `frontend/src/app/shared/interfaces/index.ts` | Hacer `TicketCrear.usuario_id` opcional si sigue modelado; conservar `Solicitante`/`CatalogosTicket`. | AC-34, AC-35 |

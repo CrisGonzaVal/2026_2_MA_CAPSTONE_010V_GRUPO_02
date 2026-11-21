@@ -16,7 +16,7 @@ con el código de prueba de Clerk `424242`. No se transcriben tokens ni secretos
 | `ng build` | Limpio |
 | Operaciones | 73 de negocio, 75 en `/openapi.json` |
 
-El test de contrato `backend/tests/services/test_compra_service_estructura.py`
+El test de contrato `backend/tests/funcional/unitarios/test_compra_service_estructura.py`
 se creó antes del movimiento y falló como estaba previsto: 2 de sus 3 pruebas
 (no existía `__path__` ni `__all__`). Ese rojo caracterizó el estado inicial.
 
@@ -66,8 +66,8 @@ quedaron en **85 passed**.
 | Suite | Resultado |
 |---|---|
 | `pytest -q` | **1502 passed, 88 skipped, 0 failed** (1499 previos + 3 de contrato) |
-| `pytest tests/api/test_compras.py tests/api/test_cobertura_021.py tests/api/test_compras_endpoints_020.py -q` | **85 passed** |
-| `pytest tests/services/test_compra_service_estructura.py -q` | **3 passed** |
+| `pytest tests/funcional/integracion/test_compras.py tests/funcional/integracion/test_cobertura_021.py tests/funcional/integracion/test_compras_endpoints_020.py -q` | **85 passed** |
+| `pytest tests/funcional/unitarios/test_compra_service_estructura.py -q` | **3 passed** |
 | `ng test --watch=false --browsers=ChromeHeadless` | **549 SUCCESS** |
 | `ng build` | Limpio, sin avisos de presupuesto |
 
@@ -130,7 +130,7 @@ humo usó el build congelado y el backend con recarga automática.
 
 - **Eliminado:** `backend/app/services/compra_service.py` y su bytecode.
 - **Nuevo:** `backend/app/services/compra_service/` con los siete módulos.
-- **Nuevo:** `backend/tests/services/test_compra_service_estructura.py`.
+- **Nuevo:** `backend/tests/funcional/unitarios/test_compra_service_estructura.py`.
 - **Nuevos:** `docs/spec/features/023-refactor-compra-service/` (`spec.md`,
   `plan.md`, `tasks.md` y esta evidencia).
 - **Modificados:** `docs/spec/roadmap.md`, `docs/spec/stack.md`, `MEMORY.md`.

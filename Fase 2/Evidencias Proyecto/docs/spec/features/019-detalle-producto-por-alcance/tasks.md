@@ -7,14 +7,14 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
 ## Backend
 
 - [x] **T1 — Fijar primero las pruebas rojas del detalle, ámbito y precedencia.**
-  - **Archivos:** nuevo `backend/tests/api/test_detalle_producto_019.py`; se reutiliza `mundo` desde `test_filtros_inventario_018.py`, `dos_instituciones`, `cliente_de_rol`/`sembrar_contexto_capacidades` de `_soporte_ciclo_vida_catalogo_014.py`, y `cliente`/`sesion`/`SIN_AUTENTICAR` de `_soporte_sede_011.py`.
+  - **Archivos:** nuevo `backend/tests/funcional/integracion/test_detalle_producto_019.py`; se reutiliza `mundo` desde `test_filtros_inventario_018.py`, `dos_instituciones`, `cliente_de_rol`/`sembrar_contexto_capacidades` de `_soporte_ciclo_vida_catalogo_014.py`, y `cliente`/`sesion`/`SIN_AUTENTICAR` de `_soporte_sede_011.py`.
   - Añadir antes de producción casos HTTP de respuesta exacta y suma; orden de sedes; sede inactiva incluida; Administrador con productos/categorías inactivos; operativos con activos únicamente; productos sin stock; rol/tenant limitado; filtros de lista sin efecto; 401/403 matriz/capacidad/institución/409/404 en precedencia; 404 indistinguible; id 0/negativo, no entero 422; Superadmin; y operación sin escritura. La sede `None` debe dar 409 aun con producto inexistente/ajeno/retirado.
   - Mantener el mundo existente sin mover el fixture: importarlo desde el test 018 para evitar refactor a sus consumidores; confirmar que pytest lo descubre y que no hay colisión de nombre/alcance antes de seguir.
   - **AC:** AC-1…AC-7, AC-10…AC-13.
   - **Hecho cuando:** nuevas pruebas fallan por ruta/DTO/servicio ausentes con causas explícitas; no por `ImportError`, setup defectuoso ni cambio de fixtures heredados. **[pytest SQLite]**
 
 - [x] **T2 — Fijar expectativa independiente de autorización, gating y contrato 62.**
-  - **Archivos:** `backend/tests/api/test_detalle_producto_019.py`, `backend/tests/api/test_ciclo_vida_autorizacion_014.py`, `backend/tests/api/test_filtros_inventario_018.py`.
+  - **Archivos:** `backend/tests/funcional/integracion/test_detalle_producto_019.py`, `backend/tests/funcional/integracion/test_ciclo_vida_autorizacion_014.py`, `backend/tests/funcional/integracion/test_filtros_inventario_018.py`.
   - Transcribir de la spec, no de `MATRIZ_PERMISOS`, una única operación GET para Administrador/Bodeguero/Solicitante; fijar capacidad `inventario`, exclusión de Superadmin, OpenAPI 200/401/403/404/409/422 y cardinalidad 62. Ampliar a 62 los dos asserts absolutos en 014 y a 62 los asserts absolutos en 018, con comentario/diagnóstico que identifique la ampliación por Feature 019; conservar los baselines históricos de roles.
   - **AC:** AC-4, AC-10, AC-11, AC-13.
   - **Hecho cuando:** expectativas nuevas están rojas por operación ausente; las aserciones previas documentan exactamente 61→62 sin cambiar ninguna transcripción histórica ni suprimir pruebas. **[pytest SQLite]**
@@ -26,7 +26,7 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
   - **Hecho cuando:** tests de campos exactos, roles y capacidad pasan; matriz queda en 62 y su única clave nueva es el GET especificado; permanecen rojos los casos que requieren endpoint/servicio. **[pytest SQLite]**
 
 - [x] **T4 — Implementar servicio de lectura por ámbito y agregado.**
-  - **Archivos:** `backend/app/services/inventario_service.py`; `backend/tests/api/test_detalle_producto_019.py`.
+  - **Archivos:** `backend/app/services/inventario_service.py`; `backend/tests/funcional/integracion/test_detalle_producto_019.py`.
   - Implementar `obtener_detalle_producto`: resolver institución y sede operativa antes del recurso; 409 si la sede es `None`; 404 oculto para inexistente/ajeno/retirado operativo; Administrador conserva inactivos. Seleccionar producto/categoría y stock mediante `select()` y joins explícitos, con `.mappings()` y predicados del tenant/rol. Incluir sedes inactivas, ordenar `(sede_nombre, sede_id)`, devolver producto con `sedes=[]`/total 0 si es visible sin filas, calcular total y `_es_producto_critico` solo con las sedes devueltas. No leer `inventario` ni `Sede.activo` como exclusión.
   - **AC:** AC-1…AC-7, AC-9, AC-12.
   - **Hecho cuando:** pruebas API ejercitando servicio prueban suma, orden, inactivos, vacío/criticidad, aislamiento institucional en harness y precedencia de 409/404; el servicio no muta ni consulta saldo legado. **[pytest SQLite]**

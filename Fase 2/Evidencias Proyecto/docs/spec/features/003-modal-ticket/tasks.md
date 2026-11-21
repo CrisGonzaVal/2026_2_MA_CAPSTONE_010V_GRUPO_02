@@ -53,7 +53,7 @@ Sin dependencias: va primero porque valida el diseño de capas antes de escribir
 - [x] `stock_total` con `func.coalesce(func.sum(...), 0)` para productos sin inventario (AC-5)
 - [x] `tickets.py`: `GET /catalogos` con `response_model`, `summary` y `description`
 - [x] `status_code` explícito y `description` en las 3 rutas existentes (`AGENTS.md` §6)
-- [x] `backend/tests/api/test_modal_ticket.py`: fixture `datos_catalogo_ticket` **apoyado** en `datos_base` (2 prioridades, 3 estados extra); `conftest.py` sin tocar
+- [x] `backend/tests/funcional/integracion/test_modal_ticket.py`: fixture `datos_catalogo_ticket` **apoyado** en `datos_base` (2 prioridades, 3 estados extra); `conftest.py` sin tocar
 - [x] Test: 200 con las 4 listas no vacías
 - [x] Test: OpenAPI declara `/tickets/catalogos` y conserva las 3 rutas previas
 - [x] Test: estados en el orden del flujo (el primero es el inicial, no el alfabético)
@@ -88,7 +88,7 @@ Sin dependencias: va primero porque valida el diseño de capas antes de escribir
 
 Los tests de validación se escribieron **antes** del schema, y se vio fallar:
 ```
-$ pytest tests/api/test_modal_ticket.py -q          # antes de tocar ticket_schema.py
+$ pytest tests/funcional/integracion/test_modal_ticket.py -q          # antes de tocar ticket_schema.py
 6 failed, 19 passed
    test_asunto_muy_corto_responde_422 · test_asunto_vacio_responde_422
    test_asunto_demasiado_largo_responde_422 · test_ticket_sin_detalles_responde_422
@@ -138,7 +138,7 @@ al pie.
 Los 10 tests de esta fase se escribieron primero y se vio fallar con exactamente el sintoma
 que la spec describe:
 ```
-$ pytest tests/api/test_modal_ticket.py -q        # antes de tocar ticket_service.py
+$ pytest tests/funcional/integracion/test_modal_ticket.py -q        # antes de tocar ticket_service.py
 E   sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) FOREIGN KEY constraint failed
 10 failed, 26 passed
 ```
@@ -404,7 +404,7 @@ Decisiones que se tomaron al escribir el plan y que conviene no perder de vista:
   - **Comando:** `$env:CHROME_BIN = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"; cd frontend; npx ng test --watch=false --browsers=ChromeHeadless` (nunca `npm test`).
 
 - [x] **E22-3 — Regresión coordinada y conservación de contratos** (coordinación/orden en `008/tasks.md` E22-3; contribución 003).
-  - **Archivos:** todos los tests hallados con `grep -rn "usuario_id" backend/tests/api/` relacionados con alta; specs frontend de tickets.
+  - **Archivos:** todos los tests hallados con `grep -rn "usuario_id" backend/tests/funcional/integracion/` relacionados con alta; specs frontend de tickets.
   - Inventario del grep verificado; tests sustituidos: `test_roles_autorizados_atienden_la_identidad_de_sesion` (parametrizado por rol y por `usuario_id` omitido/propio/ajeno/inexistente), `test_administrador_crea_para_solicitante_propio_201`, `test_solicitante_crea_y_se_atribuye_su_identidad`, `test_administrador_ignora_solicitante_de_otra_institucion_y_atribuye_a_sesion`, `test_departamento_sin_sede_ignora_usuario_sede_id_y_responde_409` y `test_ticket_guarda_la_sede_del_departamento_no_la_del_usuario`. El test histórico de `usuario_id` obligatorio y los de 404 por solicitante ajeno quedaron eliminados. Conservar `test_crear_ticket_con_producto_ajeno_404_sin_parcial` y `test_crear_ticket_puebla_institucion_en_ticket_y_detalle`. No cambiar tests de actor de despacho (`TicketDespacho.usuario_id`).
   - **AC:** AC-33…AC-35.
   - **Hecho cuando:** grep revisado separa payloads de alta de despacho; todas las expectativas anteriores de autoría/404 por usuario fueron sustituidas y las conservaciones indicadas están verdes; ninguna afirmación de matriz o catálogo cambió.

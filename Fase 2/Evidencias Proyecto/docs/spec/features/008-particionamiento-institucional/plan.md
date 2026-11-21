@@ -57,7 +57,7 @@ Extender `IdentidadAutenticadaRespuesta` y el tipo Angular `IdentidadAutenticada
 | `database/01_esquema.sql` | DDL limpio y constraints compuestas para instalaciones nuevas. | AC-1…4, 20 |
 | `database/02_datos_semilla.sql` | Datos reproducibles en cuatro instituciones, homónimos independientes y stock/tickets coherentes. | AC-1, 3, 20 |
 | `database/98_migracion_particionamiento_institucional.sql` (nuevo) | Detectar ambigüedad y abortar sin cambios; migrar preservando datos, IDs y relaciones; idempotencia y manual de operación. | AC-14, 15, 18, 20 |
-| `backend/tests/conftest.py`, `backend/tests/api/test_ambito_institucional.py`, tests de permisos/migración y casos API relacionados | Fixtures para dos instituciones y cuatro roles; aislamiento, intentos cruzados y no mutación; prueba PG real para constraints/migración. | AC-1…18, 20 |
+| `backend/tests/conftest.py`, `backend/tests/funcional/integracion/test_ambito_institucional.py`, tests de permisos/migración y casos API relacionados | Fixtures para dos instituciones y cuatro roles; aislamiento, intentos cruzados y no mutación; prueba PG real para constraints/migración. | AC-1…18, 20 |
 | `frontend/src/app/shared/interfaces/index.ts`, `frontend/src/app/core/services/auth.service.ts`, features inventario/tickets/dashboard y sus specs | Tipos y presentación institucional; consume `/auth/me`, no decide autorización. | AC-8, 17, 19 |
 | `frontend/src/app/features/**` specs existentes de inventario/tickets/auth | Regresión de vista para institución limitada y Superadmin global sin contaminación de stock. | AC-19 |
 | `docs/spec/features/008-particionamiento-institucional/spec.md` | Solo al cierre, marcar AC verificados e incluir evidencia específica. | AC-21 |
@@ -82,8 +82,8 @@ Los archivos concretos pueden ajustarse por el implementador si el código revel
 | Archivo | Responsabilidad | AC |
 |---|---|---|
 | `backend/app/schemas/ticket_schema.py`, `ticket_service.py`, `backend/app/api/v1/endpoints/tickets.py` | Opcionalidad, autoatribución/orden institución-productos-sede, documentación de contrato. | AC-11 |
-| `backend/tests/api/test_tickets_institucional.py` | Cambiar 404 de solicitante ajeno a autoría de sesión; probar anclas; conservar producto ajeno 404. | AC-11 |
-| `backend/tests/api/test_tickets_alcance.py`, `test_modal_ticket.py`, `test_ticket_sede_011.py`, `test_transaccion_ticket.py` y demás altas halladas por grep | Compatibilidad de payload y todas las identidades permitidas; mantener despacho aparte. | AC-11 |
+| `backend/tests/funcional/integracion/test_tickets_institucional.py` | Cambiar 404 de solicitante ajeno a autoría de sesión; probar anclas; conservar producto ajeno 404. | AC-11 |
+| `backend/tests/funcional/integracion/test_tickets_alcance.py`, `test_modal_ticket.py`, `test_ticket_sede_011.py`, `test_transaccion_ticket.py` y demás altas halladas por grep | Compatibilidad de payload y todas las identidades permitidas; mantener despacho aparte. | AC-11 |
 | `frontend/src/app/features/tickets/tickets.component.ts`, `.html`, `.spec.ts`, `frontend/src/app/shared/interfaces/index.ts` | Campo solo lectura desde identidad y cuerpo sin usuario_id; sin selector. | AC-11 |
 | `database/` y `backend/app/models/` | **No se modifican**: no hay DDL ni cambio de entidad. | AC-11 |
 
@@ -157,8 +157,8 @@ No se toca matriz ni permisos, Superadmin 403, catálogo de solicitantes, DDL/es
 | `backend/app/schemas/auth_schema.py` | DTOs de sede/departamento y campos en la identidad. | AC-22 |
 | `backend/app/services/auth_service.py` | Derivación por rol, eager loads y degradación a `null`. | AC-22 |
 | `backend/app/api/v1/endpoints/auth.py` | Descripción OpenAPI del contexto ampliado. | AC-22 |
-| `backend/tests/api/test_auth_me_institucion.py` | Sede/departamento por rol, ausencia, no-entrada y OpenAPI. | AC-22 |
-| `backend/tests/api/test_auth.py` | Set exacto de claves del 200 (nueve campos). | AC-22 |
+| `backend/tests/no_funcional/seguridad/test_auth_me_institucion.py` | Sede/departamento por rol, ausencia, no-entrada y OpenAPI. | AC-22 |
+| `backend/tests/no_funcional/seguridad/test_auth.py` | Set exacto de claves del 200 (nueve campos). | AC-22 |
 | `frontend/src/app/shared/interfaces/index.ts` | Tipos 1:1 con el DTO. | AC-23 |
 | `frontend/src/app/core/auth/roles.ts`, `roles.spec.ts` | Matriz de aplicabilidad de los badges por rol. | AC-23 |
 | `frontend/src/app/app.component.ts`, `.html`, `.spec.ts` | Badges por rol, `—` y cabecera sin desborde. | AC-23 |

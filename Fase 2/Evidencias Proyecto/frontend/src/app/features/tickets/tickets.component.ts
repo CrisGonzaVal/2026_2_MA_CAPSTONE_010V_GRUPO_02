@@ -245,8 +245,11 @@ export class TicketsComponent {
   /**
    * Identidad de sesión (Feature 003, AC-34): el alta no elige autor. El
    * servidor atribuye el ticket a esta misma identidad; aquí solo se presenta
-   * como dato informativo de solo lectura. No se consulta departamento porque
-   * `/auth/me` no lo expone.
+   * como dato informativo de solo lectura. El departamento sí está disponible
+   * en `/auth/me` desde la enmienda AC-22 de la Feature 008 (20/Nov/2026), pero
+   * este bloque informativo conserva nombre, apellido y correo: el servidor
+   * deriva el departamento del ticket y el modal no lo edita ni lo consulta por
+   * separado.
    */
   readonly identidad = this.autenticacion.identidad;
 

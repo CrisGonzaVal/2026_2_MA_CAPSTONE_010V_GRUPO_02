@@ -15,33 +15,33 @@
     "summary": { "model": "opencode/deepseek-v4.1-flash-free" }
   },
   "mcp": {
-    "context7": {
-      "type": "local",
-      "command": ["npx", "-y", "@upstash/context7-mcp"],
-      "enabled": true
-    },
-    "postgres": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-postgres",
-        "postgresql://postgres:postgres@localhost:5433/apt_erp"
-      ],
-      "enabled": true
-    },
-    "chrome-devtools": {
-      "type": "local",
-      "command": ["npx", "-y", "chrome-devtools-mcp@latest", "--no-usage-statistics"],
-      "enabled": true
-    },
-    "github": {
-      "type": "remote",
-      "url": "https://api.githubcopilot.com/mcp/x/all",
-      "headers": {
-        "Authorization": "Bearer {env:GITHUB_PERSONAL_ACCESS_TOKEN}"
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "oauth": false
       },
-      "enabled": false
+      "postgres": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "@modelcontextprotocol/server-postgres@0.6.2",
+          "postgresql://postgres:postgres@localhost:5433/apt_erp"
+        ]
+      },
+      "chrome-devtools": {
+        "type": "local",
+        "command": ["npx", "-y", "chrome-devtools-mcp@latest", "--no-usage-statistics"]
+      },
+      "github": {
+        "type": "remote",
+        "url": "https://api.githubcopilot.com/mcp/x/all",
+        "headers": {
+          "Authorization": "Bearer {env:GITHUB_PERSONAL_ACCESS_TOKEN}"
+        },
+        "disabled": true
+      }
     }
   }
 }

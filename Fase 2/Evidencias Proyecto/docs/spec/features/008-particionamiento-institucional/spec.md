@@ -8,6 +8,11 @@
 > verificada. Esta enmienda acotada actualiza únicamente la semántica de `usuario_id`
 > en el alta de tickets para armonizarla con la autoatribución aprobada en las Features
 > 003 y 007; no reabre el particionamiento ni modifica la matriz de permisos.
+>
+> **Enmienda posterior al cierre (20/Nov/2026):** la Feature 008 permanece cerrada y
+> verificada. Esta enmienda acotada amplía `GET /auth/me` con el contexto organizacional
+> (`sede` y `departamento`) que la cabecera necesita; no reabre el particionamiento, no
+> cambia la matriz de permisos y no toca el esquema de la base.
 
 ## 1. Problema
 
@@ -172,6 +177,13 @@ El aislamiento se debe verificar en `GET /usuarios/`, `POST /usuarios/`, catálo
 - **AC-20** El esquema y los datos semilla nuevos representan la pertenencia institucional; la migración de instalación existente no depende de borrar el volumen ni volver a ejecutar la semilla destructiva.
   - **Verificado:** instalación nueva reproducible (base temporal `compustock_newinstall_check`, `01_esquema.sql` + `02_datos_semilla.sql` + `98_` + `99_`): homónimos por institución con stock independiente y 0 referencias cruzadas (producto–categoría, inventario–producto, detalle–producto, ticket–usuario), y `98_`/`99_` no-op sobre el esquema ya particionado. Migración de la base **existente real `apt_erp`** aplicada por `psql` (`cmd.exe /c "docker exec -i compustock_db psql -U postgres -d apt_erp -v ON_ERROR_STOP=1 < database\98_migracion_particionamiento_institucional.sql"`), sin borrar el volumen y sin ejecutar `02_datos_semilla.sql`: conteos preservados (4 instituciones, 12 usuarios, 10 departamentos, 10 categorías, 10 productos, 10 inventario, 10 movimientos, 10 tickets, 10 detalles), PK intactas (1..N), `institucion_id NOT NULL` y las 9 constraints compuestas presentes, `stock_total` 626 sin cambios. Como salvaguarda previa a la migración in-place se creó el backup temporal `backup_apt_erp_pre008.sql`; se utilizó durante la migración y fue borrado tras el cierre aprobado de la Feature 008 (AC-21).
 - **AC-21** La feature solo se declara cerrada cuando todas las casillas de `tasks.md`, incluidos los checks de cierre, están `[x]`; cada AC de esta spec está marcado como verificado con su evidencia; `pytest` y `ng test` están verdes; el recorrido funcional con escrituras reales en 4200 y el recorrido de humo en 8080 tras reconstruir la imagen están documentados; y se revisaron las referencias documentales conforme a `AGENTS.md` §8.5.
+
+### Contexto organizacional (enmienda 20/Nov/2026)
+
+- **AC-22** `GET /auth/me` expone el contexto organizacional informativo de la identidad en dos objetos anidados nullable: `sede: { sede_id, nombre } | null` y `departamento: { departamento_id, nombre } | null`. Para **Bodeguero**, `sede` es su `usuario.sede` y `departamento` es `null`. Para **Solicitante**, `departamento` es su `usuario.departamento` y `sede` es la sede de ese departamento, no `usuario.sede_id`. Para **Administrador** y **Superadmin**, ambos son `null`. Si la asignación aplicable no existe, el campo correspondiente es `null`: `/auth/me` no responde 409/403 por contexto organizacional faltante. La respuesta no acepta sede ni departamento del cliente, no expone identificadores de otros usuarios y los campos son informativos: no autorizan ni sustituyen el ámbito del servidor.
+  - **Verificación prevista (enmienda en implementación):** `test_auth_me_institucion.py::test_auth_me_bodeguero_expone_su_sede_sin_departamento`, `::test_auth_me_solicitante_expone_departamento_y_sede_del_departamento`, `::test_auth_me_contexto_organizacional_nulo_sin_asignacion`, `::test_auth_me_administrador_y_superadmin_sin_contexto_organizacional`, `::test_openapi_auth_me_publica_sede_y_departamento_opcionales`, `::test_auth_me_no_acepta_sede_ni_departamento_del_cliente`; set exacto de claves en `test_auth.py::test_auth_me_no_expone_rol_id`.
+- **AC-23** La cabecera de la aplicación muestra `Sede` para Bodeguero y Solicitante, y `Departamento` para Solicitante, con los valores de `GET /auth/me`; cuando el valor aplicable es `null`, el badge se muestra con `—`. Administrador y Superadmin conservan la cabecera actual (Institución y Rol) sin badges nuevos. El tipo Angular `IdentidadAutenticada` refleja el DTO y `ng test` queda en verde.
+  - **Verificado (20/Nov/2026):** `app.component.spec.ts` en **30 SUCCESS** cubre Bodeguero con sede, Bodeguero sin sede (`—`), Solicitante con departamento y sede, Solicitante sin asignaciones (ambos `—`), Administrador y Superadmin sin badges nuevos, y ausencia de selectores/entradas; `auth.service.spec.ts` y el resto de fixtures compilan contra el tipo extendido. Suite frontend completa **556 SUCCESS** (Edge 157) y `ng build` de producción OK (339.16 kB iniciales / 94.67 kB de transferencia). Recorrido 4200 con sesiones Clerk reales: Administrador sin badges nuevos, Bodeguero con `Sede: Sede Maipu`, Solicitante con `Sede: Sede Maipu` y `Departamento: Biblioteca`, Superadmin sin badges nuevos; a 1024 px la cabecera envuelve a 72 px sin desbordamiento horizontal ni errores de consola. Humo 8080 con la imagen reconstruida (`main-HEJG5WKB.js`): Solicitante muestra ambos badges y `GET /tickets` responde 200 por `try_files`. Detalle en [`evidencia/enmienda-contexto-organizacional.md`](evidencia/enmienda-contexto-organizacional.md).
   - **Verificado (T15 — cierre documental):** T1–T15 de `tasks.md` en `[x]` (incluidos los checks de cierre). Suites al cierre: `cd backend && .venv\Scripts\python.exe -m pytest` → **487 passed, 5 skipped** (SQLite en memoria); `$env:POSTGRES_TEST_URL="postgresql://postgres:postgres@localhost:5433/postgres"` → **492 passed** (PostgreSQL 16 real); `$env:CHROME_BIN=…msedge.exe; cd frontend && npx ng test --watch=false --browsers=ChromeHeadless` → **153 SUCCESS**. Grep de coherencia (`AGENTS.md` §8.7) sobre `AGENTS.md`, `.agents/skills/**`, `MEMORY.md` y los comentarios que citan la matriz: sin rutas rotas; `AGENTS.md` no mencionaba el conteo de operaciones y las skills no asumían catálogo global ni escritura de catálogo por Superadmin; se corrigieron las afirmaciones «18 endpoints/operaciones» ya obsoletas por el ajuste de la 008 (matriz de **20** operaciones) en `MEMORY.md` y en los comentarios de `backend/app/core/permisos.py`, `backend/tests/api/test_permisos.py` y `backend/tests/api/test_permisos_endpoints.py`. `MEMORY.md` reescrito (§10): la 008 pasa a «Estado actual», decisiones D-1…D-6 y aprendizajes (aborte fail-closed de la migración, tests PostgreSQL gated con `POSTGRES_TEST_URL`, `NOT NULL` endurecido). `roadmap.md` **no** se toca (el coordinator lo marca tras la validación del reviewer). El backup temporal `backup_apt_erp_pre008.sql`, usado como salvaguarda previa a la migración in-place, se borró tras el cierre aprobado de la Feature 008 (AC-21).
   - **Verificado (T14 — humo 8080 tras reconstruir):** `docker compose -f docker-compose.yml build frontend` (build de producción Angular OK, sin errores de presupuesto; bundle inicial 321.01 kB / 90.66 kB transfer) y `docker compose -f docker-compose.yml up -d frontend` (contenedor `compustock_frontend` **recreado**). Imagen nueva `sha256:cfdd5de44bc9ad…` (antes `815cfac1e0c1`, pre-008). Servido por nginx: `/`, `/inventario`, `/tickets` → **200 `text/html`** (`try_files` SPA) y el `index.html` referencia los hashes del build nuevo (`main-FJRVOZX4.js`, `styles-KWVWMOF.css`); proxy `/api/v1/auth/me` → 401. Humo con chrome-devtools en `http://localhost:8080`: sesión Clerk existente válida (sin JWT local); `/dashboard` muestra header **«Rol: Superadmin · Institución: Todas las instituciones»** (coherente con `/auth/me` → `institucion: null`); `/inventario` (Catálogo de Insumos) y `/tickets` (Kanban) y `/administracion` cargan; consola **sin errores** (solo el aviso benigno de «Clerk development keys»). El header con institución limitada («Institución: <nombre>») quedó evidenciado en 4200 (T13, sesión INST-002).
 
@@ -215,3 +227,72 @@ La evidencia de rechazo por solicitante ajeno deja de ser vigente. Los tests que
 - La institución de roles limitados continúa derivándose de departamento obligatorio. Si no se resuelve, la solicitud institucional se deniega con 403; nunca se degrada a global.
 - Trazabilidad absoluta: toda variación de stock conserva su movimiento de auditoría. Consistencia ACID: despacho, stock, detalle, ticket y movimientos permanecen atómicos.
 - La migración y el nuevo modelo requieren justificación aprobada en `docs/spec/stack.md` antes de implementarse; esta especificación no modifica dicho documento ni define la estructura técnica final.
+
+## 9. Enmienda posterior al cierre: contexto organizacional en la cabecera — 20/Nov/2026
+
+### Problema
+
+La cabecera muestra institución y rol, pero un Bodeguero no ve la sede donde opera y un
+Solicitante no ve la sede ni el departamento al que pertenece. `GET /auth/me` no publica
+esos datos y ninguna otra lectura autorizada los expone para esos roles: `/organizacion/*`
+y `/usuarios/departamentos` son del Administrador. El usuario debe deducir su contexto
+operativo desde otras pantallas, cuando existe, o no puede verificarlo.
+
+### Qué cambia
+
+`GET /auth/me` agrega dos objetos anidados nullable, `sede` y `departamento`, con la
+misma forma que `institucion` (`id` + `nombre` legible). La derivación se hace en el
+servidor, por rol, sin entrada del cliente:
+
+| Rol | `sede` | `departamento` |
+|---|---|---|
+| Bodeguero | `usuario.sede` | `null` |
+| Solicitante | `usuario.departamento.sede` | `usuario.departamento` |
+| Administrador | `null` | `null` |
+| Superadmin | `null` | `null` |
+
+La cabecera presenta `Sede` para Bodeguero y Solicitante, y `Departamento` para
+Solicitante. Si la asignación aplicable falta, el badge se pinta con `—` y la sesión
+continúa: el dato es informativo y no bloquea la navegación. Administrador y Superadmin
+no reciben badges nuevos.
+
+### Qué no cambia
+
+- `institucion` y AC-17 conservan su contrato y su semántica. Los nuevos campos son
+  adicionales; ningún AC anterior se invalida.
+- La matriz de permisos, las capacidades, las rutas, los guards y las operaciones de
+  `/openapi.json` no cambian. `/auth/me` sigue siendo `_TODOS` y no se gatea por
+  capacidades.
+- El esquema de la base, la semilla y la migración no cambian: sede y departamento ya
+  existen y ya están relacionados con el usuario. No hay DDL nuevo.
+- `/auth/me` no acepta sede ni departamento del cliente, no expone usuarios ajenos y no
+  usa estos campos para autorizar. La frontera de seguridad sigue siendo el servidor.
+- El 409 por sede no resoluble en las operaciones que dependen de ella (inventario,
+  tickets) no se traslada a `/auth/me`: ahí el contexto faltante se degrada a `null`.
+
+### Decisiones nuevas
+
+- **D-9 — El contexto organizacional se deriva por rol, no por un campo genérico del
+  usuario.** El Bodeguero opera con su sede asignada (`usuario.sede_id`) y el Solicitante
+  con la sede de su departamento (`departamento.sede_id`), tal como ya lo define la
+  Feature 011 para inventario y tickets. `GET /auth/me` refleja esa misma regla y no cae
+  en `usuario.sede_id` para el Solicitante ni en la sede del departamento para el
+  Bodeguero.
+  - **Por qué:** unificar ambos roles en un solo campo mostraría una sede distinta de la
+    que el servidor usa para acotar sus operaciones, y la cabecera dejaría de ser
+    coherente con la funcionalidad real.
+- **D-10 — El contexto faltante se muestra como `—`, no se convierte en un error de
+  sesión.** La ausencia de sede o departamento es un dato operativo que las operaciones
+  dependientes ya rechazan con 409; `/auth/me` la publica como `null` para que la UI la
+  haga visible sin impedir el acceso a la shell.
+  - **Por qué:** bloquear `/auth/me` con 409/403 dejaría al usuario sin identidad, sin rol
+    y sin navegación por un dato informativo. El guion cumple la función de señalar la
+    asignación faltante sin inventar un valor ni ocultarla.
+
+### Evidencia histórica afectada
+
+Ninguna evidencia de AC-1…AC-21 deja de ser válida. Quedan obsoletas únicamente las
+afirmaciones documentales de que `/auth/me` "no expone departamento" (plan de la Feature
+008, enmienda E22; comentario de `tickets.component.ts` y notas equivalentes en
+`007/spec.md`): se actualizan como parte de esta enmienda. La evidencia nueva se registra
+en `evidencia/enmienda-contexto-organizacional.md`.

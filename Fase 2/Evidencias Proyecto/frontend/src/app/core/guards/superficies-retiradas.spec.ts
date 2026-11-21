@@ -27,6 +27,8 @@ describe('superficies retiradas al Superadmin (Feature 017, AC-15)', () => {
       correo: 'camila.fernandez@losalpes.cl',
       rol,
       institucion: null,
+      sede: null,
+      departamento: null,
     };
   }
 

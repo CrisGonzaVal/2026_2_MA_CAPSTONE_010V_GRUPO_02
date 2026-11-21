@@ -491,8 +491,10 @@ identidad; para Administrador y Bodeguero habilitaba elegir a otra persona.
 La atribución del servidor pasa a ser incondicional para todo rol autorizado en el alta; el
 campo de entrada `usuario_id` pasa a opcional y, si llega, se ignora sin error. En el modal,
 el selector se reemplaza por un campo informativo no editable con nombre, apellido y correo
-de `AutenticacionService.identidad()`. La identidad local no expone departamento en
-`/auth/me`, así que no se muestra ni consulta por separado.
+de `AutenticacionService.identidad()`. En esa fecha la identidad local no exponía
+departamento en `/auth/me`, así que no se muestra ni consulta por separado. (Desde la
+enmienda AC-22 de la Feature 008, 20/Nov/2026, `/auth/me` sí publica `departamento`; el
+modal conserva el mismo bloque informativo y sigue sin consultarlo por separado.)
 
 #### Qué no cambia
 

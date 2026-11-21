@@ -3,7 +3,8 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 
 ## Estado actual
 - Features 000…**026 cerradas**. La **026** (salud del esquema BD) se cerró el **18/Nov/2026**; evidencia en `026-salud-esquema-bd/evidencia/README.md`.
-- **026:** token `026.0`; control **26** tablas y tenants **23**; **21 entidades**. Se retiró `inventario` y los 14 movimientos legados: quedan 14 saldos `stock_sede` y 3 movimientos (producto 5 = 45, producto 9 = 12). 15 índices P0 + 2 heredados, 6 unicidades B2, U-07 PG-only y K-01…K-04. Backend **1659 passed/105 skipped**, gated PG **1761/3**, gated Redis **1662/102**, frontend **549 SUCCESS**, OpenAPI **75** operaciones.
+- **026:** token `026.0`; control **26** tablas y tenants **23**; **21 entidades**. Se retiró `inventario` y los 14 movimientos legados: quedan 14 saldos `stock_sede` y 3 movimientos (producto 5 = 45, producto 9 = 12). 15 índices P0 + 2 heredados, 6 unicidades B2, U-07 PG-only y K-01…K-04. Al cierre: backend **1659 passed/105 skipped**, gated PG **1761/3**, gated Redis **1662/102**, frontend **549 SUCCESS**, OpenAPI **75** operaciones.
+- **Enmienda 008 (20/Nov/2026):** `/auth/me` publica `sede` y `departamento` derivados por rol (D-9); la cabecera muestra `Sede` a Bodeguero/Solicitante y `Departamento` al Solicitante, con `—` si la asignación falta (D-10); Admin/Superadmin sin badges nuevos. Sin DDL. Backend **1667 passed/105 skipped**, frontend **556 SUCCESS**, 4200 con los cuatro roles y 8080 reconstruido. Evidencia en `008-particionamiento-institucional/evidencia/enmienda-contexto-organizacional.md`.
 - **Base consolidada:** `database/` solo `01_esquema.sql` (26 en control + 23 por tenant) y `02_datos_semilla.sql` (`026.0`, guardia fail-closed). Sin migraciones: reset = `down -v` + `up -d`.
 - **Cierre 026:** 4200 con 409 por duplicado (sede, departamento, RUT, correo), movimiento por `stock_sede_id` (201) y legado (422), dashboard sin campos legados; 8080 con imagen reconstruida y 8 rutas directas OK.
 - **024/023/022/021 cerradas:** hardening (`X-Request-ID`, `/ready`, `/metrics`, 429 nginx, `URL_API=/api/v1`), `compra_service` como paquete con fachada y `orden_compra_ticket` como intención de cobertura. Detalle en la evidencia de cada feature.
@@ -26,6 +27,7 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 - **Filtro de lista ≠ recurso:** `sede_id` en `/inventario/existencias` responde 200/`[]`; el detalle usa `stock_sede`.
 - Cierre = verificación (AGENTS §8.5–§8.7): los dos puertos, `docker compose build frontend` si cambió el frontend, grep de coherencia.
 - **Mover un módulo a paquete:** borrar `.py` y `.pyc` en la misma tarea.
+- **8080 tras rebuild:** el navegador puede reutilizar `index.html` cacheado y cargar el `main-*.js` viejo; verificar el hash real y recargar con `ignoreCache` antes de concluir que la imagen no se actualizó.
 - **Árbol revertido por un proceso externo:** revisar `git stash list` y `git reflog` antes de rehacer.
 - **Contratos externos:** `GET /v1/invitations` de Clerk devuelve lista desnuda; la semilla limpia no crea Superadmin.
 - Tests **gated** (`POSTGRES_TEST_URL` / `REDIS_TEST_URL`): SQLite no valida esquemas ni FK compuestas; al subir el esquema, actualizar los snapshots gated.

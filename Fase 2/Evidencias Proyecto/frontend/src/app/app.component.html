@@ -174,23 +174,39 @@
   </aside>
 
   <div class="flex-1 flex flex-col overflow-hidden">
-    <header class="h-16 bg-white shadow-sm flex items-center justify-between px-6 z-10">
+    <header class="min-h-16 bg-white shadow-sm flex items-center justify-between gap-4 px-6 py-2 z-10">
       <h1 class="text-xl font-bold text-slate-800">Sistema de Gestión de Insumos</h1>
-      <div class="flex items-center space-x-4">
+      <div class="flex items-center justify-end gap-2 flex-wrap">
         <span
-          class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full"
+          class="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap"
         >
           SaaS Multi-tenant Activo
         </span>
-        <span class="text-sm text-slate-600">
+        <span class="text-sm text-slate-600 whitespace-nowrap">
           Rol: <strong class="font-semibold">{{ rolLegible() ?? '—' }}</strong>
         </span>
         @if (contextoInstitucional(); as contexto) {
           <span
-            class="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-full"
+            class="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap"
             aria-label="Contexto institucional"
           >
             Institución: {{ contexto }}
+          </span>
+        }
+        @if (contextoSede(); as sede) {
+          <span
+            class="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap"
+            aria-label="Sede del usuario"
+          >
+            Sede: {{ sede }}
+          </span>
+        }
+        @if (contextoDepartamento(); as departamento) {
+          <span
+            class="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap"
+            aria-label="Departamento del usuario"
+          >
+            Departamento: {{ departamento }}
           </span>
         }
       </div>

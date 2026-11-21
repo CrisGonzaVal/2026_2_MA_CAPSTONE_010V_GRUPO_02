@@ -24,7 +24,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api import dependencies
 from app.main import app
-from app.models import Departamento, Institucion, Rol, Usuario
+from app.models import Departamento, Institucion, Rol, Sede, Usuario
 from app.services.auth_service import IdentidadAutenticada
 
 RUTA_ME = "/api/v1/auth/me"
@@ -55,18 +55,65 @@ def identidades(motor, datos_base):
         dept_propio_id = datos_base["departamento_id"]
         inst_propia = datos_base["institucion_id"]
 
+        # Enmienda de contexto organizacional (AC-22): el Bodeguero opera con la
+        # sede de su usuario y el Solicitante con la sede de su departamento. Se
+        # siembran dos sedes distintas y un departamento con sede propia para que
+        # la respuesta no pueda acertar por casualidad.
+        sede_bodeguero = Sede(
+            nombre="Sede Norte",
+            institucion_id=inst_propia,
+        )
+        sede_departamento = Sede(
+            nombre="Sede Sur",
+            institucion_id=inst_propia,
+        )
+        db.add_all([sede_bodeguero, sede_departamento])
+        db.flush()
+
+        departamento_biblioteca = Departamento(
+            nombre_dep="Biblioteca",
+            descripcion="Departamento con sede propia",
+            institucion_id=inst_propia,
+            sede_id=sede_departamento.sede_id,
+        )
+        departamento_sin_sede = Departamento(
+            nombre_dep="Sin Sede",
+            descripcion="Departamento sin sede asignada",
+            institucion_id=inst_propia,
+        )
+        db.add_all([departamento_biblioteca, departamento_sin_sede])
+        db.flush()
+
         usuario_bodeguero = Usuario(
             nombre="Beto",
             apellido="Bodega",
             correo="beto.bodega@compustock.cl",
             departamento_id=dept_propio_id,
             rol_id=datos_base["rol_bodeguero_id"],
+            sede_id=sede_bodeguero.sede_id,
         )
         usuario_solicitante = Usuario(
             nombre="Sofi",
             apellido="Solicita",
             correo="sofi.solicita@compustock.cl",
-            departamento_id=dept_propio_id,
+            departamento_id=departamento_biblioteca.departamento_id,
+            rol_id=rol_solicitante.rol_id,
+            # Contradiccion deliberada: el Solicitante tambien tiene sede de
+            # usuario, pero `/auth/me` debe usar la sede de su departamento.
+            sede_id=sede_bodeguero.sede_id,
+        )
+        usuario_bodeguero_sin_sede = Usuario(
+            nombre="Bruno",
+            apellido="Sin Sede",
+            correo="bruno.sin.sede@compustock.cl",
+            departamento_id=departamento_sin_sede.departamento_id,
+            rol_id=datos_base["rol_bodeguero_id"],
+        )
+        usuario_solicitante_sin_sede = Usuario(
+            nombre="Sonia",
+            apellido="Sin Sede",
+            correo="sonia.sin.sede@compustock.cl",
+            departamento_id=departamento_sin_sede.departamento_id,
             rol_id=rol_solicitante.rol_id,
         )
         usuario_superadmin = Usuario(
@@ -76,7 +123,15 @@ def identidades(motor, datos_base):
             departamento_id=dept_propio_id,
             rol_id=rol_superadmin.rol_id,
         )
-        db.add_all([usuario_bodeguero, usuario_solicitante, usuario_superadmin])
+        db.add_all(
+            [
+                usuario_bodeguero,
+                usuario_solicitante,
+                usuario_bodeguero_sin_sede,
+                usuario_solicitante_sin_sede,
+                usuario_superadmin,
+            ]
+        )
 
         institucion_ajena = Institucion(
             institucion_id="INST02",
@@ -112,8 +167,18 @@ def identidades(motor, datos_base):
             "usuario_admin_id": datos_base["usuario_id"],
             "usuario_bodeguero_id": usuario_bodeguero.usuario_id,
             "usuario_solicitante_id": usuario_solicitante.usuario_id,
+            "usuario_bodeguero_sin_sede_id": usuario_bodeguero_sin_sede.usuario_id,
+            "usuario_solicitante_sin_sede_id": usuario_solicitante_sin_sede.usuario_id,
             "usuario_superadmin_id": usuario_superadmin.usuario_id,
             "usuario_ajeno_id": usuario_ajeno.usuario_id,
+            "sede_bodeguero_id": sede_bodeguero.sede_id,
+            "sede_bodeguero_nombre": sede_bodeguero.nombre,
+            "sede_departamento_id": sede_departamento.sede_id,
+            "sede_departamento_nombre": sede_departamento.nombre,
+            "departamento_solicitante_id": departamento_biblioteca.departamento_id,
+            "departamento_solicitante_nombre": departamento_biblioteca.nombre_dep,
+            "departamento_sin_sede_id": departamento_sin_sede.departamento_id,
+            "departamento_sin_sede_nombre": departamento_sin_sede.nombre_dep,
         }
     finally:
         db.close()
@@ -233,6 +298,116 @@ def test_auth_me_no_acepta_institucion_del_cliente(motor, identidades):
 
 
 # ---------------------------------------------------------------------------
+# AC-22: contexto organizacional (sede y departamento) derivado por rol
+# ---------------------------------------------------------------------------
+
+
+def test_auth_me_bodeguero_expone_su_sede_sin_departamento(motor, identidades):
+    """AC-22/D-9: Bodeguero -> `usuario.sede`; departamento no aplica."""
+    with _cliente(motor, "Bodeguero", identidades["usuario_bodeguero_id"]) as cliente:
+        respuesta = cliente.get(RUTA_ME)
+
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["sede"] == {
+        "sede_id": identidades["sede_bodeguero_id"],
+        "nombre": identidades["sede_bodeguero_nombre"],
+    }, cuerpo
+    assert cuerpo["departamento"] is None, cuerpo
+
+
+def test_auth_me_solicitante_expone_departamento_y_sede_del_departamento(
+    motor, identidades
+):
+    """AC-22/D-9: Solicitante -> departamento propio y sede del departamento.
+
+    El usuario sembrado tiene ademas `usuario.sede_id` con otra sede; la respuesta
+    debe ignorarla y usar `departamento.sede_id`, que es la sede operativa.
+    """
+    with _cliente(
+        motor, "Solicitante", identidades["usuario_solicitante_id"]
+    ) as cliente:
+        respuesta = cliente.get(RUTA_ME)
+
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["departamento"] == {
+        "departamento_id": identidades["departamento_solicitante_id"],
+        "nombre": identidades["departamento_solicitante_nombre"],
+    }, cuerpo
+    assert cuerpo["sede"] == {
+        "sede_id": identidades["sede_departamento_id"],
+        "nombre": identidades["sede_departamento_nombre"],
+    }, cuerpo
+    assert cuerpo["sede"]["sede_id"] != identidades["sede_bodeguero_id"], (
+        "no debe usar usuario.sede_id del Solicitante"
+    )
+
+
+def test_auth_me_contexto_organizacional_nulo_sin_asignacion(motor, identidades):
+    """AC-22/D-10: la ausencia de sede degrada a null, no a 409/403."""
+    # Bodeguero sin sede: ambos campos nulos.
+    with _cliente(
+        motor, "Bodeguero", identidades["usuario_bodeguero_sin_sede_id"]
+    ) as cliente:
+        respuesta = cliente.get(RUTA_ME)
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["sede"] is None, cuerpo
+    assert cuerpo["departamento"] is None, cuerpo
+
+    # Solicitante con departamento sin sede: conserva el departamento y sede null.
+    with _cliente(
+        motor, "Solicitante", identidades["usuario_solicitante_sin_sede_id"]
+    ) as cliente:
+        respuesta = cliente.get(RUTA_ME)
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["departamento"] == {
+        "departamento_id": identidades["departamento_sin_sede_id"],
+        "nombre": identidades["departamento_sin_sede_nombre"],
+    }, cuerpo
+    assert cuerpo["sede"] is None, cuerpo
+
+
+@pytest.mark.parametrize(
+    "rol,clave_usuario",
+    [
+        ("Administrador", "usuario_admin_id"),
+        ("Superadmin", "usuario_superadmin_id"),
+    ],
+)
+def test_auth_me_administrador_y_superadmin_sin_contexto_organizacional(
+    motor, identidades, rol, clave_usuario
+):
+    """AC-22: Administrador y Superadmin reciben ambos campos en null."""
+    with _cliente(motor, rol, identidades[clave_usuario]) as cliente:
+        respuesta = cliente.get(RUTA_ME)
+
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["sede"] is None, cuerpo
+    assert cuerpo["departamento"] is None, cuerpo
+
+
+def test_auth_me_no_acepta_sede_ni_departamento_del_cliente(motor, identidades):
+    """AC-22: los campos no se toman de la query; el servidor deriva por rol."""
+    with _cliente(motor, "Bodeguero", identidades["usuario_bodeguero_id"]) as cliente:
+        respuesta = cliente.get(
+            RUTA_ME,
+            params={
+                "sede_id": identidades["sede_departamento_id"],
+                "departamento_id": identidades["departamento_solicitante_id"],
+            },
+        )
+
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["sede"]["sede_id"] == identidades["sede_bodeguero_id"], cuerpo
+    assert cuerpo["departamento"] is None, cuerpo
+
+
+# ---------------------------------------------------------------------------
 # AC-16: contrato OpenAPI de la institucion efectiva
 # ---------------------------------------------------------------------------
 
@@ -256,6 +431,30 @@ def test_openapi_auth_me_publica_institucion_opcional(motor):
     nombre = referencia.rsplit("/", 1)[-1]
     anidado = esquema["components"]["schemas"][nombre]
     assert {"institucion_id", "nombre"} <= set(anidado["properties"]), anidado
+
+
+@pytest.mark.parametrize(
+    "campo,clave",
+    [("sede", "sede_id"), ("departamento", "departamento_id")],
+)
+def test_openapi_auth_me_publica_sede_y_departamento_opcionales(motor, campo, clave):
+    """AC-22: `sede` y `departamento` son requeridos y nullable (id + nombre)."""
+    esquema = app.openapi()
+    dto = esquema["components"]["schemas"]["IdentidadAutenticadaRespuesta"]
+    assert campo in dto["properties"], dto["properties"]
+    assert campo in dto.get("required", []), dto.get("required")
+
+    definicion = dto["properties"][campo]
+    assert any(
+        rama.get("type") == "null" for rama in definicion.get("anyOf", [])
+    ), definicion
+
+    referencia = next(
+        rama["$ref"] for rama in definicion["anyOf"] if "$ref" in rama
+    )
+    nombre = referencia.rsplit("/", 1)[-1]
+    anidado = esquema["components"]["schemas"][nombre]
+    assert {clave, "nombre"} <= set(anidado["properties"]), anidado
 
 
 def test_openapi_carga_sin_errores(motor):

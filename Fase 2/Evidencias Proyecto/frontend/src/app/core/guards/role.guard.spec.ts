@@ -32,6 +32,8 @@ describe('RolGuard', () => {
       correo: 'camila.fernandez@losalpes.cl',
       rol,
       institucion: { institucion_id: 'inst-los-alpes', nombre: 'Los Alpes' },
+      sede: null,
+      departamento: null,
     };
   }
 

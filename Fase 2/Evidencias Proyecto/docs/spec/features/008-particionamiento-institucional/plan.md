@@ -75,7 +75,7 @@ Los archivos concretos pueden ajustarse por el implementador si el código revel
 - **Orden final de `crear_ticket`, completo y previo a la primera escritura:** (1) atribuir DTO a `identidad.usuario.usuario_id` incondicionalmente, ignorando campo de payload; (2) resolver institución efectiva de identidad y departamento/institución del usuario autenticado; ámbito limitado no resoluble mantiene denegación 403 conforme a seguridad existente; (3) verificar referencias compartidas prioridad/estado; (4) verificar cada producto contra la institución de identidad, preservando **404 producto ajeno**; (5) resolver sede del departamento de identidad y devolver **409** si no resoluble; (6) conservar reglas posteriores de estado inicial (p. ej. `Anulado` 409); (7) en una transacción escribir ticket con `institucion_id`/sede y detalles con misma institución, más historial. La autoría no se obtiene del usuario del payload, y el 404 por solicitante ajeno desaparece.
 - **Semilla/sede:** roles 2 (Administradores 1/3/4/10, departamentos 1/3/4/10) y 3 (Bodegueros 6/7/12, departamentos 6/7/6) tienen sede asignada en sus departamentos. Si un departamento carece de sede, cualquier rol que tenga permiso vigente recibe 409 sin ticket, detalle ni historial; `usuario.sede_id` de un Bodeguero no es fallback.
 - **Contrato:** no cambia `/tickets/`, response/status, matriz ni contrato de `GET /tickets/catalogos`; la lista `solicitantes` permanece. OpenAPI solo documenta optional/ignored para `usuario_id` y ya no presenta 404 por solicitante payload.
-- **UI compartida:** campo informativo read-only con `nombre`, `apellido`, `correo` desde `AutenticacionService.identidad()` (la interfaz real expone también usuario_id/sub/rol/institucion, pero **no departamento**). No llamada extra, no selector. El formulario no incluye `usuario_id` en cuerpo. Solicitantes permanece como dato de lectura para listados/detalle.
+- **UI compartida:** campo informativo read-only con `nombre`, `apellido`, `correo` desde `AutenticacionService.identidad()` (la interfaz real expone también usuario_id/sub/rol/institucion; a la fecha de esta enmienda **no** departamento — la enmienda de contexto organizacional del 20/Nov/2026 lo agrega). No llamada extra, no selector. El formulario no incluye `usuario_id` en cuerpo. Solicitantes permanece como dato de lectura para listados/detalle.
 
 ### Archivos de la enmienda
 
@@ -107,6 +107,97 @@ Los archivos concretos pueden ajustarse por el implementador si el código revel
 | UI/evidencia antigua habilita suplantación | Campo read-only desde identidad, DOM/body tests y evidencia actualizada en los AC afectados. |
 
 No se toca matriz ni permisos, Superadmin 403, catálogo de solicitantes, DDL/esquema/modelos, dependencias, schema/versión tenant, ni resto de despacho/stock/historial/estado/transacción de `crear_ticket`.
+
+---
+
+## Enmienda de contexto organizacional en la cabecera (20/Nov/2026)
+
+> Se limita a AC-22/AC-23 y D-9/D-10. No reabre AC-1…AC-21, no cambia la matriz de
+> permisos y no toca el esquema, la semilla ni la migración.
+
+### Decisiones técnicas por capa
+
+- **Schema:** agregar `SedeEfectivaRespuesta { sede_id: int, nombre: str }` y
+  `DepartamentoEfectivoRespuesta { departamento_id: int, nombre: str }` a
+  `backend/app/schemas/auth_schema.py`, y los campos requeridos `sede` y `departamento`
+  (nullable) a `IdentidadAutenticadaRespuesta`. Son DTOs de lectura con `nombre` legible;
+  no replican entidades completas ni exponen relaciones. El `departamento` se mapea desde
+  `Departamento.nombre_dep`, porque el DTO usa `nombre` por coherencia con `institucion`.
+- **Servicio:** en `auth_service.construir_identidad_autenticada`, ampliar la consulta con
+  `joinedload(Usuario.sede)` y
+  `joinedload(Usuario.departamento).joinedload(Departamento.sede)` para resolver todo en
+  la misma lectura, sin N+1 ni SQL raw. Un helper privado `_contexto_organizacional(usuario)`
+  aplica D-9: Bodeguero → `usuario.sede` y `departamento=None`; Solicitante →
+  `usuario.departamento` y `sede=departamento.sede`, ignorando `usuario.sede_id` aunque
+  esté poblado; Administrador/Superadmin → ambos `None`. No se reutiliza
+  `inventario_service.sede_del_alcance_por_rol` porque esa función **deniega con 409**
+  cuando falta la sede; `/auth/me` degrada a `null` (D-10). La correspondencia entre ambas
+  reglas queda documentada en el helper y contrastada por tests.
+- **Contrato:** `/auth/me` mantiene `response_model`, 200 y `_TODOS`; los dos campos son
+  adicionales y siempre presentes (`null` cuando no aplican). No se acepta entrada del
+  cliente ni se añaden operaciones. La descripción OpenAPI del endpoint se actualiza para
+  nombrar el contexto organizacional. El set de claves del 200 pasa de siete a nueve.
+- **Frontend:** agregar `SedeEfectiva` y `DepartamentoEfectivo` a
+  `frontend/src/app/shared/interfaces/index.ts` y los campos `sede`/`departamento` a
+  `IdentidadAutenticada`. La aplicabilidad por rol vive en la matriz central de
+  `frontend/src/app/core/auth/roles.ts` (`ROLES_CONTEXTO_SEDE`,
+  `ROLES_CONTEXTO_DEPARTAMENTO`, `puedeVerSede`, `puedeVerDepartamento`), como el resto de la
+  navegación. En `AppComponent`, `mostrarSede`, `mostrarDepartamento`, `contextoSede` y
+  `contextoDepartamento` como `computed()` sobre esa matriz y la identidad; el valor ausente
+  se presenta como `—` y el badge solo existe cuando el rol aplica. El template agrega los
+  badges después de `Institución` con `aria-label`, y la cabecera pasa a `min-h-16` +
+  `flex-wrap` + `gap` para no desbordar a 1024 px. Nada de CSS quemado.
+- **Sin cambios:** DDL, `database/`, modelos, matriz, permisos, guards, rutas, capacidades,
+  número de operaciones y el resto de DTOs. `/auth/me` sigue siendo informativo.
+
+### Archivos de la enmienda
+
+| Archivo | Responsabilidad | AC |
+|---|---|---|
+| `backend/app/schemas/auth_schema.py` | DTOs de sede/departamento y campos en la identidad. | AC-22 |
+| `backend/app/services/auth_service.py` | Derivación por rol, eager loads y degradación a `null`. | AC-22 |
+| `backend/app/api/v1/endpoints/auth.py` | Descripción OpenAPI del contexto ampliado. | AC-22 |
+| `backend/tests/api/test_auth_me_institucion.py` | Sede/departamento por rol, ausencia, no-entrada y OpenAPI. | AC-22 |
+| `backend/tests/api/test_auth.py` | Set exacto de claves del 200 (nueve campos). | AC-22 |
+| `frontend/src/app/shared/interfaces/index.ts` | Tipos 1:1 con el DTO. | AC-23 |
+| `frontend/src/app/core/auth/roles.ts`, `roles.spec.ts` | Matriz de aplicabilidad de los badges por rol. | AC-23 |
+| `frontend/src/app/app.component.ts`, `.html`, `.spec.ts` | Badges por rol, `—` y cabecera sin desborde. | AC-23 |
+| `frontend/src/app/core/services/auth.service.spec.ts` y specs con fixtures de `IdentidadAutenticada` | Fixtures compilables contra el tipo extendido. | AC-23 |
+| `docs/spec/features/007-control-acceso-roles/spec.md`, `frontend/src/app/features/tickets/tickets.component.ts` | Corregir la afirmación obsoleta «`/auth/me` no incluye departamento». | AC-22/23 |
+
+### Orden TDD
+
+1. **E23-1 backend rojo→verde:** ampliar `identidades` con una sede para el Bodeguero y un
+   departamento con sede distinta para el Solicitante (más un departamento sin sede y un
+   Bodeguero sin sede para los casos nulos). Escribir primero los tests de AC-22: Bodeguero
+   con sede y sin departamento (aunque tenga `usuario.sede_id` distinto del departamento),
+   Solicitante con departamento y sede departamental, ambos sin asignación → 200 + `null`,
+   Administrador y Superadmin → ambos `null`, campos no aceptados del cliente, set exacto
+   de claves y OpenAPI con `anyOf` nullable. Implementar schema, servicio y descripción
+   solo después de ver los rojos.
+2. **E23-2 frontend rojo→verde:** actualizar el tipo y los fixtures; escribir los casos de
+   cabecera por rol (Bodeguero con sede, Bodeguero sin sede → `—`, Solicitante con ambos,
+   Solicitante sin ambos → `—`, Administrador y Superadmin sin badges nuevos). La regla de
+   aplicabilidad se declara en `roles.ts` con sus pruebas. Implementar los `computed()` y los
+   badges hasta verde.
+3. **E23-3 verificación y cierre:** suites completas (`pytest` SQLite y gated PostgreSQL si
+   aplica; `ng test` con Edge), `ng build`, `/openapi.json`, recorrido 4200 con las cuentas
+   QA de Bodeguero y Solicitante, humo 8080 tras reconstruir la imagen, evidencia en
+   `008/evidencia/enmienda-contexto-organizacional.md`, `MEMORY.md` y grep de coherencia.
+
+### Riesgos y alcance excluido
+
+| Riesgo | Mitigación |
+|---|---|
+| Usar `usuario.sede_id` para el Solicitante y mostrar una sede distinta de la operativa | Test explícito con `usuario.sede_id` poblado y distinto de `departamento.sede_id`; la respuesta debe usar la sede del departamento. |
+| Convertir `/auth/me` en un 409/403 por sede faltante y dejar al usuario sin shell | Casos nulos esperan 200, `sede: null`/`departamento: null`; el 409 se conserva solo en las operaciones dependientes. |
+| Duplicar la regla de sede y divergir de inventario/tickets | Helper documentado contra `sede_del_alcance_por_rol`; tests de contraste con la operación que sí responde 409. |
+| Desborde de la cabecera con cuatro badges | `min-h-16`, `flex-wrap` y `gap`; revisión visual en 4200/8080 a 1024 px. |
+| Romper fixtures o el contrato Angular | Campos requeridos en el tipo; grep de todas las construcciones de `IdentidadAutenticada` y actualización previa a la implementación. |
+
+No se toca autenticación Clerk, roles, permisos, esquema, semilla, migración, número de
+operaciones ni autorización. Los campos nuevos son contexto de UI y nunca sustituyen la
+validación del servidor.
 
 ---
 

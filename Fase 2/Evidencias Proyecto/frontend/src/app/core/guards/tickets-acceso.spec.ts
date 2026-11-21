@@ -26,6 +26,8 @@ describe('acceso a /tickets (Feature 012, AC-3)', () => {
       correo: 'camila.fernandez@losalpes.cl',
       rol,
       institucion: null,
+      sede: null,
+      departamento: null,
     };
   }
 

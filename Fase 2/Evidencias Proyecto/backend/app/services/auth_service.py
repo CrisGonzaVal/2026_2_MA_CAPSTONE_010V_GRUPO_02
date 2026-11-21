@@ -18,14 +18,16 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, joinedload
 
-from app.core import security
+from app.core import permisos, security
 from app.core.security import ErrorAutenticacion, FuenteJWKS
 from app.models.control import MapaUsuarioEsquema
-from app.models.institucion import Institucion
+from app.models.institucion import Departamento, Institucion
 from app.models.usuario import Usuario
 from app.schemas.auth_schema import (
+    DepartamentoEfectivoRespuesta,
     IdentidadAutenticadaRespuesta,
     InstitucionEfectivaRespuesta,
+    SedeEfectivaRespuesta,
 )
 
 
@@ -197,12 +199,22 @@ def construir_identidad_autenticada(
     **403** en vez de degradar a global (008 D-4/§8). El campo es informativo: no
     autoriza ni acepta entrada del cliente.
 
+    Feature 008 (AC-22): agrega `sede` y `departamento` con la regla D-9. El
+    Bodeguero recibe su `usuario.sede`; el Solicitante, su departamento y la sede
+    de ese departamento (nunca `usuario.sede_id`); Administrador y Superadmin
+    reciben ambos `None`. Si falta la asignación, el campo es `None` y la sesión
+    continúa (D-10): el 409 se reserva a las operaciones que dependen de la sede.
+
     Si el usuario o su relación de rol no son resolubles, responde 401 sin datos
     parciales y sin crear ni modificar filas.
     """
     usuario = db.execute(
         select(Usuario)
-        .options(joinedload(Usuario.rol))
+        .options(
+            joinedload(Usuario.rol),
+            joinedload(Usuario.sede),
+            joinedload(Usuario.departamento).joinedload(Departamento.sede),
+        )
         .where(Usuario.usuario_id == identidad.usuario.usuario_id)
     ).scalar_one_or_none()
     if usuario is None or usuario.rol is None:
@@ -212,6 +224,7 @@ def construir_identidad_autenticada(
             headers={"WWW-Authenticate": "Bearer"},
         )
     identidad_resuelta = IdentidadAutenticada(usuario=usuario, sub=identidad.sub)
+    sede, departamento = _contexto_organizacional(usuario)
     return IdentidadAutenticadaRespuesta(
         usuario_id=usuario.usuario_id,
         sub=identidad.sub,
@@ -220,7 +233,63 @@ def construir_identidad_autenticada(
         correo=usuario.correo,
         rol=usuario.rol.nombre_rol,
         institucion=_institucion_efectiva(db, identidad_resuelta),
+        sede=sede,
+        departamento=departamento,
     )
+
+
+def _contexto_organizacional(
+    usuario: Usuario,
+) -> tuple[SedeEfectivaRespuesta | None, DepartamentoEfectivoRespuesta | None]:
+    """Contexto organizacional informativo del usuario según su rol (AC-22).
+
+    Aplica D-9, la misma derivación que
+    `inventario_service.sede_del_alcance_por_rol` para las operaciones:
+
+    * **Bodeguero**: `usuario.sede` y ningún departamento.
+    * **Solicitante**: su departamento y la sede de ese departamento. No se cae
+      en `usuario.sede_id`, que puede existir pero no es su sede operativa.
+    * **Administrador / Superadmin**: ambos `None`.
+
+    A diferencia de la operación, aquí no se deniega: si la asignación falta, el
+    campo queda `None` (D-10) y el 409 sigue reservado a inventario/tickets.
+    """
+    if usuario.rol is None:
+        return None, None
+
+    rol = usuario.rol.nombre_rol
+    if rol == permisos.RolConocido.BODEGUERO.value:
+        if usuario.sede is None:
+            return None, None
+        return (
+            SedeEfectivaRespuesta(
+                sede_id=usuario.sede.sede_id,
+                nombre=usuario.sede.nombre,
+            ),
+            None,
+        )
+
+    if rol == permisos.RolConocido.SOLICITANTE.value:
+        departamento = usuario.departamento
+        if departamento is None:
+            return None, None
+        sede = (
+            SedeEfectivaRespuesta(
+                sede_id=departamento.sede.sede_id,
+                nombre=departamento.sede.nombre,
+            )
+            if departamento.sede is not None
+            else None
+        )
+        return (
+            sede,
+            DepartamentoEfectivoRespuesta(
+                departamento_id=departamento.departamento_id,
+                nombre=departamento.nombre_dep,
+            ),
+        )
+
+    return None, None
 
 
 def _institucion_efectiva(

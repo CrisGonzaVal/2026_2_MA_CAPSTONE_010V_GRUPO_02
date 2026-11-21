@@ -400,8 +400,10 @@ El backend autoatribuye incondicionalmente a la identidad autenticada en todos l
 que ya están autorizados a crear tickets. `usuario_id` pasa a opcional: se acepta payload
 sin ese campo y se ignora cualquier valor enviado, sin 422/403 ni 404 por referencia de
 usuario. La UI sustituye el selector por un campo informativo no editable con nombre,
-apellido y correo de la identidad de sesión; `/auth/me` no incluye departamento, por lo
-que no se muestra ni se consulta de forma adicional.
+apellido y correo de la identidad de sesión; en esa fecha `/auth/me` no incluía
+departamento, por lo que no se muestra ni se consulta de forma adicional. (Desde la
+enmienda AC-22 de la Feature 008, 20/Nov/2026, el contrato sí lo publica; el modal
+conserva el mismo bloque informativo.)
 
 #### Qué no cambia
 

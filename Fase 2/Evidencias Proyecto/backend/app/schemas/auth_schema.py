@@ -16,6 +16,31 @@ class InstitucionEfectivaRespuesta(BaseModel):
     nombre: str
 
 
+class SedeEfectivaRespuesta(BaseModel):
+    """Sede operativa del usuario autenticado (Feature 008, AC-22).
+
+    Para un Bodeguero es su `usuario.sede`; para un Solicitante, la sede de su
+    departamento. Se publica como `sede_id` + `nombre` legible y es `null` cuando
+    el rol no aplica o la asignacion falta. Es **informativo**: contexto de UI,
+    nunca autorizacion.
+    """
+
+    sede_id: int
+    nombre: str
+
+
+class DepartamentoEfectivoRespuesta(BaseModel):
+    """Departamento del Solicitante autenticado (Feature 008, AC-22).
+
+    Se publica como `departamento_id` + `nombre` legible (el `nombre_dep` de la
+    entidad) y es `null` para los roles a los que no aplica. Es **informativo**:
+    contexto de UI, nunca autorizacion.
+    """
+
+    departamento_id: int
+    nombre: str
+
+
 class IdentidadAutenticadaRespuesta(BaseModel):
     """Identidad resuelta del usuario local vinculado por Clerk (AC-8).
 
@@ -26,9 +51,16 @@ class IdentidadAutenticadaRespuesta(BaseModel):
 
     `institucion` (Feature 008, AC-17) es la institucion efectiva derivada en el
     servidor para Administrador, Bodeguero y Solicitante; es `null` para
-    Superadmin, que conserva su caracter global. El campo es **informativo**:
-    informa contexto de UI, no sustituye la autorizacion del servidor y no acepta
-    entrada del cliente.
+    Superadmin, que conserva su caracter global.
+
+    `sede` y `departamento` (Feature 008, AC-22) son el contexto organizacional
+    derivado por rol: Bodeguero recibe su sede y ningun departamento; Solicitante
+    recibe su departamento y la sede de ese departamento; Administrador y
+    Superadmin reciben ambos `null`. La ausencia de asignacion se degrada a
+    `null` y no convierte `/auth/me` en 409/403.
+
+    Todos los campos de contexto son **informativos**: informan la UI, no
+    sustituyen la autorizacion del servidor y no aceptan entrada del cliente.
     """
 
     usuario_id: int
@@ -38,3 +70,5 @@ class IdentidadAutenticadaRespuesta(BaseModel):
     correo: str
     rol: str
     institucion: InstitucionEfectivaRespuesta | None
+    sede: SedeEfectivaRespuesta | None
+    departamento: DepartamentoEfectivoRespuesta | None

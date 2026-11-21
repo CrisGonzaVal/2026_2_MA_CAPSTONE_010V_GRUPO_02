@@ -5,7 +5,12 @@ import { Router, provideRouter } from '@angular/router';
 import { AppComponent } from './app.component';
 import { routes } from './app.routes';
 import { AutenticacionService, EstadoIdentidad } from './core/services/auth.service';
-import { IdentidadAutenticada, InstitucionEfectiva } from './shared/interfaces';
+import {
+  DepartamentoEfectivo,
+  IdentidadAutenticada,
+  InstitucionEfectiva,
+  SedeEfectiva,
+} from './shared/interfaces';
 
 /**
  * Institución efectiva de la identidad limitada (Feature 008, AC-17). Procede de
@@ -14,6 +19,17 @@ import { IdentidadAutenticada, InstitucionEfectiva } from './shared/interfaces';
 const INSTITUCION: InstitucionEfectiva = {
   institucion_id: 'inst-los-alpes',
   nombre: 'Los Alpes',
+};
+
+/** Contexto organizacional del Bodeguero y del Solicitante (AC-22). */
+const SEDE: SedeEfectiva = {
+  sede_id: 2,
+  nombre: 'Sede Maipú',
+};
+
+const DEPARTAMENTO: DepartamentoEfectivo = {
+  departamento_id: 6,
+  nombre: 'Biblioteca',
 };
 
 /**
@@ -29,6 +45,8 @@ const IDENTIDAD_RESUELTA: IdentidadAutenticada = {
   correo: 'camila.fernandez@losalpes.cl',
   rol: 'Administrador',
   institucion: INSTITUCION,
+  sede: null,
+  departamento: null,
 };
 
 /** Valores ficticios que el layout antiguo mostraba quemados (AC-16 / D-14). */
@@ -382,6 +400,125 @@ describe('AppComponent', () => {
     });
 
     it('no expone un selector ni una entrada de ámbito institucional', () => {
+      const compilado = crearYRenderizar();
+
+      expect(compilado.querySelector('select')).toBeNull();
+      expect(compilado.querySelector('input')).toBeNull();
+    });
+  });
+
+  /**
+   * AC-22/AC-23: la cabecera presenta el contexto organizacional informativo de
+   * `/auth/me`. El Bodeguero ve su sede; el Solicitante, su departamento y la
+   * sede de ese departamento. La asignación faltante se muestra como `—` y los
+   * roles a los que no aplica no reciben badges nuevos.
+   */
+  describe('contexto organizacional (AC-22, AC-23)', () => {
+    function textoDe(compilado: HTMLElement): string {
+      return compilado.textContent ?? '';
+    }
+
+    it('el Administrador no muestra badges de sede ni departamento', () => {
+      const compilado = crearYRenderizar();
+
+      expect(textoDe(compilado)).not.toContain('Sede:');
+      expect(textoDe(compilado)).not.toContain('Departamento:');
+      expect(
+        compilado.querySelector('[aria-label="Sede del usuario"]'),
+      ).toBeNull();
+      expect(
+        compilado.querySelector('[aria-label="Departamento del usuario"]'),
+      ).toBeNull();
+    });
+
+    it('el Bodeguero muestra su sede y omite el departamento', () => {
+      autenticacionFalsa.identidad.set({
+        ...IDENTIDAD_RESUELTA,
+        rol: 'Bodeguero',
+        sede: SEDE,
+        departamento: null,
+      });
+      const fixture = TestBed.createComponent(AppComponent);
+      fixture.detectChanges();
+      const texto = textoDe(fixture.nativeElement as HTMLElement);
+
+      expect(fixture.componentInstance.contextoSede()).toEqual('Sede Maipú');
+      expect(fixture.componentInstance.contextoDepartamento()).toBeNull();
+      expect(texto).toContain('Sede: Sede Maipú');
+      expect(texto).not.toContain('Departamento:');
+    });
+
+    it('el Bodeguero sin sede muestra el badge con guion', () => {
+      autenticacionFalsa.identidad.set({
+        ...IDENTIDAD_RESUELTA,
+        rol: 'Bodeguero',
+        sede: null,
+        departamento: null,
+      });
+      const fixture = TestBed.createComponent(AppComponent);
+      fixture.detectChanges();
+      const texto = textoDe(fixture.nativeElement as HTMLElement);
+
+      expect(fixture.componentInstance.contextoSede()).toEqual('—');
+      expect(texto).toContain('Sede: —');
+      expect(texto).not.toContain('Departamento:');
+    });
+
+    it('el Solicitante muestra departamento y sede', () => {
+      autenticacionFalsa.identidad.set({
+        ...IDENTIDAD_RESUELTA,
+        rol: 'Solicitante',
+        sede: SEDE,
+        departamento: DEPARTAMENTO,
+      });
+      const fixture = TestBed.createComponent(AppComponent);
+      fixture.detectChanges();
+      const texto = textoDe(fixture.nativeElement as HTMLElement);
+
+      expect(fixture.componentInstance.contextoSede()).toEqual('Sede Maipú');
+      expect(fixture.componentInstance.contextoDepartamento()).toEqual('Biblioteca');
+      expect(texto).toContain('Sede: Sede Maipú');
+      expect(texto).toContain('Departamento: Biblioteca');
+    });
+
+    it('el Solicitante sin asignaciones muestra ambos badges con guion', () => {
+      autenticacionFalsa.identidad.set({
+        ...IDENTIDAD_RESUELTA,
+        rol: 'Solicitante',
+        sede: null,
+        departamento: null,
+      });
+      const fixture = TestBed.createComponent(AppComponent);
+      fixture.detectChanges();
+      const texto = textoDe(fixture.nativeElement as HTMLElement);
+
+      expect(texto).toContain('Sede: —');
+      expect(texto).toContain('Departamento: —');
+    });
+
+    it('el Superadmin no recibe badges organizacionales', () => {
+      autenticacionFalsa.identidad.set({
+        ...IDENTIDAD_RESUELTA,
+        rol: 'Superadmin',
+        institucion: null,
+        sede: null,
+        departamento: null,
+      });
+      const compilado = crearYRenderizar();
+
+      expect(compilado.querySelector('[aria-label="Sede del usuario"]')).toBeNull();
+      expect(
+        compilado.querySelector('[aria-label="Departamento del usuario"]'),
+      ).toBeNull();
+    });
+
+    it('no expone un selector ni una entrada de sede o departamento', () => {
+      autenticacionFalsa.identidad.set({
+        ...IDENTIDAD_RESUELTA,
+        rol: 'Solicitante',
+        sede: SEDE,
+        departamento: DEPARTAMENTO,
+      });
       const compilado = crearYRenderizar();
 
       expect(compilado.querySelector('select')).toBeNull();

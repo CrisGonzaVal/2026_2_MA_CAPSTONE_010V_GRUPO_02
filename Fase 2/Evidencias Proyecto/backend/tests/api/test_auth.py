@@ -538,7 +538,7 @@ def test_auth_me_con_bearer_invalido_responde_401(cliente_auth, datos_base):
 def test_auth_me_devuelve_identidad_local_completa(
     cliente_auth, datos_base, respuesta_clerk, firmar_token
 ):
-    """AC-8: la identidad resuelta incluye los seis campos locales y `sub`."""
+    """AC-8/AC-17/AC-22: la identidad incluye los datos locales, `sub` y el contexto."""
     _cuerpo_happy(datos_base, respuesta_clerk)
     respuesta = cliente_auth.get(RUTA_ME, headers=_auth(firmar_token(sub="user_clerk_validado")))
     assert respuesta.status_code == 200, respuesta.text
@@ -567,6 +567,8 @@ def test_auth_me_no_expone_rol_id(cliente_auth, datos_base, respuesta_clerk, fir
         "correo",
         "rol",
         "institucion",
+        "sede",
+        "departamento",
     }
     # Feature 008 (AC-17): la institucion efectiva del rol limitado se deriva del
     # `departamento` sembrado, con id + nombre coherentes con `/usuarios/instituciones`.
@@ -748,7 +750,8 @@ def test_openapi_auth_me_documenta_200_y_401(cliente):
 def test_openapi_auth_me_declara_response_model_explicito(cliente):
     """El 200 referencia el DTO `IdentidadAutenticadaRespuesta` completo (AC-8/AC-11).
 
-    Publica los seis campos de la identidad local y no publica `rol_id`.
+    Publica los campos de la identidad local con su contexto organizacional e
+    institucional, y no publica `rol_id`.
     """
     esquema = cliente.get("/openapi.json").json()
     operacion = esquema["paths"][RUTA_ME]["get"]

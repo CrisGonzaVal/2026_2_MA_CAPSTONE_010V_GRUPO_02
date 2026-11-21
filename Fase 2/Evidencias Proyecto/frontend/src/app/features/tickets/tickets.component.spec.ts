@@ -276,7 +276,8 @@ describe('TicketsComponent', () => {
 
   /**
    * Identidad local (`/auth/me`) que el modal presenta como autor informativo.
-   * No incluye departamento: el contrato real de `GET /auth/me` tampoco.
+   * El contrato ya incluye `departamento` (Feature 008, AC-22), pero el modal
+   * solo muestra nombre, apellido y correo.
    */
   let identidad: WritableSignal<IdentidadAutenticada | null>;
 
@@ -289,6 +290,8 @@ describe('TicketsComponent', () => {
       correo: 'isabel.contreras@losalpes.cl',
       rol: 'Solicitante',
       institucion: { institucion_id: '1', nombre: 'Los Alpes' },
+      sede: null,
+      departamento: null,
     };
   }
 
@@ -1324,7 +1327,8 @@ describe('TicketsComponent', () => {
       expect(texto).toContain('Isabel');
       expect(texto).toContain('Contreras');
       expect(texto).toContain('isabel.contreras@losalpes.cl');
-      // `/auth/me` no expone departamento y no se consulta por separado.
+      // El bloque autor no presenta el departamento ni lo consulta por separado;
+      // el servidor lo deriva al crear el ticket (Feature 008, AC-22).
       expect(texto).not.toContain('Docencia');
       expect(texto).not.toContain('Departamento');
     });

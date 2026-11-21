@@ -57,6 +57,8 @@ describe('UsuariosComponent', () => {
       correo: 'sonda@example.com',
       rol,
       institucion: null,
+      sede: null,
+      departamento: null,
     };
   }
 

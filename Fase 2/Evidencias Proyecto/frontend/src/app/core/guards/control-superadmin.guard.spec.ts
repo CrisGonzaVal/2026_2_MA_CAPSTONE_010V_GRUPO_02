@@ -33,6 +33,8 @@ describe('ControlSuperadminGuard', () => {
       correo: 'sofia.cardenas@compustock.cl',
       rol,
       institucion: null,
+      sede: null,
+      departamento: null,
     };
   }
 

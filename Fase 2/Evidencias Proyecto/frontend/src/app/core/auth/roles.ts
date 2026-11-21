@@ -126,6 +126,24 @@ export const ROLES_GESTION_CATALOGO = ['Administrador'] as const;
 export const ROLES_FILTROS_INVENTARIO = ['Administrador', 'Bodeguero'] as const;
 
 /**
+ * Roles cuyo contexto organizacional incluye la sede en la cabecera
+ * (Feature 008, AC-23).
+ *
+ * El Bodeguero ve la sede donde opera; el Solicitante, la sede de su
+ * departamento. Es una regla de **presentación** derivada de `/auth/me`; la
+ * ausencia del dato se muestra como `—` y no cambia la autorización, que sigue
+ * en la API.
+ */
+export const ROLES_CONTEXTO_SEDE = ['Bodeguero', 'Solicitante'] as const;
+
+/**
+ * Roles cuyo contexto organizacional incluye el departamento en la cabecera
+ * (Feature 008, AC-23). Solo el Solicitante pertenece a un departamento
+ * operativo; Administrador y Bodeguero no reciben ese badge.
+ */
+export const ROLES_CONTEXTO_DEPARTAMENTO = ['Solicitante'] as const;
+
+/**
  * Roles que navegan la administración de compras (Feature 020, AC-13).
  *
  * Solo el Administrador Institucional ve necesidades, órdenes y el alta/edición
@@ -246,8 +264,7 @@ export function puedeGestionarCatalogo(rol: string | null): boolean {
   return contiene(ROLES_GESTION_CATALOGO, rol);
 }
 
-/**
- * `true` si el rol ve los filtros de inventario por sede y departamento
+/** `true` si el rol ve los filtros de inventario por sede y departamento
  * (Feature 018, AC-3/AC-4; visibilidad AC-5/AC-8).
  *
  * Espejo de la matriz de la lectura de ámbito: solo Administrador y Bodeguero.
@@ -256,6 +273,22 @@ export function puedeGestionarCatalogo(rol: string | null): boolean {
  */
 export function puedeVerFiltrosInventario(rol: string | null): boolean {
   return contiene(ROLES_FILTROS_INVENTARIO, rol);
+}
+
+/**
+ * `true` si el rol recibe el badge de sede en la cabecera (Feature 008, AC-23).
+ * Presentación pura: el valor sale de `/auth/me` y nunca autoriza.
+ */
+export function puedeVerSede(rol: string | null): boolean {
+  return contiene(ROLES_CONTEXTO_SEDE, rol);
+}
+
+/**
+ * `true` si el rol recibe el badge de departamento en la cabecera
+ * (Feature 008, AC-23). Presentación pura: solo el Solicitante.
+ */
+export function puedeVerDepartamento(rol: string | null): boolean {
+  return contiene(ROLES_CONTEXTO_DEPARTAMENTO, rol);
 }
 
 /**

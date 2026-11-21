@@ -494,17 +494,46 @@ export interface InstitucionEfectiva {
 }
 
 /**
+ * Sede efectiva del usuario autenticado (Feature 008, AC-22).
+ *
+ * Refleja 1:1 el `SedeEfectivaRespuesta` del backend: la sede operativa del
+ * Bodeguero (`usuario.sede`) o la sede del departamento del Solicitante. Es
+ * **contexto informativo** de UI: nunca autoriza.
+ */
+export interface SedeEfectiva {
+  sede_id: number;
+  nombre: string;
+}
+
+/**
+ * Departamento del Solicitante autenticado (Feature 008, AC-22).
+ *
+ * Refleja 1:1 el `DepartamentoEfectivoRespuesta` del backend. Es **contexto
+ * informativo** de UI: nunca autoriza.
+ */
+export interface DepartamentoEfectivo {
+  departamento_id: number;
+  nombre: string;
+}
+
+/**
  * Respuesta de `GET /api/v1/auth/me` (identidad local vinculada).
  *
  * Refleja 1:1 el `IdentidadAutenticadaRespuesta` de
- * `backend/app/schemas/auth_schema.py`: los siete campos del backend y **no**
- * `rol_id`. `correo` es el correo del registro local (clave del vínculo), no el
- * del perfil de Clerk, y `rol` es el nombre legible (`rol.nombre_rol`).
+ * `backend/app/schemas/auth_schema.py`: los datos de la identidad local, `sub` y
+ * el contexto organizacional, y **no** `rol_id`. `correo` es el correo del
+ * registro local (clave del vínculo), no el del perfil de Clerk, y `rol` es el
+ * nombre legible (`rol.nombre_rol`).
  *
  * `institucion` (Feature 008, AC-17) es la institución efectiva derivada en el
  * servidor para Administrador, Bodeguero y Solicitante; es `null` para
- * Superadmin, que conserva su carácter global. El campo es informativo: la
- * vista lo presenta como contexto y no lo trata como autorización.
+ * Superadmin, que conserva su carácter global.
+ *
+ * `sede` y `departamento` (Feature 008, AC-22) son el contexto organizacional
+ * derivado por rol: el Bodeguero recibe su sede y ningún departamento; el
+ * Solicitante, su departamento y la sede de ese departamento; Administrador y
+ * Superadmin reciben ambos `null`. La vista los presenta como contexto y no los
+ * trata como autorización.
  */
 export interface IdentidadAutenticada {
   usuario_id: number;
@@ -514,6 +543,8 @@ export interface IdentidadAutenticada {
   correo: string;
   rol: string;
   institucion: InstitucionEfectiva | null;
+  sede: SedeEfectiva | null;
+  departamento: DepartamentoEfectivo | null;
 }
 
 // --- Dashboard analítico ---

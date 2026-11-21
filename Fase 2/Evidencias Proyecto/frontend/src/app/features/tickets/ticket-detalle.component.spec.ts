@@ -179,6 +179,8 @@ describe('TicketDetalleComponent', () => {
       correo: 'bruno.soto@losalpes.cl',
       rol,
       institucion: { institucion_id: 'inst-los-alpes', nombre: 'Los Alpes' },
+      sede: null,
+      departamento: null,
     };
   }
 

@@ -5,8 +5,10 @@ import {
   puedeAdministrar as rolPuedeAdministrar,
   puedeVerComprasAdministracion as rolPuedeVerComprasAdministracion,
   puedeVerDashboard as rolPuedeVerDashboard,
+  puedeVerDepartamento as rolPuedeVerDepartamento,
   puedeVerInventario as rolPuedeVerInventario,
   puedeVerRecepcionCompras as rolPuedeVerRecepcionCompras,
+  puedeVerSede as rolPuedeVerSede,
   puedeVerTickets as rolPuedeVerTickets,
 } from './core/auth/roles';
 import { AutenticacionService } from './core/services/auth.service';
@@ -60,6 +62,37 @@ export class AppComponent {
       return identidad.institucion.nombre;
     }
     return identidad.rol === 'Superadmin' ? 'Todas las instituciones' : null;
+  });
+
+  /**
+   * Contexto organizacional derivado de `/auth/me` (Feature 008, AC-22/AC-23).
+   *
+   * El Bodeguero muestra la sede donde opera; el Solicitante, su departamento y
+   * la sede de ese departamento. Administrador y Superadmin no reciben badges
+   * nuevos. Cuando el rol aplica pero la asignación falta, el badge se muestra
+   * con `—` (D-10): la ausencia queda visible y no bloquea la sesión. Es
+   * informativo: la vista solo lo presenta, no autoriza ni permite elegirlo.
+   */
+  readonly mostrarSede = computed(() =>
+    rolPuedeVerSede(this.autenticacion.identidad()?.rol ?? null),
+  );
+
+  readonly mostrarDepartamento = computed(() =>
+    rolPuedeVerDepartamento(this.autenticacion.identidad()?.rol ?? null),
+  );
+
+  readonly contextoSede = computed(() => {
+    if (!this.mostrarSede()) {
+      return null;
+    }
+    return this.autenticacion.identidad()?.sede?.nombre ?? '—';
+  });
+
+  readonly contextoDepartamento = computed(() => {
+    if (!this.mostrarDepartamento()) {
+      return null;
+    }
+    return this.autenticacion.identidad()?.departamento?.nombre ?? '—';
   });
 
   /**

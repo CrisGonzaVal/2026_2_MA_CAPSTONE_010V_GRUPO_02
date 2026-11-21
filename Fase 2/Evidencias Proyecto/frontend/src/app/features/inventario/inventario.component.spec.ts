@@ -287,6 +287,8 @@ function crearIdentidad(rol: string): IdentidadAutenticada {
     correo: 'ana.perez@losalpes.cl',
     rol,
     institucion: { institucion_id: 'inst-los-alpes', nombre: 'Los Alpes' },
+    sede: null,
+    departamento: null,
   };
 }
 

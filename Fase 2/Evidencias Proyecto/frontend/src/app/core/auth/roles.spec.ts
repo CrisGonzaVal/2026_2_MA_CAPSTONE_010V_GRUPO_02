@@ -21,6 +21,8 @@ import {
   puedeVerDashboard,
   puedeVerFiltrosInventario,
   puedeVerInventario,
+  puedeVerSede,
+  puedeVerDepartamento,
   puedeVerTickets,
 } from './roles';
 
@@ -233,5 +235,32 @@ describe('roles', () => {
   it('el Superadmin sigue denegado en inventario y en sus filtros (AC-8)', () => {
     expect(puedeVerInventario('Superadmin')).toBe(false);
     expect(puedeVerFiltrosInventario('Superadmin')).toBe(false);
+  });
+
+  // --- Contexto organizacional en la cabecera (Feature 008, AC-23) ---
+
+  /**
+   * AC-23: el Bodeguero y el Solicitante ven la sede; solo el Solicitante ve el
+   * departamento. Administrador y Superadmin conservan la cabecera sin badges.
+   */
+  it('puedeVerSede concede solo a Bodeguero y Solicitante (AC-23)', () => {
+    expect(puedeVerSede('Bodeguero')).toBe(true);
+    expect(puedeVerSede('Solicitante')).toBe(true);
+    expect(puedeVerSede('Administrador')).toBe(false);
+    expect(puedeVerSede('Superadmin')).toBe(false);
+  });
+
+  it('puedeVerDepartamento concede solo al Solicitante (AC-23)', () => {
+    expect(puedeVerDepartamento('Solicitante')).toBe(true);
+    expect(puedeVerDepartamento('Bodeguero')).toBe(false);
+    expect(puedeVerDepartamento('Administrador')).toBe(false);
+    expect(puedeVerDepartamento('Superadmin')).toBe(false);
+  });
+
+  it('los badges de contexto no conceden a alias, desconocido ni ausente (AC-23)', () => {
+    for (const rol of ['Admin', 'Desconocido', null]) {
+      expect(puedeVerSede(rol)).withContext(String(rol)).toBe(false);
+      expect(puedeVerDepartamento(rol)).withContext(String(rol)).toBe(false);
+    }
   });
 });

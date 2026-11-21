@@ -28,6 +28,8 @@ describe('AutenticacionService', () => {
     correo: 'camila.fernandez@losalpes.cl',
     rol: 'Administrador',
     institucion: { institucion_id: 'inst-los-alpes', nombre: 'Los Alpes' },
+    sede: null,
+    departamento: null,
   };
 
   let clerk: InstanciaClerkFalsa;

@@ -148,6 +148,8 @@ describe('DashboardComponent', () => {
       correo: 'dana.rivas@losalpes.cl',
       rol,
       institucion: { institucion_id: 'INSTA', nombre: 'Instituto Alfa' },
+      sede: null,
+      departamento: null,
     };
   }
 

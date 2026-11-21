@@ -51,7 +51,7 @@ histórica de AC-1…AC-21 no se altera.
     ausentes en OpenAPI y set de claves incompleto. Verde posterior: **80 passed** en los dos
     archivos.
 - **Suites completas:** SQLite en memoria **1667 passed / 105 skipped**; gated PostgreSQL 16
-  (base desechable, sin tocar `apt_erp`) **pendiente de registrar en el cierre**.
+  (base desechable, sin tocar `apt_erp`) **1769 passed / 3 skipped**.
 - **Sin DDL:** no se tocaron `database/`, modelos ni migraciones; sede y departamento ya
   existían y ya estaban relacionados con el usuario.
 
@@ -69,8 +69,9 @@ histórica de AC-1…AC-21 no se altera.
 - **Pruebas de DOM:** `app.component.spec.ts` cubre Administrador sin badges nuevos,
   Bodeguero con sede, Bodeguero sin sede (`Sede: —`), Solicitante con departamento y sede,
   Solicitante sin asignaciones (ambos `—`), Superadmin sin badges y ausencia de selectores o
-  entradas. **30 SUCCESS** en el archivo; suite completa **559 SUCCESS** con Edge
-  (556 al registrar esta evidencia; 3 casos AC-23 de `roles.spec.ts` se agregaron después).
+  entradas. **30 SUCCESS** en el archivo; `roles.spec.ts` suma **3** casos de la matriz
+  (`puedeVerSede`, `puedeVerDepartamento`, alias/desconocido/ausente). Suite completa
+  **559 SUCCESS** con Edge.
 - **Build de producción:** `npx ng build` OK; bundle inicial **339.16 kB** (94.67 kB de
   transferencia). Imagen Docker del frontend reconstruida
   (`sha256:e6fba304965b2cbe1eda541fc1fd28d27acd58879ec9135ac219484c5fb9db38`).

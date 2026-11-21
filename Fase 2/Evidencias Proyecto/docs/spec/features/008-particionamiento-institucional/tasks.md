@@ -123,7 +123,7 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
   - Mantener `test_crear_ticket_con_producto_ajeno_404_sin_parcial` y `test_crear_ticket_puebla_institucion_en_ticket_y_detalle`; en `test_ticket_sede_011.py` actualizar exclusivamente altas, no despachos. `TicketDespacho.usuario_id` queda como contrato distinto y obligatorio.
   - **AC:** 003 AC-33/35; 007 AC-6 actualizado/18/20; 008 AC-11.
   - **Hecho cuando:** tests HTTP demuestran las cuatro variantes de payload sin 422/403/404 por usuario; autoría/institución son de sesión; sede ausente 409 sin ticket/detalle/historial; producto ajeno 404; OpenAPI declara optional/ignored y no 404 por usuario; matriz no varía.
-  - **Comando:** `backend\.venv\Scripts\python.exe -m pytest backend\tests\api\test_tickets_alcance.py backend\tests\api\test_tickets_institucional.py backend\tests\api\test_modal_ticket.py backend\tests\api\test_ticket_sede_011.py backend\tests\api\test_transaccion_ticket.py -q`.
+  - **Comando:** `backend\.venv\Scripts\python.exe -m pytest backend\tests\funcional\integracion\test_tickets_alcance.py backend\tests\funcional\integracion\test_tickets_institucional.py backend\tests\funcional\integracion\test_modal_ticket.py backend\tests\funcional\integracion\test_ticket_sede_011.py backend\tests\funcional\e2e\test_transaccion_ticket.py -q`.
 
 - [x] **E22-2 — Frontend: identidad informativa y body sin autor**
   - **Archivos:** `frontend/src/app/features/tickets/tickets.component.ts`, `.html`, `.spec.ts`, `frontend/src/app/shared/interfaces/index.ts`.
@@ -180,17 +180,17 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
   - **Implementación:** DTOs `SedeEfectivaRespuesta` y `DepartamentoEfectivoRespuesta`; campos requeridos `sede` y `departamento` en `IdentidadAutenticadaRespuesta`; `joinedload(Usuario.sede)` y `joinedload(Usuario.departamento).joinedload(Departamento.sede)`; helper `_contexto_organizacional` con la regla D-9 y degradación a `null` (D-10), documentado contra `inventario_service.sede_del_alcance_por_rol`; descripción OpenAPI actualizada. Sin DDL ni cambios de permisos.
   - **AC:** AC-22.
   - **Hecho cuando:** los tests nuevos pasan, el contrato observado coincide con el DTO para los cuatro roles y el set de claves es el esperado.
-  - **Comando:** `backend\.venv\Scripts\python.exe -m pytest backend\tests\api\test_auth_me_institucion.py backend\tests\api\test_auth.py -q`.
+  - **Comando:** `backend\.venv\Scripts\python.exe -m pytest backend\tests\no_funcional\seguridad\test_auth_me_institucion.py backend\tests\no_funcional\seguridad\test_auth.py -q`.
 
 - [x] **E23-2 — Frontend: badges de sede y departamento en la cabecera**
-  - **Archivos:** `frontend/src/app/shared/interfaces/index.ts`, `frontend/src/app/app.component.ts`, `frontend/src/app/app.component.html`, `frontend/src/app/app.component.spec.ts`, `frontend/src/app/core/services/auth.service.spec.ts` y specs con fixtures de `IdentidadAutenticada`.
+  - **Archivos:** `frontend/src/app/shared/interfaces/index.ts`, `frontend/src/app/core/auth/roles.ts`, `frontend/src/app/core/auth/roles.spec.ts`, `frontend/src/app/app.component.ts`, `frontend/src/app/app.component.html`, `frontend/src/app/app.component.spec.ts`, `frontend/src/app/core/services/auth.service.spec.ts` y specs con fixtures de `IdentidadAutenticada`.
   - **Primero rojo:** actualizar `IDENTIDAD_RESUELTA` y los fixtures al tipo extendido; escribir tests de cabecera para Administrador (sin badges nuevos), Bodeguero con sede (sin `Departamento`), Bodeguero sin sede (`Sede: —`), Solicitante con departamento y sede, Solicitante sin asignaciones (ambos `—`) y Superadmin (sin badges nuevos). Los tests deben observar el DOM, no solo los `computed()`.
   - **Implementación:** interfaces `SedeEfectiva` y `DepartamentoEfectivo`; `mostrarSede`, `mostrarDepartamento`, `contextoSede`, `contextoDepartamento` como `computed()`; badges con `aria-label` después de `Institución`; `min-h-16`, `flex-wrap` y `gap` en la cabecera. Sin CSS quemado.
   - **AC:** AC-23.
   - **Hecho cuando:** los casos de los cuatro roles pasan y la cabecera no desborda a 1024 px.
   - **Comando:** `$env:CHROME_BIN = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"; cd frontend; npx ng test --watch=false --browsers=ChromeHeadless` (nunca `npm test`).
 
-- [ ] **E23-3 — Verificación integrada, evidencia y memoria**
+- [x] **E23-3 — Verificación integrada, evidencia y memoria**
   - **Archivos:** `docs/spec/features/008-particionamiento-institucional/evidencia/enmienda-contexto-organizacional.md`, `MEMORY.md`; corrección de afirmaciones obsoletas en `docs/spec/features/007-control-acceso-roles/spec.md` y `frontend/src/app/features/tickets/tickets.component.ts`.
   - Ejecutar suite backend completa (SQLite y gated PostgreSQL si aplica), suite frontend completa, `ng build`, inspección de `/openapi.json` y recorrido 4200 con `bodeguero.test+clerk_test@example.com` y `solicitante.test+clerk_test@example.com`. Reconstruir la imagen y hacer humo 8080. Registrar evidencia observada por AC y actualizar `MEMORY.md`; grep de coherencia sobre `AGENTS.md`, `MEMORY.md` y `.agents/skills/`.
   - **AC:** AC-22, AC-23.
@@ -199,9 +199,9 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
 
 ### Cierre de enmienda
 
-- [ ] **E23-C1 — Suites y contrato.** **AC:** AC-22, AC-23. **Hecho cuando:** SQLite y gated PostgreSQL aplicables pasan, `ng test` con Edge y `ng build` están verdes, `/openapi.json` publica los dos objetos nullable y el número de operaciones no cambia.
+- [x] **E23-C1 — Suites y contrato.** **AC:** AC-22, AC-23. **Hecho cuando:** SQLite y gated PostgreSQL aplicables pasan, `ng test` con Edge y `ng build` están verdes, `/openapi.json` publica los dos objetos nullable y el número de operaciones no cambia.
 - [x] **E23-C2 — Recorridos.** **AC:** AC-23. **Hecho cuando:** 4200 confirma Bodeguero con `Sede`, Solicitante con `Sede` y `Departamento`, Administrador/Superadmin sin badges nuevos, y 8080 confirma el humo con la imagen reconstruida.
-- [ ] **E23-C3 — Evidencia, memoria y coherencia.** **AC:** AC-22, AC-23. **Hecho cuando:** la evidencia observada queda bajo los AC y en `evidencia/enmienda-contexto-organizacional.md`; `MEMORY.md` está actualizado; el grep de coherencia no deja afirmaciones obsoletas; `roadmap.md` no cambia porque la feature sigue cerrada.
+- [x] **E23-C3 — Evidencia, memoria y coherencia.** **AC:** AC-22, AC-23. **Hecho cuando:** la evidencia observada queda bajo los AC y en `evidencia/enmienda-contexto-organizacional.md`; `MEMORY.md` está actualizado; el grep de coherencia no deja afirmaciones obsoletas; `roadmap.md` no cambia porque la feature sigue cerrada.
 
 ### Matriz de trazabilidad AC ↔ tareas
 

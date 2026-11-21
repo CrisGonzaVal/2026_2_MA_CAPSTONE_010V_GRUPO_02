@@ -8,6 +8,12 @@ Cada subcarpeta corresponde a una categoría de la taxonomía estándar:
 - **No funcionales**: verifican atributos de calidad (rendimiento, seguridad,
   carga/estrés, escalabilidad, usabilidad, compatibilidad).
 
+> **`no_funcional` va con guion bajo, no con guion.** Python no permite importar
+> paquetes cuyo nombre lleve guion, y la suite usa imports absolutos entre
+> carpetas (`from tests.no_funcional.seguridad... import ...`). El guion bajo es
+> obligatorio para que pytest resuelva los paquetes; el término visible sigue
+> siendo «no funcional».
+
 ## Árbol
 
 ```
@@ -62,7 +68,9 @@ al empezar y al terminar y nunca tocan la base 0.
 - Los módulos de apoyo compartidos (`_soporte_*.py`, `soporte_*.py`) viven en
   `funcional/integracion/` y se importan **por ruta absoluta**
   (`from tests.funcional.integracion._soporte_sede_011 import ...`), de modo que
-  el destino de un test no rompe a sus consumidores.
+  el destino de un test no rompe a sus consumidores. La única excepción es
+  `no_funcional/rendimiento/soporte_limite_tasa_025.py`, que solo consumen los
+  tests de límite de tasa y por eso se queda junto a ellos.
 - Los tests se nombran `test_<que_se_prueba>_<NNN>.py`, donde `NNN` es la
   feature que los originó.
 - Un archivo de test solo entra en una carpeta. Si un test sirve a dos tipos, se
@@ -71,7 +79,7 @@ al empezar y al terminar y nunca tocan la base 0.
 
 ## Reorganización del 20/Nov/2026
 
-Antes de esta fecha la suite estaba organized por **módulo de código**
+Antes de esta fecha la suite estaba organizada por **módulo de código**
 (`tests/api/`, `tests/models/`, `tests/schemas/`, `tests/services/` y la raíz de
 `tests/`), no por tipo de prueba. La reclasificación no cambió ninguna prueba:
 solo su ubicación, sus imports (que pasaron de relativos a absolutos) y los
@@ -87,7 +95,7 @@ Mapa de la organización anterior a la actual:
 | `tests/api/test_permisos*.py`, `test_auth*.py`, `test_cors_024.py`, `test_correlacion_024.py`, `test_aislamiento_tenant_010.py`, `test_institucion_inactiva_012.py`, `test_capacidades_gating_012.py`, `test_gating_capacidades_endpoints_012.py` | `tests/no_funcional/seguridad/` |
 | `tests/api/test_limite_tasa*.py`, `test_metricas*.py` | `tests/no_funcional/rendimiento/` |
 | `tests/models/`, `tests/schemas/` | `tests/funcional/unitarios/` |
-| `tests/services/` | `tests/funcional/integracion/` |
+| `tests/services/` | `tests/funcional/integracion/` (salvo `test_compra_service_estructura.py`, que va a `unitarios/`) |
 | `tests/test_*.py` con `postgres` | `tests/funcional/sistema/` |
 | `tests/test_*.py` restantes | `tests/funcional/unitarios/` o `tests/funcional/integracion/` |
 

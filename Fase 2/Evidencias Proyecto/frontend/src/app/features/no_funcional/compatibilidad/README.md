@@ -16,7 +16,7 @@ frontend: navegadores, versiones, dispositivos y tamaños de pantalla.
 
 - Los recorridos de cierre se hacen en **4200** (dev server) y **8080**
   (build de producción servido por nginx), que es la misma base de código en
-  dos modos de serving, no en dos navegadores.
+  dos formas de servirla, no en dos navegadores.
 
 ## Brecha
 

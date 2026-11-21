@@ -69,7 +69,8 @@ histórica de AC-1…AC-21 no se altera.
 - **Pruebas de DOM:** `app.component.spec.ts` cubre Administrador sin badges nuevos,
   Bodeguero con sede, Bodeguero sin sede (`Sede: —`), Solicitante con departamento y sede,
   Solicitante sin asignaciones (ambos `—`), Superadmin sin badges y ausencia de selectores o
-  entradas. **30 SUCCESS** en el archivo; suite completa **556 SUCCESS** con Edge.
+  entradas. **30 SUCCESS** en el archivo; suite completa **559 SUCCESS** con Edge
+  (556 al registrar esta evidencia; 3 casos AC-23 de `roles.spec.ts` se agregaron después).
 - **Build de producción:** `npx ng build` OK; bundle inicial **339.16 kB** (94.67 kB de
   transferencia). Imagen Docker del frontend reconstruida
   (`sha256:e6fba304965b2cbe1eda541fc1fd28d27acd58879ec9135ac219484c5fb9db38`).

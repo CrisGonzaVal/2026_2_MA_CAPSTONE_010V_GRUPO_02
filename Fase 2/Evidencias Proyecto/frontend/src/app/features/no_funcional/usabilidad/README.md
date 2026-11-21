@@ -17,7 +17,7 @@ accesibilidad, contraste, legibilidad y ergonomía de los flujos.
 | Ítem | Detalle | Dónde está registrado |
 |---|---|---|
 | Aviso de accesibilidad en el buscador operativo de inventario | Hallazgo de la auditoría de UI | `docs/spec/deuda-tecnica.md` (DT-12) |
-| Enmienda T-17 (pestañas ARIA de `/administracion`) | Ya cerrada en su feature | `docs/spec/features/013-ciclo-vida-ticket/evidencia/README.md` |
+| Enmienda T-17 (pestañas ARIA de `/administracion`) | Ya cerrada en su feature | `docs/spec/features/012-gestion-administrativa/evidencia/README.md` |
 
 ## Qué debería entrar aquí
 

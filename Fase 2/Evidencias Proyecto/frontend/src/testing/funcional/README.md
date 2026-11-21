@@ -2,6 +2,10 @@
 
 Clasificación de los specs de Angular por **tipo de prueba**.
 
+Son **42 archivos** de spec bajo `src/app/` que ejecutan **559 casos** en la
+última corrida verificada. El índice los cubre todos; al final hay un comando
+para detectar si alguno queda fuera.
+
 ## Por qué hay un índice y no una mudanza
 
 Angular sigue la convención de **spec junto al sujeto** (`x.component.spec.ts`
@@ -45,23 +49,35 @@ rápidos).
 | [`app/features/administracion/services/administracion.service.spec.ts`](../../app/features/administracion/services/administracion.service.spec.ts) | Servicio de administración |
 | [`app/features/compras/services/compras.service.spec.ts`](../../app/features/compras/services/compras.service.spec.ts) | Servicio de compras |
 | [`app/features/control/services/control.service.spec.ts`](../../app/features/control/services/control.service.spec.ts) | Servicio del panel SaaS |
+| [`app/app.routes.spec.ts`](../../app/app.routes.spec.ts) | Rutas raíz, guards y carga diferida |
+| [`app/features/administracion/administracion-nav.component.spec.ts`](../../app/features/administracion/administracion-nav.component.spec.ts) | Pestañas ARIA de administración (enmienda T-17) |
 
 ### Sistema / E2E — recorridos de usuario sobre la app integrada
 
-Los specs de componente de cada feature recorren el flujo completo de la vista
-con sus servicios reales: [`dashboard`](../../app/features/dashboard/dashboard.component.spec.ts),
-[`inventario`](../../app/features/inventario/inventario.component.spec.ts),
-[`producto-detalle`](../../app/features/inventario/producto-detalle.component.spec.ts),
-[`tickets`](../../app/features/tickets/tickets.component.spec.ts),
-[`ticket-detalle`](../../app/features/tickets/ticket-detalle.component.spec.ts),
-[`administracion`](../../app/features/administracion/usuarios.component.spec.ts) (usuarios,
-sedes, departamentos, encargados y navegación),
-[`compras`](../../app/features/compras/compras.routes.spec.ts) (órdenes, necesidades, nueva
-orden y recepción),
-[`control`](../../app/features/control/control-login.component.spec.ts) (instituciones,
-administradores, capacidades, dashboard SaaS),
-[`auth`](../../app/features/auth/login.component.spec.ts) y
-[`acceso-denegado`](../../app/features/acceso-denegado/acceso-denegado.component.spec.ts).
+| Spec | Qué prueba |
+|---|---|
+| [`app/app.component.spec.ts`](../../app/app.component.spec.ts) | Shell: cabecera, menú lateral, contexto institucional y badges por rol |
+| [`app/features/dashboard/dashboard.component.spec.ts`](../../app/features/dashboard/dashboard.component.spec.ts) | Métricas y alertas del dashboard |
+| [`app/features/inventario/inventario.component.spec.ts`](../../app/features/inventario/inventario.component.spec.ts) | Existencias y acciones del inventario |
+| [`app/features/inventario/producto-detalle.component.spec.ts`](../../app/features/inventario/producto-detalle.component.spec.ts) | Detalle de producto por alcance |
+| [`app/features/tickets/tickets.component.spec.ts`](../../app/features/tickets/tickets.component.spec.ts) | Listado y alta de tickets |
+| [`app/features/tickets/ticket-detalle.component.spec.ts`](../../app/features/tickets/ticket-detalle.component.spec.ts) | Detalle, historial y transiciones del ticket |
+| [`app/features/administracion/usuarios.component.spec.ts`](../../app/features/administracion/usuarios.component.spec.ts) | Usuarios, roles y asignación |
+| [`app/features/administracion/sedes.component.spec.ts`](../../app/features/administracion/sedes.component.spec.ts) | CRUD de sedes y 409 por duplicado |
+| [`app/features/administracion/departamentos.component.spec.ts`](../../app/features/administracion/departamentos.component.spec.ts) | CRUD de departamentos y sede asignada |
+| [`app/features/administracion/encargados.component.spec.ts`](../../app/features/administracion/encargados.component.spec.ts) | Encargados por departamento |
+| [`app/features/compras/lista-ordenes/lista-ordenes.component.spec.ts`](../../app/features/compras/lista-ordenes/lista-ordenes.component.spec.ts) | Órdenes de compra: filtros, emisión y cancelación |
+| [`app/features/compras/necesidades/necesidades.component.spec.ts`](../../app/features/compras/necesidades/necesidades.component.spec.ts) | Necesidades de compra por sede |
+| [`app/features/compras/nueva-orden/nueva-orden.component.spec.ts`](../../app/features/compras/nueva-orden/nueva-orden.component.spec.ts) | Alta de orden de compra y de proveedor |
+| [`app/features/compras/recepcion-bodega/recepcion-bodega.component.spec.ts`](../../app/features/compras/recepcion-bodega/recepcion-bodega.component.spec.ts) | Recepción de órdenes facturadas |
+| [`app/features/control/control-login.component.spec.ts`](../../app/features/control/control-login.component.spec.ts) | Acceso al panel SaaS |
+| [`app/features/control/administradores-control.component.spec.ts`](../../app/features/control/administradores-control.component.spec.ts) | Administradores institucionales e invitaciones |
+| [`app/features/control/alta-institucion.component.spec.ts`](../../app/features/control/alta-institucion.component.spec.ts) | Alta de institución desde el panel SaaS |
+| [`app/features/control/capacidades.component.spec.ts`](../../app/features/control/capacidades.component.spec.ts) | Capacidades por institución |
+| [`app/features/control/dashboard-saas.component.spec.ts`](../../app/features/control/dashboard-saas.component.spec.ts) | Dashboard SaaS agregado |
+| [`app/features/control/instituciones.component.spec.ts`](../../app/features/control/instituciones.component.spec.ts) | Listado y edición de instituciones |
+| [`app/features/auth/login.component.spec.ts`](../../app/features/auth/login.component.spec.ts) | Login con Clerk |
+| [`app/features/acceso-denegado/acceso-denegado.component.spec.ts`](../../app/features/acceso-denegado/acceso-denegado.component.spec.ts) | Pantalla de acceso denegado |
 
 ### Aceptación — evidencia por feature
 
@@ -83,3 +99,16 @@ npx ng test --watch=false --browsers=ChromeHeadless
 
 Nunca `npm test` a secas: Karma arranca en modo watch y el comando se queda
 esperando.
+
+## Comprobar que el índice está completo
+
+Debe imprimir `0`. Lista los specs que existen en `src/app/` y no están
+enlazados arriba (los nombres de archivo no se repiten, por eso basta comparar
+por nombre).
+
+```powershell
+$doc = "src/testing/funcional/README.md"
+(Get-ChildItem "src/app" -Recurse -Filter *.spec.ts | Where-Object {
+  -not (Select-String -Path $doc -Pattern ([regex]::Escape($_.Name)) -Quiet)
+}).Count
+```

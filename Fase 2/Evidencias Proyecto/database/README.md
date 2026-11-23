@@ -69,7 +69,7 @@ esquema hardcodeados.
 
 ```sql
 SELECT count(*) FROM control.institucion;              -- 4
-SELECT count(*) FROM control.mapa_usuario_esquema;     -- 12
+SELECT count(*) FROM control.mapa_usuario_esquema;     -- 17 (16 usuarios + Superadmin)
 SELECT count(*) FROM control.funcion_institucion;      -- 28 (4 × 7)
 SELECT version FROM control.version_esquema;           -- 026.0
 SELECT count(*) FROM control.historial_transicion_producto;   -- 0

@@ -258,7 +258,7 @@ INSERT INTO rol (rol_id, nombre_rol, descripcion) OVERRIDING SYSTEM VALUE VALUES
 (4, 'Solicitante',       'Funcionario que consulta stock y emite tickets');
 
 -- =====================================================
--- 4. USUARIO  (13 filas)
+-- 4. USUARIO  (16 filas)
 -- =====================================================
 -- Clerk es la unica autoridad de autenticacion (Feature 006): el usuario local
 -- no guarda credencial alguna. El vinculo con Clerk se resuelve por `correo`
@@ -275,6 +275,14 @@ INSERT INTO rol (rol_id, nombre_rol, descripcion) OVERRIDING SYSTEM VALUE VALUES
 -- en el departamento 6 (Biblioteca, Sede 2) para que el ticket emitido por el
 -- Solicitante se despache desde la misma sede que opera el Bodeguero.
 -- El usuario 13 es la cuenta QA del Administrador institucional en INST-001.
+-- Cuentas demo (22/Nov/2026): tres identidades reales de Clerk de INST-001 con
+-- correo primario verificado; el vinculo local se resuelve por `correo` y el
+-- mapa nace `aceptada` porque la identidad ya existe (no hay invitacion).
+--   usuario 14: Administrador institucional, departamento 1 (Direccion).
+--   usuario 15: Bodeguero, departamento 6 (Biblioteca) -> sede 2 (Sede Maipu).
+--   usuario 16: Solicitante, departamento 6 (Biblioteca); su sede operativa es
+--               la del departamento (2) y `usuario.sede_id` queda NULL porque
+--               no opera stock.
 
 INSERT INTO usuario (usuario_id, nombre, apellido, correo, departamento_id, rol_id, sede_id) OVERRIDING SYSTEM VALUE VALUES
 (1,  'Camila',   'Fernandez', 'camila.fernandez@losalpes.cl',   1, 2, NULL),
@@ -289,7 +297,10 @@ INSERT INTO usuario (usuario_id, nombre, apellido, correo, departamento_id, rol_
 (10, 'Andres',   'Pino',      'andres.pino@talagante.cl',      10, 2, NULL),
 (11, 'Paula',    'Rojas',     'solicitante.test+clerk_test@example.com', 6, 4, 2),
 (12, 'Roberto',  'Diaz',      'bodeguero.test+clerk_test@example.com',   6, 3, 2),
-(13, 'Admin',    'QA',        'admin020.test+clerk_test@example.com',     1, 2, NULL);
+(13, 'Admin',    'QA',        'admin020.test+clerk_test@example.com',     1, 2, NULL),
+(14, 'Cristian', 'Gonzalez',  'crise.gonzalez@duocuc.cl',                 1, 2, NULL),
+(15, 'Luciano',  'Illanes',   'lu.illanes@duocuc.cl',                     6, 3, 2),
+(16, 'Ricardo',  'Nilo',      'ri.nilo@duocuc.cl',                        6, 4, NULL);
 
 -- =====================================================
 -- 4b. DEPARTAMENTO_ENCARGADO  (5 filas)  [Feature 011, auxiliar]

@@ -17,7 +17,7 @@ const SEDES: Sede[] = [
 const PROVEEDORES: Proveedor[] = [
   {
     proveedor_id: 1,
-    rut: '76.543.210-K',
+    rut: '76.543.210-3',
     razon_social: 'Papelera Nacional SpA',
     nombre_fantasia: null,
     giro: null,
@@ -211,6 +211,9 @@ describe('NuevaOrdenComponent', () => {
       rut: '11.111.111-1',
       razon_social: 'Insumos Nuevos Ltda',
     });
+    expect(
+      componente.formularioProveedor.controls.rut.hasError('rutInvalido'),
+    ).toBeFalse();
     componente.guardarProveedor();
     fixture.detectChanges();
 
@@ -238,6 +241,27 @@ describe('NuevaOrdenComponent', () => {
     expect(componente.proveedores().length).toBe(2);
     expect(componente.formulario.controls.proveedor_id.value).toBe(42);
     expect(componente.mostrarAltaProveedor()).toBeFalse();
+  });
+
+  it('AC-11: un proveedor con DV inválido marca el RUT y no dispara el POST', () => {
+    const componente = crear();
+    cargarCatalogos();
+
+    componente.alternarAltaProveedor();
+    componente.formularioProveedor.patchValue({
+      rut: '76.543.210-8',
+      razon_social: 'Insumos Inválidos Ltda',
+    });
+    componente.guardarProveedor();
+    fixture.detectChanges();
+
+    expect(
+      componente.formularioProveedor.controls.rut.hasError('rutInvalido'),
+    ).toBeTrue();
+    httpMock.expectNone(RUTA_PROVEEDORES);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'El RUT no es válido: revisa el dígito verificador.',
+    );
   });
 
   it('AC-3: recalcula el total estimado al agregar líneas', () => {

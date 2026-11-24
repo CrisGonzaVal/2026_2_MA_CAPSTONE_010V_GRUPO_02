@@ -47,7 +47,7 @@ Las rutas son relativas a la raíz de `Fase 2/Evidencias Proyecto/` (donde vive 
 ## 5. Comandos de Operación
 - Levantar infraestructura local: `docker compose -f docker-compose.yml up -d` (levanta `db`, `redis`, `backend` y `frontend`)
 - Reset de la base QA (borra el volumen y vuelve a sembrar): `docker compose -f docker-compose.yml down -v` y luego `up -d`. En Windows hay atajos `reset-db.cmd` / `reset-db.ps1` en la raíz.
-- Backend dev server: `cd backend && uvicorn app.main:app --reload --port 8000`
+- Backend dev server: `cd backend && uvicorn app.main:app --reload --port 8000` (lee el `.env` de la raíz: debe tener el bloque `DB_*` o `DB_URL`; plantilla y notas en `backend/.env.example`)
 - Frontend dev server: `cd frontend && npm start` (puerto 4200)
 - **Dos puertos del frontend, y no son lo mismo.** `4200` es el dev server de `npm start` y
   siempre sirve el código actual. `8080` es el contenedor nginx: sirve un **build de

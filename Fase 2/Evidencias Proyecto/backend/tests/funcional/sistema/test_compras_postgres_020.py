@@ -510,7 +510,7 @@ def test_administrador_replica_y_superadmin_no_replica():
                 db_control,
                 db_tenant,
                 ProveedorCrear(
-                    rut="91.000.000-1",
+                    rut="91.000.000-4",
                     razon_social="Replica Administrador 020",
                     giro="Papeleria",
                 ),
@@ -523,7 +523,7 @@ def test_administrador_replica_y_superadmin_no_replica():
         with _sesion_tenant(motor, esquema) as db:
             replica = db.get(Proveedor, proveedor_admin)
             assert replica is not None
-            assert replica.rut == "91.000.000-1"
+            assert replica.rut == "91.000.000-4"
             assert replica.razon_social == "Replica Administrador 020"
 
         with _sesion_control(motor) as db_control, _sesion_tenant(

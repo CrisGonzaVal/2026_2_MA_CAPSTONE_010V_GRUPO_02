@@ -21,12 +21,28 @@ Convenciones del proyecto:
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+)
 
+from app.core.rut import validar_rut
 from app.schemas.organizacion_schema import SedeRespuesta
 from app.schemas.producto_schema import ProductoRespuesta
+
+#: RUT chileno con digito verificador (Feature 027). Se comparte con
+#: `control_schema` para que proveedores e instituciones validen igual.
+Rut = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=20),
+    AfterValidator(validar_rut),
+]
 
 # ---------------------------------------------------------------------------
 # Proveedores (AC-2, DT-1)
@@ -39,18 +55,19 @@ class ProveedorCrear(BaseModel):
     El RUT es unico **global**: el servicio responde 409 si ya existe, incluso
     si la institucion del actor no lo habia usado. El proveedor nace activo; la
     baja/reactivacion queda fuera de alcance (spec §9.1).
+
+    Feature 027: el RUT valida su digito verificador modulo 11 y la razon social
+    se guarda sin espacios exteriores. El DTO prohibe campos extra.
     """
 
-    rut: str = Field(
-        min_length=1,
-        max_length=20,
-        description="RUT del proveedor. Unico en el catalogo global.",
+    model_config = ConfigDict(extra="forbid")
+
+    rut: Rut = Field(
+        description="RUT del proveedor con digito verificador. Unico en el catalogo global.",
     )
-    razon_social: str = Field(
-        min_length=1,
-        max_length=150,
-        description="Razon social no vacia.",
-    )
+    razon_social: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)
+    ] = Field(description="Razon social no vacia.")
     nombre_fantasia: Optional[str] = Field(default=None, max_length=100)
     giro: Optional[str] = Field(default=None, max_length=100)
     correo: Optional[EmailStr] = Field(default=None, max_length=100)
@@ -131,6 +148,8 @@ class NecesidadReabastecimiento(BaseModel):
 class CoberturaPreviewItem(BaseModel):
     """Linea simulada del preview: producto y cantidad de la compra hipotetica."""
 
+    model_config = ConfigDict(extra="forbid")
+
     producto_id: int = Field(ge=1, description="Producto activo de la institucion.")
     cantidad_solicitada: int = Field(
         gt=0, description="Unidades simuladas para ese producto; mayor que cero."
@@ -144,6 +163,8 @@ class CoberturaPreviewSolicitud(BaseModel):
     stock, no de a quien se compra. La sede se valida en el servicio (404 si no
     existe o es ajena); la forma del cuerpo se valida aqui (422).
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     sede_id: int = Field(ge=1, description="Sede de la institucion del actor.")
     items: List[CoberturaPreviewItem] = Field(
@@ -202,6 +223,8 @@ class CoberturaPreviewRespuesta(BaseModel):
 class DetalleOrdenCompraCrear(BaseModel):
     """Linea de una OC. La cantidad es una peticion, no una recepcion."""
 
+    model_config = ConfigDict(extra="forbid")
+
     producto_id: int = Field(ge=1, description="Producto activo de la institucion.")
     cantidad_solicitada: int = Field(
         gt=0, description="Unidades pedidas. Debe ser mayor que cero."
@@ -222,6 +245,8 @@ class OrdenCompraCrear(BaseModel):
     elige sede, proveedor e items.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     sede_id: int = Field(ge=1, description="Sede de destino de la institucion.")
     proveedor_id: int = Field(ge=1, description="Proveedor activo del catalogo global.")
     items: List[DetalleOrdenCompraCrear] = Field(
@@ -236,6 +261,8 @@ class OrdenCompraActualizar(BaseModel):
     Solo se acepta en estado `Borrador`; el servicio recalcula el total y no
     toca inventario (AC-3, DT-14).
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     sede_id: int = Field(ge=1)
     proveedor_id: int = Field(ge=1)
@@ -321,7 +348,11 @@ class FacturaCompraRegistrar(BaseModel):
     sin adelantarse al 404/409 de la orden.
     """
 
-    numero_factura: str = Field(min_length=1, max_length=50)
+    model_config = ConfigDict(extra="forbid")
+
+    numero_factura: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)
+    ] = Field(description="Numero de factura, unico por proveedor.")
     fecha_factura: date = Field(description="Fecha de emision de la factura.")
     monto_total: Decimal = Field(
         gt=0, max_digits=12, decimal_places=2, description="Monto total; mayor que cero."
@@ -356,11 +387,11 @@ class CancelacionOrdenCompra(BaseModel):
     la fecha los fija el servidor a partir de la sesion (AC-12).
     """
 
-    motivo_cancelacion: str = Field(
-        min_length=1,
-        max_length=500,
-        description="Motivo obligatorio de la cancelacion.",
-    )
+    model_config = ConfigDict(extra="forbid")
+
+    motivo_cancelacion: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)
+    ] = Field(description="Motivo obligatorio de la cancelacion.")
 
 
 OrdenCompraRespuesta.model_rebuild()

@@ -1,6 +1,6 @@
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class CategoriaRespuesta(BaseModel):
@@ -18,15 +18,24 @@ class CategoriaRespuesta(BaseModel):
 
 
 class ProductoBase(BaseModel):
-    nombre: str
-    descripcion: Optional[str] = None
-    unidad_medida: Optional[str] = None
-    stock_minimo: int = 0
-    categoria_id: int
+    nombre: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)
+    ]
+    descripcion: Optional[str] = Field(default=None, max_length=250)
+    unidad_medida: Optional[str] = Field(default=None, max_length=30)
+    stock_minimo: int = Field(default=0, ge=0)
+    categoria_id: int = Field(ge=1)
 
 
 class ProductoCrear(ProductoBase):
-    pass
+    """Alta de producto: prohibe campos no declarados (Feature 027).
+
+    `extra="forbid"` vive en la subclase y no en `ProductoBase` para no
+    heredarlo a `ProductoRespuesta`, cuya serializacion no debe rechazar
+    atributos ajenos al contrato.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ProductoRespuesta(ProductoBase):
@@ -63,6 +72,8 @@ class TransicionCatalogo(BaseModel):
     Un motivo ausente queda en `None` y el servicio decide si esa ausencia es
     valida (repeticion idempotente) o un 422 (transicion efectiva).
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     activo: bool = Field(
         description="Estado destino del recurso: `true` reactiva, `false` da de baja."

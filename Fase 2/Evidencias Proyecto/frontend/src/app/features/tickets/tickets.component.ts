@@ -1,4 +1,5 @@
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -24,6 +25,12 @@ import {
   TicketCrear,
 } from '../../shared/interfaces';
 import { etiquetaEstado } from '../../shared/utils/etiqueta-estado';
+import type { DetalleError422 } from '../../shared/utils/validacion-http';
+import {
+  detallesDeValidacion,
+  mensajeDeCampo,
+  mensajeDeDetalle,
+} from '../../shared/utils/validacion-http';
 import { TicketService } from './services/ticket.service';
 
 /** Encabezado de una columna del tablero, una por estado del catalogo. */
@@ -53,13 +60,6 @@ interface TarjetaKanban {
   solicitante: string;
   fechaCreacion: string;
   fechaCierre: string | null;
-}
-
-/** Un error de validacion de FastAPI, con su `loc` y su mensaje original. */
-interface DetalleError422 {
-  loc: (string | number)[];
-  msg: string;
-  type: string;
 }
 
 const CLASES_PRIO: Record<string, string> = {
@@ -310,7 +310,7 @@ export class TicketsComponent {
     prioridad_id: [null as number | null, Validators.required],
     estado_id: [null as number | null, Validators.required],
     asunto: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(150)]],
-    descripcion: [''],
+    descripcion: ['', Validators.maxLength(500)],
     detalles: this.fb.array([this.crearFilaDetalle()]),
   });
 
@@ -547,55 +547,15 @@ export class TicketsComponent {
    * como numero de fila empezando en 1.
    */
   mensajeDe(campo: string): string | null {
-    for (const error of this.detalleErrores()) {
-      const ultimo = error.loc.at(-1);
-      if (ultimo === campo) {
-        return this.traducirMensaje(error);
-      }
-    }
-    return null;
+    return mensajeDeCampo(this.detalleErrores(), campo);
   }
 
   mensajeDeDetalle(indice: number): string | null {
-    for (const error of this.detalleErrores()) {
-      // En un error de detalle el `loc` es [..., 'detalles', <indice>, <campo>]:
-      // el nombre del campo es el ultimo elemento y el indice el penultimo.
-      const campo = error.loc.at(-1);
-      const fila = error.loc.at(-2);
-      if (campo === 'cantidad_solicitada' && fila === indice) {
-        return this.traducirMensaje(error);
-      }
-      if (campo === 'producto_id' && fila === indice) {
-        return this.traducirMensaje(error);
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Los mensajes de Pydantic vienen en ingles y con la forma de la libreria
-   * ("String should have at most 150 characters"). Se traducen porque el resto
-   * de la interfaz esta en espanol y el usuario no tiene por que reconocer un
-   * `max_length`.
-   */
-  private traducirMensaje(error: DetalleError422): string {
-    const cantidad = error.msg.match(/(\d+)/)?.[1];
-    switch (error.type) {
-      case 'string_too_short':
-        return `Debe tener al menos ${cantidad ?? 3} caracteres.`;
-      case 'string_too_long':
-        return `No puede superar los ${cantidad ?? 150} caracteres.`;
-      case 'missing':
-        return 'Este campo es obligatorio.';
-      case 'greater_than':
-        return 'La cantidad debe ser mayor que 0.';
-      case 'less_than_equal':
-        return 'La cantidad debe ser 1 o mayor.';
-      case 'too_short':
-        return 'Agrega al menos un ítem.';
-      default:
-        return 'Revisa este valor.';
-    }
+    const detalles = this.detalleErrores();
+    return (
+      mensajeDeDetalle(detalles, indice, 'cantidad_solicitada') ??
+      mensajeDeDetalle(detalles, indice, 'producto_id')
+    );
   }
 
   // --- Envío ---
@@ -638,12 +598,12 @@ export class TicketsComponent {
         this.detalles.clear();
         this.detalles.push(this.crearFilaDetalle());
       },
-      error: (fallo: { error?: { detail?: unknown } }) => {
+      error: (fallo: HttpErrorResponse) => {
         this.guardando.set(false);
-        const detalle = fallo?.error?.detail;
+        const detalle = (fallo.error as { detail?: unknown } | null)?.detail;
 
         if (Array.isArray(detalle)) {
-          this.detalleErrores.set(detalle as DetalleError422[]);
+          this.detalleErrores.set(detallesDeValidacion(fallo));
           this.errorGuardado.set('Revisa los campos marcados.');
         } else if (typeof detalle === 'string') {
           // Un 404 de referencia (producto borrado entre la carga del catalogo y

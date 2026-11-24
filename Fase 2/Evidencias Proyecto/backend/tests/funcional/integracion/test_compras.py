@@ -20,6 +20,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
@@ -288,7 +289,7 @@ def test_listar_proveedores_solo_activos_y_ordenados_por_razon_social(motor, mun
 def test_crear_proveedor_como_administrador_y_superadmin(motor, mundo):
     """AC-2: ambos roles crean en control; el RUT duplicado responde 409."""
     datos = ProveedorCrear(
-        rut="12.345.678-9",
+        rut="12.345.678-5",
         razon_social="Suministros del Sur SpA",
         giro="Papeleria",
         correo="ventas@suministros.cl",
@@ -304,10 +305,10 @@ def test_crear_proveedor_como_administrador_y_superadmin(motor, mundo):
         control = db.get(ProveedorControl, proveedor_id)
         replica = db.get(Proveedor, proveedor_id)
         assert control is not None and control.activo is True
-        assert replica is not None and replica.rut == "12.345.678-9"
+        assert replica is not None and replica.rut == "12.345.678-5"
 
     datos_superadmin = ProveedorCrear(
-        rut="98.765.432-1", razon_social="Insumos Globales Ltda"
+        rut="98.765.432-5", razon_social="Insumos Globales Ltda"
     )
     with _sesiones(motor) as (db_control, db_tenant):
         desde_saas = compra_service.crear_proveedor(
@@ -331,7 +332,7 @@ def test_crear_proveedor_como_administrador_y_superadmin(motor, mundo):
 def test_crear_orden_compra_calcula_total_y_deja_borrador(motor, mundo):
     """AC-3: la OC nace en Borrador, sin numero y con total calculado."""
     proveedor_id = _crear_proveedor_control(
-        motor, rut="13.131.313-1", razon_social="Proveedor OC"
+        motor, rut="13.131.313-6", razon_social="Proveedor OC"
     )
     segundo = crear_producto(
         motor, mundo, nombre="Producto secundario", stock_minimo=0
@@ -369,7 +370,7 @@ def test_crear_orden_compra_calcula_total_y_deja_borrador(motor, mundo):
     assert persistida.proveedor_id == proveedor_id
     assert persistida.total == Decimal("27.50")
     assert len(persistida.detalles) == 2
-    assert persistida.proveedor.rut == "13.131.313-1"
+    assert persistida.proveedor.rut == "13.131.313-6"
 
 
 def test_crear_orden_compra_rechaza_referencias_invalidas(motor, mundo):
@@ -377,10 +378,10 @@ def test_crear_orden_compra_rechaza_referencias_invalidas(motor, mundo):
     from tests.funcional.integracion._soporte_sede_011 import crear_sede
 
     activo = _crear_proveedor_control(
-        motor, rut="14.141.414-1", razon_social="Proveedor valido"
+        motor, rut="14.141.414-3", razon_social="Proveedor valido"
     )
     inactivo = _crear_proveedor_control(
-        motor, rut="15.151.515-1", razon_social="Proveedor inactivo", activo=False
+        motor, rut="15.151.515-0", razon_social="Proveedor inactivo", activo=False
     )
     sede_ajena = crear_sede(motor, institucion_id="INST02", nombre="Sede ajena")
     producto_inactivo = crear_producto(
@@ -447,7 +448,7 @@ def test_crear_orden_compra_rechaza_referencias_invalidas(motor, mundo):
 def test_actualizar_orden_compra_reemplaza_solo_en_borrador(motor, mundo):
     """AC-3/DT-14: el PUT reemplaza sede, proveedor e items solo en Borrador."""
     proveedor = _crear_proveedor_control(
-        motor, rut="16.161.616-1", razon_social="Proveedor edicion"
+        motor, rut="16.161.616-8", razon_social="Proveedor edicion"
     )
     orden_id = _crear_orden(motor, mundo, proveedor_id=proveedor)
 
@@ -507,7 +508,7 @@ def test_actualizar_orden_compra_reemplaza_solo_en_borrador(motor, mundo):
 def test_emitir_ordena_numero_formato_y_bloquea_segunda_emision(motor, mundo):
     """AC-4: numero OC-{ANIO}-{id:06d}, fecha de emision y 409 al repetir."""
     proveedor = _crear_proveedor_control(
-        motor, rut="17.171.717-1", razon_social="Proveedor emision"
+        motor, rut="17.171.717-5", razon_social="Proveedor emision"
     )
     orden_id = _crear_orden(motor, mundo, proveedor_id=proveedor)
 
@@ -527,7 +528,7 @@ def test_emitir_ordena_numero_formato_y_bloquea_segunda_emision(motor, mundo):
 def test_emitir_rechaza_producto_desactivado_antes_de_emitir(motor, mundo):
     """AC-4/§9.10: la emision exige productos activos y no muta la orden."""
     proveedor = _crear_proveedor_control(
-        motor, rut="18.181.818-1", razon_social="Proveedor emision inactivo"
+        motor, rut="18.181.818-2", razon_social="Proveedor emision inactivo"
     )
     orden_id = _crear_orden(motor, mundo, proveedor_id=proveedor)
     marcar_producto(motor, mundo["producto_id"], False)
@@ -549,7 +550,7 @@ def test_emitir_rechaza_producto_desactivado_antes_de_emitir(motor, mundo):
 def test_factura_crea_pasa_a_facturada_y_se_puede_reeditar(motor, mundo):
     """AC-5: Emitida -> Facturada; en Facturada se corrigen los metadatos."""
     proveedor = _crear_proveedor_control(
-        motor, rut="19.191.919-1", razon_social="Proveedor factura"
+        motor, rut="19.191.919-K", razon_social="Proveedor factura"
     )
     orden_id = _crear_orden(motor, mundo, proveedor_id=proveedor)
     _emitir(motor, mundo, orden_id)
@@ -581,7 +582,7 @@ def test_factura_crea_pasa_a_facturada_y_se_puede_reeditar(motor, mundo):
 def test_factura_rechaza_estado_duplicado_y_fecha_futura(motor, mundo):
     """AC-5: 409 fuera de Emitida/Facturada, 409 duplicado y 422 fecha futura."""
     proveedor = _crear_proveedor_control(
-        motor, rut="20.202.020-1", razon_social="Proveedor factura errores"
+        motor, rut="20.202.020-8", razon_social="Proveedor factura errores"
     )
     orden_id = _crear_orden(motor, mundo, proveedor_id=proveedor)
 
@@ -664,7 +665,7 @@ def test_factura_rechaza_estado_duplicado_y_fecha_futura(motor, mundo):
 def test_cancelar_borrador_y_emitida_persiste_actor_motivo_y_fecha(motor, mundo):
     """AC-12: Borrador y Emitida cancelan; se guardan motivo, fecha y actor."""
     proveedor = _crear_proveedor_control(
-        motor, rut="21.212.121-1", razon_social="Proveedor cancelacion"
+        motor, rut="21.212.121-5", razon_social="Proveedor cancelacion"
     )
     desde_borrador = _crear_orden(motor, mundo, proveedor_id=proveedor)
     desde_emitida = _crear_orden(motor, mundo, proveedor_id=proveedor)
@@ -688,22 +689,21 @@ def test_cancelar_borrador_y_emitida_persiste_actor_motivo_y_fecha(motor, mundo)
 
 
 def test_cancelar_rechaza_estados_terminales_y_motivo_vacio(motor, mundo):
-    """AC-12: Facturada/Recibida/Cancelada responden 409; motivo vacio 422."""
+    """AC-12: Facturada/Recibida/Cancelada responden 409; motivo vacio 422.
+
+    Feature 027: el motivo vacio se rechaza en el DTO antes de llegar al
+    servicio; el endpoint lo traduce como 422 de validacion.
+    """
     proveedor = _crear_proveedor_control(
         motor, rut="22.222.222-2", razon_social="Proveedor cancelacion errores"
     )
     orden_id = _crear_orden(motor, mundo, proveedor_id=proveedor)
     _emitir(motor, mundo, orden_id)
 
-    with _sesiones(motor) as (db_control, db_tenant):
-        with pytest.raises(HTTPException) as error:
-            compra_service.cancelar_orden_compra(
-                db_tenant,
-                orden_id,
-                CancelacionOrdenCompra(motivo_cancelacion="   "),
-                _admin(mundo),
-            )
-    assert error.value.status_code == 422
+    with pytest.raises(ValidationError) as error:
+        CancelacionOrdenCompra(motivo_cancelacion="   ")
+    assert error.value.errors()[0]["loc"] == ("motivo_cancelacion",)
+    assert error.value.errors()[0]["type"] == "string_too_short"
 
     _facturar(motor, mundo, orden_id, "FAC-CANCELAR")
     with _sesiones(motor) as (db_control, db_tenant):
@@ -1014,7 +1014,7 @@ def test_recepcion_crea_fila_de_stock_ausente_y_respeta_estado(motor, mundo):
 def test_recepcion_rechaza_orden_no_facturada_y_ambitos_ajenos(motor, mundo):
     """AC-6/AC-7: 409 sin factura, 404 por sede/institucion y 409 sin sede."""
     proveedor = _crear_proveedor_control(
-        motor, rut="31.313.131-1", razon_social="Proveedor ambito"
+        motor, rut="31.313.131-9", razon_social="Proveedor ambito"
     )
     orden_id = _crear_orden(motor, mundo, proveedor_id=proveedor)
 

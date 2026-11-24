@@ -179,6 +179,11 @@
                   formControlName="rut"
                   class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 />
+                @if (formulario.controls.rut.invalid && formulario.controls.rut.touched) {
+                  <p class="text-xs text-rose-600">
+                    El RUT no es válido: revisa el dígito verificador.
+                  </p>
+                }
               </div>
 
               <div class="flex flex-col gap-1">

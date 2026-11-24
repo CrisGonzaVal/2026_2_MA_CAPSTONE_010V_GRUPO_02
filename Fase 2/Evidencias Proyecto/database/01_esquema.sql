@@ -988,10 +988,10 @@ CREATE UNIQUE INDEX historial_transicion_ticket_creacion_uk
 -- `activo` toma su DEFAULT TRUE; no se nombra la columna.
 
 INSERT INTO control.institucion (institucion_id, nombre, rut, direccion) VALUES
-('INST-001', 'Instituto Profesional Los Alpes', '65.432.100-9', 'Av. Providencia 1234, Santiago'),
-('INST-002', 'Centro de Salud Familiar Norte', '65.887.230-1', 'Calle Los Robles 45, Maipu'),
-('INST-003', 'Corporacion Educacional Cordillera', '77.120.540-3', 'Camino La Ladera 890, Lo Barnechea'),
-('INST-004', 'Municipalidad de Talagante', '65.998.720-K', 'Plaza de Armas s/n, Talagante');
+('INST-001', 'Instituto Profesional Los Alpes', '65.432.100-0', 'Av. Providencia 1234, Santiago'),
+('INST-002', 'Centro de Salud Familiar Norte', '65.887.230-3', 'Calle Los Robles 45, Maipu'),
+('INST-003', 'Corporacion Educacional Cordillera', '77.120.540-2', 'Camino La Ladera 890, Lo Barnechea'),
+('INST-004', 'Municipalidad de Talagante', '65.998.720-1', 'Plaza de Armas s/n, Talagante');
 
 -- Nombre determinista del esquema tenant: espejo EXACTO en SQL de
 -- `app.services.tenant_service.nombre_esquema_para_institucion`

@@ -415,7 +415,7 @@ export class TicketDetalleComponent {
   /** Edición en `Pendiente`: asunto, descripción, prioridad e ítems completos (D-9). */
   readonly formularioEdicion = this.fb.group({
     asunto: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(150)]],
-    descripcion: [''],
+    descripcion: ['', Validators.maxLength(500)],
     prioridad_id: [null as number | null, Validators.required],
     detalles: this.fb.array([this.crearFilaEdicion()]),
   });

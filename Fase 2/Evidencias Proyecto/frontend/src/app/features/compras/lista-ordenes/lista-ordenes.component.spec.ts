@@ -47,7 +47,7 @@ function orden(sobrescribir: Partial<OrdenCompra> = {}): OrdenCompra {
     fecha_cancelacion: null,
     proveedor: {
       proveedor_id: 1,
-      rut: '76.543.210-K',
+      rut: '76.543.210-3',
       razon_social: 'Papelera Nacional SpA',
       nombre_fantasia: null,
       giro: null,
@@ -243,6 +243,45 @@ describe('ListaOrdenesComponent', () => {
     fixture.detectChanges();
 
     expect(texto()).toContain('Facturada');
+  });
+
+  it('AC-10: un 422 de factura muestra el campo culpable en la alerta', () => {
+    montar([orden({ estado: 'Emitida', numero_oc: 'OC-2026-000021' })]);
+    botonPorAria('Registrar factura')?.click();
+    fixture.detectChanges();
+
+    fixture.componentInstance.formularioFactura.patchValue({
+      numero_factura: 'F-2026-001',
+      fecha_factura: '2026-11-02',
+      monto_total: 150,
+      observaciones: '',
+    });
+    fixture.detectChanges();
+    const boton = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).find((b) => (b.textContent ?? '').includes('Registrar factura'));
+    boton?.click();
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne(`${RUTA_ORDENES}/21/factura`)
+      .flush(
+        {
+          detail: [
+            {
+              loc: ['body', 'numero_factura'],
+              msg: 'String should have at most 50 characters',
+              type: 'string_too_long',
+            },
+          ],
+        },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    fixture.detectChanges();
+
+    expect(texto()).toContain('Número de factura');
+    expect(texto()).toContain('No puede superar los 50 caracteres.');
+    expect(texto()).toContain('OC-2026-000021');
   });
 
   it('AC-12: cancelar exige motivo y envía el POST con el texto', () => {

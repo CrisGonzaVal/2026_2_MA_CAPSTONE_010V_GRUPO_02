@@ -10,6 +10,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { Router, RouterLink } from '@angular/router';
 
 import { InstitucionControl } from '../../shared/interfaces';
+import { rutValido } from '../../shared/utils/rut';
 import { mensajeDeErrorControl } from './control-errores';
 import { ControlService } from './services/control.service';
 
@@ -54,7 +55,7 @@ export class InstitucionesComponent implements OnInit {
 
   readonly formulario = this.constructorFormulario.group({
     nombre: ['', [Validators.required, Validators.maxLength(150)]],
-    rut: ['', [Validators.maxLength(20)]],
+    rut: ['', [Validators.maxLength(20), rutValido]],
     direccion: ['', [Validators.maxLength(200)]],
   });
 

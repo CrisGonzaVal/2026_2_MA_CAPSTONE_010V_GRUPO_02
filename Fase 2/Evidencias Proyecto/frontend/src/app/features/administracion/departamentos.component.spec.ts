@@ -129,6 +129,38 @@ describe('DepartamentosComponent', () => {
     expect(texto()).toContain('Recursos Humanos');
   });
 
+  it('AC-10: un 422 por campo muestra el campo culpable', () => {
+    montar([]);
+    fixture.componentInstance.formulario.patchValue({
+      nombre_dep: 'Recursos Humanos',
+      descripcion: '',
+    });
+    fixture.detectChanges();
+
+    boton('crear departamento')?.click();
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne(RUTA_DEPARTAMENTOS)
+      .flush(
+        {
+          detail: [
+            {
+              loc: ['body', 'nombre_dep'],
+              msg: 'String should have at most 100 characters',
+              type: 'string_too_long',
+            },
+          ],
+        },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    fixture.detectChanges();
+
+    const alerta = (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]');
+    expect(alerta?.textContent).toContain('Nombre del departamento');
+    expect(alerta?.textContent).toContain('No puede superar los 100 caracteres.');
+  });
+
   it('AC-7: asignar sede usa PUT y limita las opciones a las sedes del tenant', () => {
     montar(
       [departamento({ departamento_id: 1, sede_id: null })],

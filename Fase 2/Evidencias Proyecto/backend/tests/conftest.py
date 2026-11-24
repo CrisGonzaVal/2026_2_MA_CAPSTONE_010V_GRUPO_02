@@ -13,7 +13,15 @@ contenedor de PostgreSQL. Las aserciones no consultan la base directamente:
 todo se comprueba leyendo la API, igual que lo haria un cliente real.
 """
 
+import os
 from contextlib import contextmanager
+
+# `app.db.database` resuelve la URL al importarse y `config.py` ya no trae
+# valores por defecto. La suite redirige cada sesion a su SQLite en memoria, asi
+# que el motor module-level solo necesita una URL valida. Se fija antes de
+# importar `app` y sobrescribe cualquier `DB_URL` real del shell para que ningun
+# test toque una base de verdad.
+os.environ["DB_URL"] = "sqlite+pysqlite:///:memory:"
 
 import pytest
 from fastapi.testclient import TestClient

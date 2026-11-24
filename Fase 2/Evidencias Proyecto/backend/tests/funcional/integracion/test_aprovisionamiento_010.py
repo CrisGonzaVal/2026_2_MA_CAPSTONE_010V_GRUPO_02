@@ -477,3 +477,32 @@ def test_colision_de_nombre_esquema_responde_409_sin_tenant_parcial(motor):
         "INST01",
         nombre_en_colision,
     ) not in estado["mapas"], "no debe quedar un mapa parcial del Administrador"
+
+
+def test_alta_rechaza_rut_invalido_y_correo_mal_formado(motor):
+    """Feature 027 (AC-6): el RUT y el correo se validan antes de aprovisionar."""
+    with _cliente(motor, "Superadmin", lambda _correo: True) as cliente:
+        rut_invalido = cliente.post(RUTA_ALTA, json=_cuerpo(rut="76.543.210-8"))
+        correo_invalido = cliente.post(
+            RUTA_ALTA, json=_cuerpo(correo_administrador="sin-arroba")
+        )
+
+    assert rut_invalido.status_code == 422, rut_invalido.text
+    assert rut_invalido.json()["detail"][0]["loc"] == ["body", "rut"]
+    assert correo_invalido.status_code == 422, correo_invalido.text
+    assert correo_invalido.json()["detail"][0]["loc"] == [
+        "body",
+        "correo_administrador",
+    ]
+
+
+def test_alta_acepta_rut_omitido_y_nombre_con_espacios_exteriores(motor):
+    """Feature 027 (AC-6/AC-8): el RUT es opcional y el nombre se recorta."""
+    with _cliente(motor, "Superadmin", lambda _correo: True) as cliente:
+        respuesta = cliente.post(
+            RUTA_ALTA,
+            json=_cuerpo(nombre="  Institucion Nueva  ", rut=""),
+        )
+
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["nombre"] == "Institucion Nueva"

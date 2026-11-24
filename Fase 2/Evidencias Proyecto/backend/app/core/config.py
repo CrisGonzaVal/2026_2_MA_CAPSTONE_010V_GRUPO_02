@@ -1,3 +1,6 @@
+from pathlib import Path
+from urllib.parse import quote
+
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,14 +34,41 @@ VERSION_APLICACION = "1.0.0"
 VERSION_ESQUEMA_OBJETIVO = "026.0"
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+#: Raiz de `backend/`. Localiza los `.env` sin depender del directorio desde el
+#: que se lanza `uvicorn`; en la imagen Docker ninguno existe y toda la
+#: configuracion llega por variables de entorno (docker compose, Render, Neon).
+DIRECTORIO_BACKEND = Path(__file__).resolve().parents[2]
 
-    DB_USER: str = "postgres"
-    DB_PASSWORD: str = "postgres"
-    DB_HOST: str = "localhost"
-    DB_PORT: str = "5432"
-    DB_NAME: str = "apt_erp"
+
+class Settings(BaseSettings):
+    # El `.env` del backend manda sobre el de la raiz: el de la raiz alimenta a
+    # docker compose (interpolacion y Clerk) y el del backend fija la conexion
+    # cuando se levanta uvicorn desde el host. Las variables del proceso
+    # (contenedor, Render, CI) siempre ganan a ambos archivos.
+    model_config = SettingsConfigDict(
+        env_file=(DIRECTORIO_BACKEND.parent / ".env", DIRECTORIO_BACKEND / ".env"),
+        env_file_encoding="utf-8",
+    )
+
+    # Conexion a PostgreSQL. `config.py` no guarda ningun valor: los pone el
+    # `.env` de la raiz en local, docker compose en el contenedor y Render/Neon
+    # en la nube. Si definen los cuatro componentes (la contrasena puede ir
+    # vacia) se compone la URL; si falta alguno, `app.db.database` falla con un
+    # mensaje accionable en vez de inventar una conexion.
+    DB_USER: str = ""
+    DB_PASSWORD: str = ""
+    DB_HOST: str = ""
+    DB_PORT: str = ""
+    DB_NAME: str = ""
+
+    #: Cadena completa de conexion (Neon, Render, VPS). Si esta definida tiene
+    #: prioridad sobre los componentes `DB_*`: en Neon basta pegar la que entrega
+    #: el panel, incluido `?sslmode=require`.
+    #: Se llama `DB_URL` y no `DATABASE_URL` a proposito: esa ultima es una
+    #: variable generica que otros proyectos de la maquina pueden tener definida
+    #: (aqui apunta a otra base) y el proceso la heredaria en silencio.
+    DB_URL: str = ""
+
     CLERK_PUBLISHABLE_KEY: str = ""
     CLERK_SECRET_KEY: str = ""
     CLERK_ISSUER: str = ""
@@ -106,9 +136,32 @@ class Settings(BaseSettings):
             if origen.strip()
         ]
 
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    @field_validator("DB_URL")
+    @classmethod
+    def normalizar_cadena_base_datos(cls, valor: str) -> str:
+        """Acepta el esquema `postgres://` que entregan algunos proveedores.
+
+        SQLAlchemy 2 solo reconoce `postgresql`/`postgresql+psycopg2`; una URL
+        copiada tal cual de Neon o Render con `postgres://` romperia al crear el
+        motor con `NoSuchModuleError`.
+        """
+        valor = valor.strip()
+        if valor.startswith("postgres://"):
+            return "postgresql+psycopg2://" + valor.removeprefix("postgres://")
+        return valor
+
+    @model_validator(mode="after")
+    def completar_cadena_base_datos(self):
+        """Compone la URL desde `DB_*` cuando estan los cuatro componentes."""
+        if self.DB_URL:
+            return self
+        if all((self.DB_USER, self.DB_HOST, self.DB_PORT, self.DB_NAME)):
+            self.DB_URL = (
+                "postgresql+psycopg2://"
+                f"{quote(self.DB_USER, safe='')}:{quote(self.DB_PASSWORD, safe='')}"
+                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+            )
+        return self
 
 
 settings = Settings()

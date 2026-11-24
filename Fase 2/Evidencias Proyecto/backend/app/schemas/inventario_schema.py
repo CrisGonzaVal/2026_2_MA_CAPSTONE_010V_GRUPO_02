@@ -1,12 +1,23 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Annotated, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from app.schemas.producto_schema import (
     CategoriaGestionRespuesta,
     ProductoGestionRespuesta,
 )
+
+
+def _mayusculas_si_texto(valor):
+    """Normaliza el tipo sin romper el 422 de un valor que no es texto."""
+    return valor.upper() if isinstance(valor, str) else valor
+
+
+_TipoMovimiento = Annotated[
+    Literal["ENTRADA", "SALIDA"],
+    BeforeValidator(_mayusculas_si_texto),
+]
 
 
 class StockSedeRespuesta(BaseModel):
@@ -70,13 +81,30 @@ class MovimientoCrear(BaseModel):
     El saldo operativo es por sede: todo movimiento referencia una fila de
     `stock_sede` (`stock_sede_id` obligatorio). El antiguo destino
     `inventario_id` desaparecio con la tabla `inventario` en la Feature 026.
+
+    Feature 027: `tipo_movimiento` es un `Literal` que se normaliza a mayusculas
+    antes de validar, de modo que `entrada` y `ENTRADA` son equivalentes y
+    cualquier otro valor responde 422. La cantidad y el saldo deben ser
+    positivos, y la observacion no supera la columna del DDL.
     """
 
-    tipo_movimiento: str  # 'ENTRADA' o 'SALIDA'
-    cantidad: int
-    observacion: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    tipo_movimiento: _TipoMovimiento = Field(
+        description="Tipo de movimiento: `ENTRADA` o `SALIDA` (sin distinguir mayusculas)."
+    )
+    cantidad: int = Field(
+        gt=0, description="Unidades del movimiento. Debe ser mayor que cero."
+    )
+    observacion: Optional[str] = Field(
+        default=None,
+        max_length=250,
+        description="Nota libre del movimiento.",
+    )
     #: Destino: la fila de `stock_sede` (una por sede/producto).
-    stock_sede_id: int
+    stock_sede_id: int = Field(
+        ge=1, description="Fila de `stock_sede` que recibe el movimiento."
+    )
 
 
 class SedeExistenciaRespuesta(BaseModel):

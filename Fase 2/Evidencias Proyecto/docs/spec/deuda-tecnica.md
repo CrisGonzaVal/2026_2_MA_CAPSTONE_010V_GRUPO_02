@@ -20,13 +20,19 @@ Severidad en entorno **dev** (local, 127.0.0.1) vs **producción** (servidor pú
 
 **Nota sobre DT-09:** `pk_test` es el patrón estándar de Clerk; lo que se cierra es cambiar a instancia de producción y claves `pk_live`, no la clave en sí.
 
-## §2 Otras deudas abiertas (sin feature asignada)
+## §2 Otras deudas abiertas
+
+Las filas marcadas **Absorbido por** ya tienen feature asignada; se conservan aquí hasta que esa feature cierre y entonces se retiran del registro.
 
 | ID | Hallazgo | Origen | Seguimiento |
 |----|----------|--------|-------------|
 | **DT-10** | Caché de lecturas sin feature propia. Quedó fuera de alcance en la 025 (solo límite de tasa distribuido). | Decision de la 025 | Quedará sin feature asignada hasta que haya un spec/plan propio; se indica en roadmap.md y MEMORY.md como "sin feature". |
 | **DT-11** | `admin017.test+clerk_test@example.com` existe en Clerk pero no está mapeado en la BD actual (el Admin mapeado es `admin020`, usuario 13 de INST-001). | Seed inicial + mapeo de usuario | Pendiente de validar contra el flujo real; no bloquea funcionalidad actual. |
 | **DT-12** | Aviso de accesibilidad en el buscador operativo de inventario. | UI/UX | Pendiente de diseño; no es bloqueador de la API. |
+| **DT-13** | DTOs sin longitudes/rangos del DDL: `descripcion` de ticket, `ProductoCrear`, `MovimientoCrear`, `UsuarioBase` y nombres de solo espacios. Producen 500 por truncamiento/check en PostgreSQL. | Auditoría de entradas 027 (23/Nov/2026) | **Cerrado por 027** (24/Nov/2026): DTOs alineados al DDL y gated PostgreSQL 4/4. |
+| **DT-14** | RUT de proveedor e institución sin dígito verificador; la semilla y los mocks usan DV inválidos. | Auditoría de entradas 027 (23/Nov/2026) | **Cerrado por 027** (24/Nov/2026): módulo 11 backend/frontend y siete RUT de semilla corregidos. |
+| **DT-15** | Contrato de error inconsistente: `tipo_movimiento` inválido responde 400; el 422 por campo solo se parsea en tickets; el 500 no tiene `detail` accionable; los campos extra se ignoran. | Auditoría de entradas 027 (23/Nov/2026) | **Cerrado por 027** (24/Nov/2026): `Literal`, `extra="forbid"` y parser 422 compartido. |
+| **DT-16** | `IntegrityError`/`DataError` no traducidos: 500 en texto plano, sin mensaje que indique el campo o la regla. | Auditoría de entradas 027 (23/Nov/2026) | **Cerrado por 027** (24/Nov/2026): handler global 409/422 con `X-Request-ID` y log sin mensaje crudo. |
 
 ## §3 Riesgos aceptados (no deuda, decisión deliberada)
 
@@ -56,4 +62,4 @@ Un ítem vive en este registro mientras **no tenga feature propia**. Cuando la t
 El registro no se convierte en un cementerio: cada línea tiene dueño, severidad y fecha de última revisión.
 
 ---
-*Última revisión: 16/Nov/2026 — auditoría de seguridad de solo lectura completa.*
+*Última revisión: 24/Nov/2026 — DT-13…DT-16 cerrados por la Feature 027 (validación de entradas).*

@@ -11,11 +11,13 @@ despues de CORS), de modo que toda respuesta —incluido el preflight— lleva
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
+from sqlalchemy.exc import DataError, IntegrityError
 
 from app.api.operativo import router_operativo
 from app.api.v1.api import api_router
 from app.core.config import VERSION_APLICACION, settings
 from app.core.cors import CORSEstricto
+from app.core.errores_bd import manejador_error_bd
 from app.core.limite_tasa import AlmacenRedis, LimitadorTasa
 from app.core.observabilidad import configurar_registro
 from app.middleware.limite_tasa import MiddlewareLimiteTasa
@@ -94,6 +96,10 @@ def crear_app(cliente_limite=None) -> FastAPI:
     )
     aplicacion.add_middleware(MiddlewareObservabilidad)
     aplicacion.add_exception_handler(Exception, manejador_error_no_controlado)
+    # Feature 027: los errores de persistencia conocidos son contrato HTTP; los
+    # desconocidos se relanzan y siguen cayendo en el 500 generico.
+    aplicacion.add_exception_handler(IntegrityError, manejador_error_bd)
+    aplicacion.add_exception_handler(DataError, manejador_error_bd)
 
     aplicacion.include_router(api_router, prefix="/api/v1")
     aplicacion.include_router(router_operativo)

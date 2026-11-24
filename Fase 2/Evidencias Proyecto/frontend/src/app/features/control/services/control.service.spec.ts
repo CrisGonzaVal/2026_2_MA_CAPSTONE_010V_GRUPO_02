@@ -30,7 +30,7 @@ describe('ControlService (gestión SaaS)', () => {
   const INSTITUCION: InstitucionControl = {
     institucion_id: 'INSTA',
     nombre: 'Instituto Alfa',
-    rut: '76.111.222-3',
+    rut: '76.111.222-8',
     direccion: 'Av. Siempre Viva 742',
     activo: true,
     nombre_esquema: 'tenant_insta_ab12cd34',

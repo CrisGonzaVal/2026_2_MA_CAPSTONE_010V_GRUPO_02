@@ -190,5 +190,6 @@ def test_tipo_de_movimiento_invalido_no_registra_movimiento(
             "stock_sede_id": stock_sede_id,
         },
     )
-    assert respuesta.status_code == 400, respuesta.text
+    assert respuesta.status_code == 422, respuesta.text
+    assert respuesta.json()["detail"][0]["loc"] == ["body", "tipo_movimiento"]
     assert _stock_sede(motor, stock_sede_id) == 50

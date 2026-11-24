@@ -1,8 +1,11 @@
+from typing import Annotated
+
 from pydantic import (
     BaseModel,
     ConfigDict,
     EmailStr,
     Field,
+    StringConstraints,
     field_validator,
     model_validator,
 )
@@ -40,15 +43,25 @@ LONGITUD_MAXIMA_TEXTO_MOTIVO = 500
 
 
 class UsuarioBase(BaseModel):
-    nombre: str
-    apellido: str
+    nombre: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
+    apellido: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
     correo: EmailStr
-    departamento_id: int
-    rol_id: int
+    departamento_id: int = Field(ge=1)
+    rol_id: int = Field(ge=1)
 
 
 class UsuarioCrear(UsuarioBase):
-    """Alta de usuario: Clerk es la unica autoridad; sin credencial local (D-7)."""
+    """Alta de usuario: Clerk es la unica autoridad; sin credencial local (D-7).
+
+    Feature 027: prohibe campos no declarados. La configuracion vive en la
+    subclase para no heredarla a `UsuarioRespuesta`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class UsuarioRespuesta(UsuarioBase):

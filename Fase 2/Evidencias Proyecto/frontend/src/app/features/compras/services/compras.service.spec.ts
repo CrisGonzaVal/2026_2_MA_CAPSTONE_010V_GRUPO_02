@@ -23,7 +23,7 @@ import { ComprasService } from './compras.service';
 
 const PROVEEDOR: Proveedor = {
   proveedor_id: 1,
-  rut: '76.543.210-K',
+  rut: '76.543.210-3',
   razon_social: 'Papelera Nacional SpA',
   nombre_fantasia: 'Papelera Nacional',
   giro: 'Comercio de articulos de oficina',
@@ -193,7 +193,7 @@ describe('ComprasService (Feature 020)', () => {
 
   it('crearProveedor envia POST con el cuerpo de alta (AC-2)', () => {
     const datos: ProveedorCrear = {
-      rut: '76.543.210-K',
+      rut: '76.543.210-3',
       razon_social: 'Papelera Nacional SpA',
       correo: 'ventas@papelera.cl',
     };

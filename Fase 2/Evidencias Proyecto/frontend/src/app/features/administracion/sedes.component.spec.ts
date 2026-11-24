@@ -129,6 +129,38 @@ describe('SedesComponent', () => {
     expect(texto()).toContain('Aún no hay sedes');
   });
 
+  it('AC-10: un 422 por campo muestra el campo culpable', () => {
+    montar([]);
+    fixture.componentInstance.formulario.patchValue({
+      nombre: 'Sede Centro',
+      direccion: '',
+    });
+    fixture.detectChanges();
+
+    boton('crear sede')?.click();
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne(RUTA_SEDES)
+      .flush(
+        {
+          detail: [
+            {
+              loc: ['body', 'nombre'],
+              msg: 'String should have at most 100 characters',
+              type: 'string_too_long',
+            },
+          ],
+        },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    fixture.detectChanges();
+
+    const alerta = (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]');
+    expect(alerta?.textContent).toContain('Nombre');
+    expect(alerta?.textContent).toContain('No puede superar los 100 caracteres.');
+  });
+
   it('AC-6: edita una sede con PUT y el cuerpo nombre + dirección', () => {
     montar();
     boton('editar')?.click();

@@ -70,7 +70,7 @@ def mundo(motor, dos_instituciones):
     return sembrar_mundo_014(motor, dos_instituciones)
 
 
-def _proveedor(motor, *, rut: str = "51.000.000-1", razon_social: str = "Proveedor HTTP 020") -> int:
+def _proveedor(motor, *, rut: str = "51.000.000-5", razon_social: str = "Proveedor HTTP 020") -> int:
     with sesion(motor) as db:
         fila = ProveedorControl(rut=rut, razon_social=razon_social, activo=True)
         db.add(fila)
@@ -297,7 +297,7 @@ def test_capacidad_compras_apagada_deniega_403(motor, mundo):
 
 def test_administrador_consulta_necesidades_y_proveedores(motor, mundo):
     """AC-1/AC-2: el Administrador lee su consolidado y el catalogo global."""
-    _proveedor(motor, rut="52.000.000-2", razon_social="Proveedor visible")
+    _proveedor(motor, rut="52.000.000-3", razon_social="Proveedor visible")
     with cliente_de_rol(motor, mundo, "Administrador") as cliente_http:
         necesidades = cliente_http.get("/api/v1/compras/necesidades")
         proveedores = cliente_http.get("/api/v1/compras/proveedores")
@@ -305,7 +305,7 @@ def test_administrador_consulta_necesidades_y_proveedores(motor, mundo):
     assert isinstance(necesidades.json(), list)
     assert proveedores.status_code == 200, proveedores.text
     ruts = {fila["rut"] for fila in proveedores.json()}
-    assert "52.000.000-2" in ruts
+    assert "52.000.000-3" in ruts
 
 
 def test_superadmin_lista_y_crea_proveedores_sin_replica(motor, mundo):
@@ -314,11 +314,11 @@ def test_superadmin_lista_y_crea_proveedores_sin_replica(motor, mundo):
         listado = cliente_http.get("/api/v1/compras/proveedores")
         alta = cliente_http.post(
             "/api/v1/compras/proveedores",
-            json={"rut": "53.000.000-3", "razon_social": "Proveedor SaaS 020"},
+            json={"rut": "53.000.000-1", "razon_social": "Proveedor SaaS 020"},
         )
     assert listado.status_code == 200, listado.text
     assert alta.status_code == 201, alta.text
-    assert alta.json()["rut"] == "53.000.000-3"
+    assert alta.json()["rut"] == "53.000.000-1"
 
     # En SQLite control y tenant comparten la tabla fisica `proveedor`, asi que
     # la ausencia de replica del Superadmin solo se acredita en el gated de
@@ -332,11 +332,11 @@ def test_administrador_crea_proveedor_y_rut_duplicado_responde_409(motor, mundo)
     with cliente_de_rol(motor, mundo, "Administrador") as cliente_http:
         primera = cliente_http.post(
             "/api/v1/compras/proveedores",
-            json={"rut": "54.000.000-4", "razon_social": "Proveedor Admin 020"},
+            json={"rut": "54.000.000-K", "razon_social": "Proveedor Admin 020"},
         )
         segunda = cliente_http.post(
             "/api/v1/compras/proveedores",
-            json={"rut": "54.000.000-4", "razon_social": "Proveedor duplicado"},
+            json={"rut": "54.000.000-K", "razon_social": "Proveedor duplicado"},
         )
     assert primera.status_code == 201, primera.text
     assert segunda.status_code == 409, segunda.text
@@ -349,7 +349,7 @@ def test_administrador_crea_proveedor_y_rut_duplicado_responde_409(motor, mundo)
 
 def test_flujo_administrador_crear_editar_emitir_facturar_y_cancelar(motor, mundo):
     """AC-3/AC-4/AC-5/AC-12: las cinco mutaciones del Administrador por HTTP."""
-    proveedor_id = _proveedor(motor, rut="55.000.000-5", razon_social="Proveedor flujo")
+    proveedor_id = _proveedor(motor, rut="55.000.000-8", razon_social="Proveedor flujo")
     segundo = crear_producto(
         motor, mundo, nombre="Producto secundario HTTP", stock_minimo=0
     )
@@ -474,7 +474,7 @@ def test_bodeguero_solo_ve_facturadas_de_su_sede(motor, mundo):
     """AC-6: el listado del Bodeguero se fuerza a Facturada + su sede."""
     from tests.funcional.integracion._soporte_sede_011 import crear_sede
 
-    proveedor_id = _proveedor(motor, rut="57.000.000-7", razon_social="Proveedor sede")
+    proveedor_id = _proveedor(motor, rut="57.000.000-4", razon_social="Proveedor sede")
     propia = _crear_orden_servicio(motor, mundo, proveedor_id=proveedor_id)
     _emitir_y_facturar(motor, mundo, propia, "FAC-BODEGA-PROPIA")
 
@@ -527,7 +527,7 @@ def test_bodeguero_sin_sede_recibe_409_en_el_listado(motor, mundo):
 
 def test_bodeguero_recepciona_la_facturada_de_su_sede(motor, mundo):
     """AC-7…AC-11: el endpoint de recepcion confirma e incrementa el stock."""
-    proveedor_id = _proveedor(motor, rut="58.000.000-8", razon_social="Proveedor recepcion")
+    proveedor_id = _proveedor(motor, rut="58.000.000-2", razon_social="Proveedor recepcion")
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 10)
     orden_id = _crear_orden_servicio(
         motor, mundo, proveedor_id=proveedor_id, cantidad=2
@@ -569,7 +569,7 @@ def test_bodeguero_no_recepciona_orden_de_otra_sede(motor, mundo):
     """AC-6: una OC de otra sede responde 404 aunque este Facturada."""
     from tests.funcional.integracion._soporte_sede_011 import crear_sede
 
-    proveedor_id = _proveedor(motor, rut="59.000.000-9", razon_social="Proveedor otra sede")
+    proveedor_id = _proveedor(motor, rut="59.000.000-0", razon_social="Proveedor otra sede")
     otra_sede = crear_sede(
         motor, institucion_id=mundo["institucion_id"], nombre="Sede recepcion 020"
     )

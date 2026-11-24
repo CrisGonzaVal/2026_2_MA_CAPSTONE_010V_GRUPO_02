@@ -145,9 +145,15 @@
             <textarea
               formControlName="descripcion"
               rows="2"
+              maxlength="500"
               placeholder="Justifica el requerimiento"
               class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-y"
             ></textarea>
+            @if (formulario.controls.descripcion.touched && formulario.controls.descripcion.invalid) {
+              <span class="text-xs text-rose-600 block">No puede superar los 500 caracteres.</span>
+            } @else if (mensajeDe('descripcion')) {
+              <span class="text-xs text-rose-600 block">{{ mensajeDe('descripcion') }}</span>
+            }
           </label>
 
           <div class="space-y-3">

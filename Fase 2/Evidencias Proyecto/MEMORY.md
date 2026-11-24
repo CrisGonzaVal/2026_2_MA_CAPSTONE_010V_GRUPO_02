@@ -2,12 +2,17 @@
 Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya no aporte.
 
 ## Estado actual
-- Features 000…**026 cerradas**. La **026** (salud del esquema BD) se cerró el **18/Nov/2026**; evidencia en `026-salud-esquema-bd/evidencia/README.md`.
+- Features 000…**027 cerradas**. La **027** (validación de entradas) se cerró el **24/Nov/2026**; evidencia en `027-validacion-entradas/evidencia/README.md`.
 - **026:** token `026.0`; control **26** tablas y tenants **23**; **21 entidades**. Se retiró `inventario` y los 14 movimientos legados: quedan 14 saldos `stock_sede` y 3 movimientos (producto 5 = 45, producto 9 = 12). 15 índices P0 + 2 heredados, 6 unicidades B2, U-07 PG-only y K-01…K-04. Al cierre: backend **1659 passed/105 skipped**, gated PG **1761/3**, gated Redis **1662/102**, frontend **549 SUCCESS**, OpenAPI **75** operaciones.
 - **Enmienda 008 (20–21/Nov/2026):** `/auth/me` publica `sede` y `departamento` derivados por rol (D-9); la cabecera muestra `Sede` a Bodeguero/Solicitante y `Departamento` al Solicitante, con `—` si la asignación falta (D-10); Admin/Superadmin sin badges nuevos. Sin DDL. Backend **1667 passed/105 skipped**, gated PG **1769/3**, frontend **559 SUCCESS**, 4200 con los cuatro roles y 8080 reconstruido. Evidencia en `008-particionamiento-institucional/evidencia/enmienda-contexto-organizacional.md`.
 - **Cuentas demo Duoc UC (22/Nov/2026):** la semilla registra `crise.gonzalez@duocuc.cl` (Administrador, Dirección), `lu.illanes@duocuc.cl` (Bodeguero, Biblioteca → Sede Maipú) y `ri.nilo@duocuc.cl` (Solicitante, Biblioteca → Sede Maipú), todos de INST-001 y con mapa `aceptada` (identidad Clerk verificada). Reset verificado: mapa **17**, `control.usuario` solo el Superadmin, **13** usuarios en INST-001.
 - **Base consolidada:** `database/` solo `01_esquema.sql` (26 en control + 23 por tenant) y `02_datos_semilla.sql` (`026.0`, guardia fail-closed). Sin migraciones: reset = `down -v` + `up -d`.
 - **Cierre 026:** 4200 con 409 por duplicado (sede, departamento, RUT, correo), movimiento por `stock_sede_id` (201) y legado (422), dashboard sin campos legados; 8080 con imagen reconstruida y 8 rutas directas OK.
+- **027 (cerrada, 24/Nov/2026):** backend **1863 passed/109 skipped**, gated PG **1969/3**, gated Redis **3**, frontend **597 SUCCESS**, build `main-NQGWSVMA.js`, 75/73 OpenAPI y `026.0`/26/23; 4200 con ticket #9, proveedor #4 y 422/409/201; 8080 reconstruido. DT-13…DT-16 cerrados.
+- **RUT (027):** módulo 11 en `core/rut.py` y espejo `shared/utils/rut.ts`; se guarda la forma visible, la unicidad sigue normalizada. Semilla y fixtures con siete RUT corregidos.
+- **Contrato (027):** `extra="forbid"` en DTO de entrada (no en respuestas), ids `ge=1`, límites del DDL, `tipo_movimiento` `Literal` y `EmailStr` institucional. `IntegrityError`/`DataError` → 409/422 con `X-Request-ID`, sin mensaje crudo.
+- **Parser 422:** `validacion-http.ts` centraliza `loc`/`type`/traducción; `errores-http.ts` lo usa antes del texto genérico. Tickets, compras, control y administración muestran el campo culpable.
+- **Config por entorno (23/Nov/2026):** `config.py` sin ningún valor de BD (usuario, clave, host, puerto y base salen del `.env` raíz o del entorno); `DB_URL` (no `DATABASE_URL`, ocupada por otro proyecto) manda sobre `DB_*` y normaliza `postgres://`; compose fija `DB_PORT=5432` interno; la suite fija SQLite en `conftest`. Backend **1675 passed/105 skipped**.
 - **024/023/022/021 cerradas:** hardening (`X-Request-ID`, `/ready`, `/metrics`, 429 nginx, `URL_API=/api/v1`), `compra_service` como paquete con fachada y `orden_compra_ticket` como intención de cobertura. Detalle en la evidencia de cada feature.
 - **Flujos por actor (11/Nov/2026):** 12 diagramas HTML+PNG en `docs/diagramas/flujos-actores/`.
 
@@ -38,7 +43,7 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 - **Autoría del ticket = identidad de sesión;** la sede sale de `departamento.sede_id`. **Carreras gated:** `Barrier` no fija el orden del lock.
 
 ## Próximos pasos
-- **Sprint 7 (03/Nov – 11/Dic/2026):** quedan **015** (informes PDF/Excel) y **016** (notificaciones in-app); **027–029** después. **Hito 2** el **11/Dic/2026**.
+- **Sprint 7 (03/Nov – 11/Dic/2026):** la **027** se cerró el 24/Nov; siguen **015** (informes) y **016** (notificaciones), luego **028–029**. **Hito 2** el **11/Dic/2026**.
 - **Diagramas:** 5+5 casos de uso, 8 del modelo 4+1 y 12 flujos por actor en `docs/diagramas/`.
 - **Deuda técnica:** registro único en `docs/spec/deuda-tecnica.md` (auditoría de seguridad del 16/Nov/2026 incluida). Los items `admin017` y el aviso de accesibilidad se mudaron al registro; quedan fuera de `MEMORY.md` por mantenerlo ≤50 líneas.
 - **Tests por tipo:** `backend/tests/funcional/` (`unitarios`, `integracion`, `sistema`, `e2e`, `aceptacion`, `humo`) y `backend/tests/no_funcional/` (`rendimiento`, `seguridad`, + 4 pendientes). Índice en `backend/tests/README.md`; el frontend se clasifica por índice en `frontend/src/testing/funcional/README.md` (specs Angular siguen junto a su sujeto).

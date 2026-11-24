@@ -30,7 +30,7 @@ describe('AltaInstitucionComponent', () => {
   const DATOS_VALIDOS = {
     institucion_id: 'inst-nueva',
     nombre: 'Institución Nueva',
-    rut: '76.111.222-3',
+    rut: '76.111.222-8',
     direccion: 'Av. Siempre Viva 742',
     correo_administrador: 'admin@nueva.cl',
     nombre_administrador: 'Ana',
@@ -237,20 +237,50 @@ describe('AltaInstitucionComponent', () => {
     expect(fixture.componentInstance.exito()).toBeNull();
   });
 
-  it('AC-8: un 422 de validación sin `detail` de texto informa un error legible', async () => {
+  it('AC-8: un 422 de validación por campo muestra el campo culpable', async () => {
     completarFormulario();
     await enviar();
 
     httpMock
       .expectOne(RUTA_ALTA)
       .flush(
-        { detail: [{ loc: ['body', 'correo_administrador'], msg: 'correo inválido' }] },
+        {
+          detail: [
+            {
+              loc: ['body', 'correo_administrador'],
+              msg: 'value is not a valid email address: invalid email',
+              type: 'value_error',
+            },
+          ],
+        },
         { status: 422, statusText: 'Unprocessable Entity' },
       );
     fixture.detectChanges();
 
     const alerta = (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]');
     expect(alerta).withContext('alerta de error').toBeTruthy();
+    expect(alerta?.textContent).toContain('Correo administrador');
+    expect(alerta?.textContent).toContain('El correo no tiene un formato válido.');
     expect(fixture.componentInstance.exito()).toBeNull();
+  });
+
+  it('AC-11: un RUT opcional vacío se envía como null', async () => {
+    completarFormulario({ ...DATOS_VALIDOS, rut: '' });
+    await enviar();
+
+    const peticion = httpMock.expectOne(RUTA_ALTA);
+    expect(peticion.request.body.rut).toBeNull();
+    peticion.flush(respuesta());
+  });
+
+  it('AC-11: un RUT con DV inválido bloquea el envío y marca el campo', async () => {
+    completarFormulario({ ...DATOS_VALIDOS, rut: '76.543.210-8' });
+    await enviar();
+
+    expect(
+      fixture.componentInstance.formulario.controls.rut.hasError('rutInvalido'),
+    ).toBeTrue();
+    httpMock.expectNone(RUTA_ALTA);
+    expect(texto()).toContain('El RUT no es válido: revisa el dígito verificador.');
   });
 });

@@ -162,7 +162,13 @@
                   formularioProveedor.controls.rut.invalid &&
                   formularioProveedor.controls.rut.touched
                 ) {
-                  <p class="text-xs text-rose-600">El RUT es obligatorio.</p>
+                  <p class="text-xs text-rose-600">
+                    @if (formularioProveedor.controls.rut.hasError('rutInvalido')) {
+                      El RUT no es válido: revisa el dígito verificador.
+                    } @else {
+                      El RUT es obligatorio.
+                    }
+                  </p>
                 }
               </div>
               <div class="flex flex-col gap-1">

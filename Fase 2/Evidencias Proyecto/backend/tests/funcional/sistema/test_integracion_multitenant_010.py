@@ -823,10 +823,10 @@ def test_tenant_adversario_por_cabecera_no_contamina(mundo_multitenant):
 
 
 def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
-    """AC-3: un campo de tenant en el cuerpo no desvia la escritura fuera de A.
+    """AC-3: un campo de tenant en el cuerpo se rechaza sin escribir en ningun tenant.
 
-    El movimiento se registra contra el stock_sede de A (el de la identidad); el
-    tenant B conserva su stock y su auditoria sin cambios.
+    Feature 027: `MovimientoCrear` usa `extra="forbid"`; el intento responde 422
+    y no altera ni el stock ni la auditoria de A o B.
     """
     from app.api import dependencies
 
@@ -846,7 +846,10 @@ def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
             },
         )
 
-    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.status_code == 422, respuesta.text
+    assert {detalle["type"] for detalle in respuesta.json()["detail"]} == {
+        "extra_forbidden"
+    }
 
     # Tenant B intacto: mismo stock y ninguna fila de auditoria nueva.
     motor_b = mundo_multitenant["engine"].execution_options(
@@ -867,7 +870,7 @@ def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
     # el intento de escritura no agrega ninguna.
     assert len(movimientos_b) == 1, "no debe registrarse auditoria nueva en B"
 
-    # Tenant A si recibio el movimiento: la escritura cayo en su esquema.
+    # Tenant A tampoco recibio el movimiento: no se escribe nada antes del 422.
     motor_a = mundo_multitenant["engine"].execution_options(
         schema_translate_map={None: mundo_multitenant["esq_a"]}
     )
@@ -878,7 +881,7 @@ def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
         ).scalar()
     finally:
         sesion_a.close()
-    assert stock_a == 8
+    assert stock_a == 9
 
 
 def test_tenant_adversario_por_claim_no_cambia_resolucion(mundo_multitenant, monkeypatch):

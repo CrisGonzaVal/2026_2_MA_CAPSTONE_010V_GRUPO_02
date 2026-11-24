@@ -26,7 +26,7 @@ describe('InstitucionesComponent', () => {
     return {
       institucion_id: 'INSTA',
       nombre: 'Instituto Alfa',
-      rut: '76.111.222-3',
+      rut: '76.111.222-8',
       direccion: 'Av. Siempre Viva 742',
       activo: true,
       nombre_esquema: 'tenant_insta_ab12cd34',
@@ -84,7 +84,7 @@ describe('InstitucionesComponent', () => {
     expect(visible).toContain('Instituto Alfa');
     expect(visible).toContain('INSTA');
     expect(visible).toContain('Activa');
-    expect(visible).toContain('76.111.222-3');
+    expect(visible).toContain('76.111.222-8');
     expect(visible).toContain('Av. Siempre Viva 742');
   });
 
@@ -125,6 +125,27 @@ describe('InstitucionesComponent', () => {
 
     expect(texto()).toContain('Instituto Alfa Renombrado');
     expect(texto().toLowerCase()).toContain('actualizada');
+  });
+
+  it('AC-11: un RUT de edición con DV inválido bloquea el PUT', () => {
+    montar();
+    boton('editar')?.click();
+    fixture.detectChanges();
+
+    fixture.componentInstance.formulario.patchValue({
+      nombre: 'Instituto Alfa',
+      rut: '76.111.222-3',
+    });
+    fixture.detectChanges();
+
+    boton('guardar cambios')?.click();
+    fixture.detectChanges();
+
+    expect(
+      fixture.componentInstance.formulario.controls.rut.hasError('rutInvalido'),
+    ).toBeTrue();
+    httpMock.expectNone(`${URL_API}/control/instituciones/INSTA`);
+    expect(texto()).toContain('El RUT no es válido: revisa el dígito verificador.');
   });
 
   it('AC-2: desactivar exige confirmación y persiste el estado con PATCH', () => {

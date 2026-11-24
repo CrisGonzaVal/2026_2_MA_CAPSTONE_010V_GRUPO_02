@@ -17,7 +17,9 @@ mano desde el servicio, salvo los que se construyen desde el ORM.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class SedeRespuesta(BaseModel):
@@ -91,7 +93,9 @@ class SedeCrear(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nombre: str = Field(min_length=1, max_length=100)
+    nombre: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
     direccion: str | None = Field(default=None, max_length=200)
 
 
@@ -100,7 +104,9 @@ class SedeEdicion(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nombre: str = Field(min_length=1, max_length=100)
+    nombre: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
     direccion: str | None = Field(default=None, max_length=200)
 
 
@@ -142,7 +148,9 @@ class DepartamentoCrear(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nombre_dep: str = Field(min_length=1, max_length=100)
+    nombre_dep: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
     descripcion: str | None = Field(default=None, max_length=200)
 
 
@@ -151,7 +159,9 @@ class DepartamentoEdicion(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nombre_dep: str = Field(min_length=1, max_length=100)
+    nombre_dep: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
     descripcion: str | None = Field(default=None, max_length=200)
 
 

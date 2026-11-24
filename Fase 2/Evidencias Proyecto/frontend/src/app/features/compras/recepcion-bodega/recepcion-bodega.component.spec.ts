@@ -34,7 +34,7 @@ function ordenFacturada(sobrescribir: Partial<OrdenCompra> = {}): OrdenCompra {
     fecha_cancelacion: null,
     proveedor: {
       proveedor_id: 1,
-      rut: '76.543.210-K',
+      rut: '76.543.210-3',
       razon_social: 'Papelera Nacional SpA',
       nombre_fantasia: null,
       giro: null,
@@ -206,6 +206,36 @@ describe('RecepcionBodegaComponent', () => {
 
     const alerta = (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]');
     expect(alerta?.textContent).toContain('El Bodeguero no tiene una sede asignada');
+    expect(texto()).toContain('OC-2026-000021');
+  });
+
+  it('AC-10: un 422 de recepción muestra el campo culpable y conserva la orden', () => {
+    montar();
+    botonPorAria('Recepcionar orden')?.click();
+    fixture.detectChanges();
+
+    botonTexto('Confirmar recepción')?.click();
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne(`${RUTA_ORDENES}/21/recepcion`)
+      .flush(
+        {
+          detail: [
+            {
+              loc: ['body', 'stock_sede_id'],
+              msg: 'Input should be greater than or equal to 1',
+              type: 'greater_than_equal',
+            },
+          ],
+        },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    fixture.detectChanges();
+
+    const alerta = (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]');
+    expect(alerta?.textContent).toContain('Stock de sede');
+    expect(alerta?.textContent).toContain('Debe ser mayor o igual que 1.');
     expect(texto()).toContain('OC-2026-000021');
   });
 });

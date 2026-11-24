@@ -37,8 +37,22 @@ describe('mensajeDeErrorHttp', () => {
 
   it('ignora un detail vacío o no textual y usa el estado', () => {
     expect(mensajeDeErrorHttp(errorCon(404, '   '), MENSAJES)).toBe('no encontrado');
-    expect(mensajeDeErrorHttp(errorCon(422, [{ msg: 'inválido' }]), MENSAJES)).toBe(
+    expect(mensajeDeErrorHttp(errorCon(422, [{ msg: 'sin loc ni type' }]), MENSAJES)).toBe(
       'no procesable',
+    );
+  });
+
+  it('traduce el primer detalle de un 422 con campo legible', () => {
+    const error = errorCon(422, [
+      {
+        loc: ['body', 'detalles', 0, 'cantidad_solicitada'],
+        msg: 'Input should be greater than 0',
+        type: 'greater_than',
+      },
+    ]);
+
+    expect(mensajeDeErrorHttp(error, MENSAJES)).toBe(
+      'Fila 1: Cantidad: Debe ser mayor que 0.',
     );
   });
 
@@ -73,6 +87,48 @@ describe('mensajeDeErrorHttp', () => {
 });
 
 describe('helpers de error por dominio', () => {
+  it('compras muestra el campo culpable de un 422', () => {
+    const error = errorCon(422, [
+      {
+        loc: ['body', 'rut'],
+        type: 'value_error',
+        msg: 'Value error, El RUT no es válido: el dígito verificador no corresponde.',
+      },
+    ]);
+
+    expect(mensajeDeErrorCompras(error)).toBe(
+      'RUT: El RUT no es válido: el dígito verificador no corresponde.',
+    );
+  });
+
+  it('administracion muestra el campo culpable de un 422', () => {
+    const error = errorCon(422, [
+      {
+        loc: ['body', 'nombre'],
+        type: 'string_too_long',
+        msg: 'String should have at most 100 characters',
+      },
+    ]);
+
+    expect(mensajeDeErrorAdministracion(error)).toBe(
+      'Nombre: No puede superar los 100 caracteres.',
+    );
+  });
+
+  it('control muestra el campo culpable de un 422', () => {
+    const error = errorCon(422, [
+      {
+        loc: ['body', 'correo_administrador'],
+        type: 'value_error',
+        msg: 'value is not a valid email address: invalid email',
+      },
+    ]);
+
+    expect(mensajeDeErrorControl(error)).toBe(
+      'Correo administrador: El correo no tiene un formato válido.',
+    );
+  });
+
   it('administracion conserva sus textos', () => {
     expect(mensajeDeErrorAdministracion(errorCon(401))).toBe(
       'Tu sesión no es válida. Vuelve a iniciar sesión.',

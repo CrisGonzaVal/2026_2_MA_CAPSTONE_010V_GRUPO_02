@@ -129,7 +129,7 @@ CONTROL_ESPERADO = {
     "usuario": 1,
     "departamento": 1,
     "estado_ticket": 1,
-    "mapa_usuario_esquema": 14,
+    "mapa_usuario_esquema": 17,
     "version_esquema": 1,
     "registro_motivo_constancia": 0,
     # Feature 020: catalogo global compartido; sobrevive a la Fase 3.
@@ -171,7 +171,7 @@ CATALOGO_POR_TENANT = {
 TOTALES_TENANT = {
     "sede": 11,
     "departamento": 10,
-    "usuario": 13,
+    "usuario": 16,
     "departamento_encargado": 5,
     "categoria": 10,
     "producto": 14,

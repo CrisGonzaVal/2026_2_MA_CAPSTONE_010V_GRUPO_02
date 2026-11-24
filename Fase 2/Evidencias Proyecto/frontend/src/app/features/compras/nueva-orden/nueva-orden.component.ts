@@ -30,6 +30,7 @@ import {
 } from '../../../shared/interfaces';
 import { AdministracionService } from '../../administracion/services/administracion.service';
 import { InventarioService } from '../../inventario/services/inventario.service';
+import { rutValido } from '../../../shared/utils/rut';
 import { mensajeDeErrorCompras } from '../compras-errores';
 import { ComprasService } from '../services/compras.service';
 
@@ -93,7 +94,7 @@ export class NuevaOrdenComponent implements OnInit {
   });
 
   readonly formularioProveedor = this.constructorFormulario.group({
-    rut: ['', [Validators.required, Validators.maxLength(20)]],
+    rut: ['', [Validators.required, Validators.maxLength(20), rutValido]],
     razon_social: ['', [Validators.required, Validators.maxLength(150)]],
     giro: ['', [Validators.maxLength(100)]],
     correo: ['', [Validators.email, Validators.maxLength(100)]],

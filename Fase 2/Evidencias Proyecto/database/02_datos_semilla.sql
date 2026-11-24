@@ -196,9 +196,9 @@ CROSS JOIN (
 -- Las filas nacen activas; la Feature 020 no expone baja/reactivacion.
 
 INSERT INTO proveedor (proveedor_id, rut, razon_social, nombre_fantasia, giro, correo, telefono) OVERRIDING SYSTEM VALUE VALUES
-(1, '76.543.210-8', 'Papelera del Pacifico SpA',            'Papelera Pacifico',  'Venta de articulos de oficina',            'ventas@papelerapacifico.cl',     '+56 2 2345 6789'),
-(2, '77.654.321-K', 'Suministros Corporativos Andinos Ltda.', 'Suministros Andinos', 'Distribucion de insumos de oficina',       'contacto@suministrosandinos.cl', '+56 2 2987 6543'),
-(3, '78.765.432-1', 'Tecnologia y Toner Express S.A.',       'Toner Express',      'Comercializacion de insumos de impresion', 'pedidos@tonerexpress.cl',        '+56 2 2555 1212');
+(1, '76.543.210-3', 'Papelera del Pacifico SpA',            'Papelera Pacifico',  'Venta de articulos de oficina',            'ventas@papelerapacifico.cl',     '+56 2 2345 6789'),
+(2, '77.654.321-7', 'Suministros Corporativos Andinos Ltda.', 'Suministros Andinos', 'Distribucion de insumos de oficina',       'contacto@suministrosandinos.cl', '+56 2 2987 6543'),
+(3, '78.765.432-0', 'Tecnologia y Toner Express S.A.',       'Toner Express',      'Comercializacion de insumos de impresion', 'pedidos@tonerexpress.cl',        '+56 2 2555 1212');
 
 -- =====================================================
 -- 1b. SEDE  (11 filas)  [Feature 011]

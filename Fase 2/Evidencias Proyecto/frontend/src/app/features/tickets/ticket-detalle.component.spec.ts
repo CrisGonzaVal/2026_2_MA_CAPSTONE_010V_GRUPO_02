@@ -768,6 +768,55 @@ describe('TicketDetalleComponent', () => {
       expect(componente.editando()).toBe(true);
     });
 
+    it('limita la descripción de la edición a 500 caracteres', () => {
+      responderCarga(crearDetalle(1));
+
+      boton('Editar')!.click();
+      fixture.detectChanges();
+
+      componente.formularioEdicion.controls.descripcion.setValue('x'.repeat(501));
+      expect(
+        componente.formularioEdicion.controls.descripcion.hasError('maxlength'),
+      ).toBe(true);
+
+      const textarea = raiz.querySelectorAll('dialog')[1].querySelector(
+        'textarea[formcontrolname="descripcion"]',
+      ) as HTMLTextAreaElement;
+      expect(textarea.getAttribute('maxlength')).toBe('500');
+    });
+
+    it('muestra el campo culpable ante un 422 de descripción', () => {
+      responderCarga(crearDetalle(1));
+
+      boton('Editar')!.click();
+      fixture.detectChanges();
+      raiz
+        .querySelectorAll('dialog')[1]
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click();
+
+      httpMock
+        .expectOne(RUTA_DETALLE)
+        .flush(
+          {
+            detail: [
+              {
+                loc: ['body', 'descripcion'],
+                msg: 'String should have at most 500 characters',
+                type: 'string_too_long',
+              },
+            ],
+          },
+          { status: 422, statusText: 'Unprocessable Entity' },
+        );
+      responderReconsulta();
+
+      expect(alertas().length).toBeGreaterThan(0);
+      expect(alertas()[0]).toContain('Descripción');
+      expect(alertas()[0]).toContain('No puede superar los 500 caracteres.');
+      expect(componente.editando()).toBe(true);
+    });
+
     // -------------------------------------------------------------------------
     // Feature 014, AC-9: productos inactivos en la edición
     // -------------------------------------------------------------------------

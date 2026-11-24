@@ -1,5 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 
+import { mensajeDeValidacion } from './validacion-http';
+
 /** Texto único para una caída de red o un servidor inalcanzable (`status === 0`). */
 const SIN_CONEXION =
   'No se pudo contactar al servidor. Verifica la conexión e inténtalo de nuevo.';
@@ -36,6 +38,12 @@ export function mensajeDeErrorHttp(
   const detalle = (error.error as { detail?: unknown } | null)?.detail;
   if (typeof detalle === 'string' && detalle.trim() !== '') {
     return detalle;
+  }
+  if (error.status === 422) {
+    const validacion = mensajeDeValidacion(error);
+    if (validacion !== null) {
+      return validacion;
+    }
   }
   switch (error.status) {
     case 401:

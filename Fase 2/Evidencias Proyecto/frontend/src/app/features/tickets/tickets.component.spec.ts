@@ -528,6 +528,23 @@ describe('TicketsComponent', () => {
 
       expect(componente.formulario.invalid).toBe(true);
     });
+
+    it('debe aceptar una descripción de 500 y rechazar 501', () => {
+      completarFormulario();
+      componente.formulario.controls.descripcion.setValue('x'.repeat(500));
+      expect(componente.formulario.valid).toBe(true);
+
+      componente.formulario.controls.descripcion.setValue('x'.repeat(501));
+      expect(componente.formulario.controls.descripcion.hasError('maxlength')).toBe(true);
+    });
+
+    it('debe limitar el textarea de descripción a 500 caracteres', () => {
+      const textarea = fixture.nativeElement.querySelector(
+        'dialog textarea[formcontrolname="descripcion"]',
+      ) as HTMLTextAreaElement;
+
+      expect(textarea.getAttribute('maxlength')).toBe('500');
+    });
   });
 
   describe('envio', () => {
@@ -642,6 +659,36 @@ describe('TicketsComponent', () => {
       expect(componente.mensajeDe('asunto')).toBe('No puede superar los 150 caracteres.');
     });
 
+    it('debe mostrar el campo culpable ante un 422 de descripción sin 500', () => {
+      completarFormulario();
+      componente.formulario.controls.descripcion.setValue('x'.repeat(501));
+      // Se fuerza valido en el cliente para simular que el backend rechaza un
+      // valor que el espejo local aun no limitaba.
+      componente.formulario.controls.descripcion.clearValidators();
+      componente.formulario.controls.descripcion.updateValueAndValidity();
+      componente.enviar();
+
+      httpMock.expectOne(RUTA_TICKETS).flush(
+        {
+          detail: [
+            {
+              loc: ['body', 'descripcion'],
+              msg: 'String should have at most 500 characters',
+              type: 'string_too_long',
+            },
+          ],
+        },
+        { status: 422, statusText: 'Unprocessable Entity' }
+      );
+      fixture.detectChanges();
+
+      const texto = (fixture.nativeElement.querySelector('dialog')?.textContent ?? '')
+        .replace(/\s+/g, ' ');
+      expect(texto).toContain('Descripción');
+      expect(texto).toContain('No puede superar los 500 caracteres.');
+      expect(componente.errorGuardado()).toBe('Revisa los campos marcados.');
+    });
+
     it('debe ubicar un 422 de detalle en su fila', () => {
       completarFormulario();
       // Ambas filas quedan validas en el cliente; el 422 simula que el servidor
@@ -668,7 +715,7 @@ describe('TicketsComponent', () => {
       );
       fixture.detectChanges();
 
-      expect(componente.mensajeDeDetalle(1)).toBe('La cantidad debe ser mayor que 0.');
+      expect(componente.mensajeDeDetalle(1)).toBe('Debe ser mayor que 0.');
       expect(componente.mensajeDeDetalle(0)).toBeNull();
     });
   });

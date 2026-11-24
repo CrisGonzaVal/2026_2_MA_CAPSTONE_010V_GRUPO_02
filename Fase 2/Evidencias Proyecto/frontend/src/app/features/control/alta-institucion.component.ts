@@ -7,6 +7,8 @@ import {
   InstitucionAltaControlRespuesta,
 } from '../../shared/interfaces';
 import { EnlaceInvitacionComponent } from '../../shared/components/enlace-invitacion.component';
+import { rutValido } from '../../shared/utils/rut';
+import { mensajeDeValidacion } from '../../shared/utils/validacion-http';
 import { ControlService } from './services/control.service';
 
 /**
@@ -32,7 +34,7 @@ export class AltaInstitucionComponent {
   readonly formulario = this.constructorFormulario.group({
     institucion_id: ['', [Validators.required, Validators.maxLength(20)]],
     nombre: ['', [Validators.required, Validators.maxLength(150)]],
-    rut: ['', [Validators.maxLength(20)]],
+    rut: ['', [Validators.maxLength(20), rutValido]],
     direccion: ['', [Validators.maxLength(200)]],
     correo_administrador: ['', [Validators.required, Validators.email]],
     nombre_administrador: ['', [Validators.required, Validators.maxLength(100)]],
@@ -99,6 +101,10 @@ export class AltaInstitucionComponent {
    * código de estado.
    */
   private mensajeDeError(error: HttpErrorResponse): string {
+    const validacion = mensajeDeValidacion(error);
+    if (validacion !== null) {
+      return validacion;
+    }
     const detalle = error.error?.detail;
     if (typeof detalle === 'string' && detalle.trim() !== '') {
       return detalle;

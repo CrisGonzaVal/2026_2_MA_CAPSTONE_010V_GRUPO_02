@@ -93,7 +93,7 @@ def _sesiones(motor):
 
 
 def _crear_proveedor_control(
-    motor, *, rut: str = "96.000.000-1", razon_social: str = "Proveedor 021"
+    motor, *, rut: str = "96.000.000-5", razon_social: str = "Proveedor 021"
 ) -> int:
     """Inserta un proveedor directamente en el catalogo global de prueba."""
     with sesion(motor) as db:
@@ -553,7 +553,7 @@ def test_simulacion_reparte_stock_parcial_antes_de_la_compra(motor, mundo):
 def test_simulacion_resta_plan_previo_y_no_resta_oc_recibida(motor, mundo):
     """T4/D-4: `Emitida` resta el tramo; `Recibida` ya vive en el stock."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.010-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.010-7")
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=5)
 
     emitida = _crear_orden_con_detalle(
@@ -617,7 +617,7 @@ def test_simulacion_excluye_otra_sede_sin_sede_y_estados_no_en_curso(motor, mund
 def test_necesidades_enriquecidas_con_comprometido_borrador_y_pedidos(motor, mundo):
     """T4/AC-1: comprometido y borrador se separan y el sugerido es neto."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.020-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.020-4")
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=4)
     _crear_ticket_021(motor, mundo, estado="Pendiente", cantidad=9)
     _crear_orden_con_detalle(
@@ -1002,7 +1002,7 @@ def test_emision_persiste_el_plan_para_los_pedidos_con_asignacion(motor, mundo):
     pedido_sin_cupo = _crear_ticket_021(
         motor, mundo, estado="EnCurso", cantidad=2, prioridad_id=baja
     )
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.040-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.040-9")
     orden_id = _crear_orden(
         motor, mundo, proveedor_id=proveedor_id, cantidad=6
     )
@@ -1029,7 +1029,7 @@ def test_emision_persiste_el_plan_para_los_pedidos_con_asignacion(motor, mundo):
 def test_emision_sin_demanda_emite_con_plan_vacio(motor, mundo):
     """T6/AC-3: una OC sin pedidos se emite igual y no inventa plan."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.041-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.041-7")
     orden_id = _crear_orden(
         motor, mundo, proveedor_id=proveedor_id, cantidad=3
     )
@@ -1044,7 +1044,7 @@ def test_emision_resta_el_plan_previo_y_rechaza_la_segunda_emision(motor, mundo)
     """T6/AC-3/AC-7: dos OC se reparten la necesidad; re-emitir es 409."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=5)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.042-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.042-5")
 
     primera_id = _crear_orden(
         motor, mundo, proveedor_id=proveedor_id, cantidad=2
@@ -1073,7 +1073,7 @@ def test_plan_congelado_no_cambia_al_facturar_ni_con_pedidos_nuevos(motor, mundo
     """T6/AC-4/AC-5: el plan es una foto del estado al emitir."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=4)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.043-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.043-3")
     orden_id = _crear_orden(
         motor, mundo, proveedor_id=proveedor_id, cantidad=2
     )
@@ -1141,7 +1141,7 @@ def test_emision_http_devuelve_el_plan_y_el_listado_lo_incluye(motor, mundo):
     """T6/DT-8: la respuesta de emision y `GET /compras/ordenes` exponen `plan`."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=4)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.045-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.045-K")
     orden_id = _crear_orden(
         motor, mundo, proveedor_id=proveedor_id, cantidad=2
     )
@@ -1196,7 +1196,7 @@ def test_recepcion_enlaza_la_oc_solo_en_la_fila_de_desbloqueo(motor, mundo):
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=3)
     _sembrar_historial_sin_oc(motor, mundo, pedido)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.046-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.046-8")
     orden_id = _crear_orden(
         motor, mundo, proveedor_id=proveedor_id, cantidad=5
     )
@@ -1243,7 +1243,7 @@ def test_recepcion_http_historial_expone_numero_oc(motor, mundo):
     """T7/AC-6: el historial del pedido publica la OC que lo desbloqueo."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=3)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.047-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.047-6")
     orden_id = _crear_orden(
         motor, mundo, proveedor_id=proveedor_id, cantidad=5
     )
@@ -1282,7 +1282,7 @@ def test_detalle_expone_asignaciones_y_cadena_por_producto(motor, mundo):
     """T8/AC-5/D-7: comprado incluye lo recibido y el faltante usa el stock."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=5)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.050-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.050-6")
     emitida = _crear_orden_con_detalle(
         motor, mundo, proveedor_id=proveedor_id, cantidad=2, estado="Emitida"
     )
@@ -1325,7 +1325,7 @@ def test_detalle_marca_oc_cancelada_y_no_la_suma_a_la_cobertura(motor, mundo):
 
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=4)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.051-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.051-4")
     cancelada_id = _crear_orden_con_detalle(
         motor, mundo, proveedor_id=proveedor_id, cantidad=3, estado="Emitida"
     )
@@ -1369,7 +1369,7 @@ def test_detalle_marca_oc_cancelada_y_no_la_suma_a_la_cobertura(motor, mundo):
 def test_detalle_de_pedido_terminal_deja_el_faltante_en_cero(motor, mundo):
     """T8/D-7: un pedido `Cerrado` o `Anulado` no arrastra faltante."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.052-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.052-2")
     for estado in ("Cerrado", "Anulado"):
         pedido = _crear_ticket_021(motor, mundo, estado=estado, cantidad=3)
         with sesion(motor) as db:
@@ -1404,7 +1404,7 @@ def test_detalle_http_incluye_asignaciones_y_cadena(motor, mundo):
     """T8/AC-5: el contrato de `GET /tickets/{id}` publica las listas nuevas."""
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=3)
-    proveedor_id = _crear_proveedor_control(motor, rut="96.021.053-1")
+    proveedor_id = _crear_proveedor_control(motor, rut="96.021.053-0")
     orden_id = _crear_orden_con_detalle(
         motor, mundo, proveedor_id=proveedor_id, cantidad=2, estado="Emitida"
     )

@@ -236,11 +236,11 @@ def test_cabeceras_adversarias_no_contaminan_la_resolucion(motor, mundo):
 
 
 def test_cuerpo_de_negocio_no_puede_fijar_otra_institucion(motor, mundo):
-    """Un campo `institucion_id` en el cuerpo se ignora: la fila es de A, no de B.
+    """Los campos de tenant en el cuerpo se rechazan, no se ignoran.
 
-    `ProductoCrear` no declara `institucion_id` ni los campos de tenant; Pydantic
-    los descarta y el servicio ancla la institucion a la identidad. Se comprueba
-    que **no** se escribio ninguna fila en Tenant B.
+    Feature 027 endurece `ProductoCrear` con `extra="forbid"`: un intento de
+    fijar institucion/esquema responde 422 y no escribe en ningun tenant. El
+    servicio sigue anclando la institucion a la identidad para cuerpos validos.
     """
     identidad = _identidad(CORREO_A, mundo["departamento_id"], "Administrador")
     with _cliente_como(motor, identidad) as cliente:
@@ -253,14 +253,11 @@ def test_cuerpo_de_negocio_no_puede_fijar_otra_institucion(motor, mundo):
             },
         )
 
-    assert respuesta.status_code == 201, respuesta.text
-    assert respuesta.json()["institucion_id"] == "INST01", (
-        "el producto debe pertenecer a la institucion de la identidad, no a la enviada"
-    )
-    assert _productos_por_nombre(motor, "Insumo Envenenado", "INST02") == 0, (
-        "no debe escribirse nada en Tenant B"
-    )
-    assert _productos_por_nombre(motor, "Insumo Envenenado", "INST01") == 1
+    assert respuesta.status_code == 422, respuesta.text
+    detalles = respuesta.json()["detail"]
+    assert {detalle["type"] for detalle in detalles} == {"extra_forbidden"}
+    assert _productos_por_nombre(motor, "Insumo Envenenado", "INST02") == 0
+    assert _productos_por_nombre(motor, "Insumo Envenenado", "INST01") == 0
 
 
 def test_dto_de_control_rechaza_campos_de_tenant(motor, mundo):

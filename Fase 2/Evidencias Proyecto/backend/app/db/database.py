@@ -8,7 +8,24 @@ from app.core.config import settings
 # `engine`, `SessionLocal` y `Base` conservan el nombre canonico de SQLAlchemy
 # (ver excepcion de identificadores en spec.md §4). Renombrarlos romperia la
 # convencion con la que los referencia cualquier herramienta del ecosistema.
-engine = create_engine(settings.DATABASE_URL)
+
+
+def resolver_url_base_datos() -> str:
+    """URL de negocio configurada, o error explicito si no hay ninguna.
+
+    `config.py` no trae credenciales: sin `DB_URL` ni los cuatro componentes
+    `DB_*`, el arranque falla aqui en lugar de intentar una base imaginaria.
+    """
+    if settings.DB_URL:
+        return settings.DB_URL
+    raise RuntimeError(
+        "No hay conexion a PostgreSQL configurada: defina DB_URL (por ejemplo, "
+        "la cadena de Neon) o DB_USER, DB_PASSWORD, DB_HOST, DB_PORT y DB_NAME "
+        "en el .env de la raiz o en las variables de entorno."
+    )
+
+
+engine = create_engine(resolver_url_base_datos())
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -38,7 +55,7 @@ def opciones_motor_readiness(url: str) -> dict:
 
 def crear_motor_readiness(url: str | None = None) -> Engine:
     """Motor efimero para `/ready`, independiente del pool de negocio."""
-    cadena = url or settings.DATABASE_URL
+    cadena = url or resolver_url_base_datos()
     return create_engine(cadena, **opciones_motor_readiness(cadena))
 
 

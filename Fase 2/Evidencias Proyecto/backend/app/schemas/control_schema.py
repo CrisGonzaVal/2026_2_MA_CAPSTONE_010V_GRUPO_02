@@ -13,12 +13,34 @@ no usan `from_attributes`: los arma el servicio a mano.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+)
+
+from app.schemas.compra_schema import Rut
 
 #: Estados del tenant en la respuesta del alta. Un alta solo termina `operativa`
 #: cuando dejo estructura, espejo, catalogos, usuario, mapa y version objetivo.
 ESTADO_OPERATIVA = "operativa"
+
+
+def _vacio_a_none(valor):
+    """Un RUT opcional en blanco equivale a omitirlo (Feature 027)."""
+    if isinstance(valor, str) and not valor.strip():
+        return None
+    return valor
+
+
+#: RUT opcional: `None`, `""` o solo espacios se normalizan a `None`; un valor
+#: no vacio pasa por el mismo validador de digito verificador que el proveedor.
+RutOpcional = Annotated[Rut | None, BeforeValidator(_vacio_a_none)]
 
 
 class InstitucionAltaControlCrear(BaseModel):
@@ -28,18 +50,33 @@ class InstitucionAltaControlCrear(BaseModel):
     datos del primer Administrador (correo verificado en Clerk, nombre, apellido
     y nombre del departamento administrativo). `rut` y `direccion` son
     opcionales. No se recibe nombre de esquema, version, rol ni estado.
+
+    Feature 027: el RUT valida su digito verificador, el correo del administrador
+    es `EmailStr` y los nombres se guardan sin espacios exteriores.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     institucion_id: str = Field(min_length=1, max_length=20)
-    nombre: str = Field(min_length=1, max_length=150)
-    rut: str | None = Field(default=None, max_length=20)
+    nombre: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)
+    ] = Field(description="Nombre visible de la institucion.")
+    rut: RutOpcional = Field(
+        default=None, description="RUT institucional opcional con digito verificador."
+    )
     direccion: str | None = Field(default=None, max_length=200)
-    correo_administrador: str = Field(min_length=3, max_length=150)
-    nombre_administrador: str = Field(min_length=1, max_length=100)
-    apellido_administrador: str = Field(min_length=1, max_length=100)
-    departamento_nombre_administrativo: str = Field(min_length=1, max_length=100)
+    correo_administrador: EmailStr = Field(
+        max_length=150, description="Correo verificado del primer Administrador."
+    )
+    nombre_administrador: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ] = Field(description="Nombre del primer Administrador.")
+    apellido_administrador: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ] = Field(description="Apellido del primer Administrador.")
+    departamento_nombre_administrativo: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ] = Field(description="Nombre del departamento administrativo inicial.")
 
 
 class InstitucionAltaControlRespuesta(BaseModel):
@@ -88,12 +125,19 @@ class InstitucionEdicion(BaseModel):
     Solo admite los atributos canonicos (`nombre`, `rut`, `direccion`). Nunca
     recibe `activo`, esquema ni version: el cliente no aporta esos valores
     (`extra="forbid"`).
+
+    Feature 027: el nombre se guarda sin espacios exteriores y el RUT opcional
+    valida su digito verificador; `""` equivale a omitirlo.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    nombre: str = Field(min_length=1, max_length=150)
-    rut: str | None = Field(default=None, max_length=20)
+    nombre: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)
+    ] = Field(description="Nombre visible de la institucion.")
+    rut: RutOpcional = Field(
+        default=None, description="RUT institucional opcional con digito verificador."
+    )
     direccion: str | None = Field(default=None, max_length=200)
 
 

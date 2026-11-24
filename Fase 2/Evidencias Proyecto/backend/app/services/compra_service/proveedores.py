@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core import permisos
+from app.core.rut import normalizar_rut
 from app.models import Proveedor, ProveedorControl
 from app.schemas.compra_schema import ProveedorCrear
 from app.services.auth_service import IdentidadAutenticada
@@ -18,21 +19,8 @@ from ._comun import (
     _no_encontrado,
 )
 
-
-def normalizar_rut(rut: str) -> str:
-    """Clave de comparacion: mayusculas, sin puntos, guion ni espacios.
-
-    Feature 026 (U-02): el RUT visible conserva puntos y guion, pero la unicidad
-    se evalua sobre esta clave. La expresion coincide con el indice funcional
-    `proveedor_rut_normalizado_uk` del DDL y del ORM.
-    """
-    return (
-        rut.replace(".", "")
-        .replace("-", "")
-        .replace(" ", "")
-        .strip()
-        .upper()
-    )
+# `normalizar_rut` se reexporta desde `app.core.rut` (Feature 027). Se conserva
+# el import para que los consumidores historicos sigan funcionando sin cambios.
 
 
 def _clave_rut_sql():

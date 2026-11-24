@@ -1,13 +1,17 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.schemas.producto_schema import ProductoRespuesta
 
 
 class DetalleTicketCrear(BaseModel):
-    producto_id: int = Field(description="Producto pedido. Debe existir en el catalogo.")
+    model_config = ConfigDict(extra="forbid")
+
+    producto_id: int = Field(
+        ge=1, description="Producto pedido. Debe existir en el catalogo."
+    )
     cantidad_solicitada: int = Field(
         gt=0,
         description="Unidades pedidas. Es una peticion, no una entrega: puede exceder el stock.",
@@ -34,6 +38,8 @@ class TicketCrear(BaseModel):
     de los clientes existentes.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     usuario_id: Optional[int] = Field(
         default=None,
         description=(
@@ -42,21 +48,24 @@ class TicketCrear(BaseModel):
             "cambia el autor ni produce 404/422/403."
         ),
     )
-    prioridad_id: int = Field(description="Prioridad. Debe existir en `prioridad`.")
+    prioridad_id: int = Field(
+        ge=1, description="Prioridad. Debe existir en `prioridad`."
+    )
     estado_id: int = Field(
+        ge=1,
         description=(
             "Estado inicial. Obligatorio: debe ser el id del estado `Pendiente` "
             "del catalogo —el ticket nace siempre ahi (AC-27)—; cualquier otro "
             "estado existente responde **409**."
-        )
+        ),
     )
-    asunto: str = Field(
-        min_length=3,
-        max_length=150,
-        description="Titulo breve del requerimiento.",
-    )
+    asunto: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=3, max_length=150)
+    ] = Field(description="Titulo breve del requerimiento.")
     descripcion: Optional[str] = Field(
-        default=None, description="Justificacion del requerimiento."
+        default=None,
+        max_length=500,
+        description="Justificacion del requerimiento.",
     )
     detalles: List[DetalleTicketCrear] = Field(
         min_length=1,
@@ -65,7 +74,9 @@ class TicketCrear(BaseModel):
 
 
 class TicketActualizarEstado(BaseModel):
-    estado_id: int
+    model_config = ConfigDict(extra="forbid")
+
+    estado_id: int = Field(ge=1)
 
 
 class TicketDespacho(BaseModel):
@@ -76,7 +87,11 @@ class TicketDespacho(BaseModel):
     persiste en `movimiento_inventario` ni se le atribuye el historial.
     """
 
-    usuario_id: int = Field(description="Actor que despacha. Debe existir en `usuario`.")
+    model_config = ConfigDict(extra="forbid")
+
+    usuario_id: int = Field(
+        ge=1, description="Actor que despacha. Debe existir en `usuario`."
+    )
 
 
 class TicketMotivo(BaseModel):
@@ -109,15 +124,19 @@ class TicketEditar(BaseModel):
     una sola transaccion (AC-13…AC-15).
     """
 
-    asunto: str = Field(
-        min_length=3,
-        max_length=150,
-        description="Titulo breve del requerimiento.",
-    )
+    model_config = ConfigDict(extra="forbid")
+
+    asunto: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=3, max_length=150)
+    ] = Field(description="Titulo breve del requerimiento.")
     descripcion: Optional[str] = Field(
-        default=None, description="Justificacion del requerimiento."
+        default=None,
+        max_length=500,
+        description="Justificacion del requerimiento.",
     )
-    prioridad_id: int = Field(description="Prioridad. Debe existir en `prioridad`.")
+    prioridad_id: int = Field(
+        ge=1, description="Prioridad. Debe existir en `prioridad`."
+    )
     detalles: List[DetalleTicketCrear] = Field(
         min_length=1,
         description=(

@@ -867,12 +867,20 @@ que dependen todas las features y no pertenece a ningún dominio. Si alguna vez 
 diferirse por entorno, se resuelve con un interceptor de entorno, no con un segundo
 `URL_API` en cada feature.
 
-**Nota 5 — errores de validación del backend en el formulario (Feature 003).** FastAPI
-responde 422 con `detail` como lista de objetos `{"loc": [...], "msg": ...}`. Para un
+**Nota 5 — errores de validación del backend en el formulario (Features 003 y 027).** FastAPI
+responde 422 con `detail` como lista de objetos `{"loc": [...], "msg": ..., "type": ...}`. Para un
 `FormArray`, `loc` llega como `['body', 'detalles', <índice de fila>, '<campo>']`, así que
 el mapeo toma `loc.at(-2)` como índice de fila y `loc.at(-1)` como nombre de campo. El caso
 `['body', 'asunto']` no tiene fila y hay que tratarlo aparte: no se puede usar un alias de
 plantilla en el `@else if` de un `@if` para repetir la condición del error de la cabecera.
+
+Desde la Feature 027 ese parseo es **compartido** en `shared/utils/validacion-http.ts`
+(`detallesDeValidacion`, `mensajeDeCampo`, `mensajeDeDetalle`, `traducirMensajeValidacion` y
+`mensajeDeValidacion`). `errores-http.ts` lo aplica antes del texto genérico del 422, de modo
+que todos los dominios muestran el campo culpable sin duplicar lógica. El espejo del RUT vive
+en `shared/utils/rut.ts` (`rutValido` como `ValidatorFn`) y replica el módulo 11 del backend
+(`app/core/rut.py`); el vacío lo decide `required`. Los 409/422 de `IntegrityError`/`DataError`
+se traducen en `app/core/errores_bd.py` sin exponer el mensaje del motor.
 
 **Regla de oro del Frontend**: Todo lo que va en `features/` es específico de ese módulo de negocio y debe ser Lazy Loaded desde `app.routes.ts` con `loadChildren`. Todo lo que va en `shared/` puede ser usado por cualquier feature. No uses clases de CSS quemadas en el HTML, usa clases de Tailwind. Todo se importa con la función `inject()` de Angular 14+.
 

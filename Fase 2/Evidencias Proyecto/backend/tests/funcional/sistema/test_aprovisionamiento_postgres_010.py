@@ -97,7 +97,7 @@ def _datos() -> InstitucionAltaControlCrear:
     return InstitucionAltaControlCrear(
         institucion_id="INST-T010",
         nombre="Institucion de prueba O-1",
-        rut="99-9",
+        rut="99-K",
         direccion="Av. Prueba 100",
         correo_administrador="admin.t010@ejemplo.cl",
         nombre_administrador="Ada",

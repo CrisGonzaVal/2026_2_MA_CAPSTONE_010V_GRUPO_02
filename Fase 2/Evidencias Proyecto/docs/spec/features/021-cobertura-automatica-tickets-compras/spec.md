@@ -786,3 +786,13 @@ escritura real, más el humo en 8080 con la imagen reconstruida (AGENTS §8.5–
 | V-2 | ✅ Verificado | Recorrido en 4200/8080: menú en orden «Compras» → «Órdenes de Compra» → «Recepción de Compras»; «Compras» navega a `/compras/necesidades`, que se titula «Compras» y explica los pedidos que componen la demanda; capturas `4200-02` y `8080-02`. |
 | V-3 | ✅ Verificado | `etiqueta-estado.spec.ts` (4 tests) y `ticket-detalle.component.spec.ts` («En Curso → En Curso»); recorrido en ambos puertos con «En Revisión» y «En Curso» en el tablero y el historial. |
 | V-4 | ✅ Verificado | `frontend/src/app/features/control/capacidades.component.spec.ts:116` exige la etiqueta «Pedidos» para la capacidad `tickets`; el valor persistido y la API no cambian. |
+
+---
+
+> **Nota de enmienda (25/Nov/2026, Feature 013 — §9).** Un pedido entra a `EnCurso` cuando el
+> Administrador lo **aprueba** (siempre, con o sin stock); el stock solo decide la etiqueta y no
+> hay auto-avance. El cálculo de necesidades, el plan de cobertura y `stock_disponible` no
+> cambian: los pedidos en `Pendiente`/`EnRevision` siguen fuera de la demanda y del plan hasta la
+> aprobación, y las OC `Emitida`/`Facturada` no participan en esa decisión. La etiqueta de proceso
+> de la 013 §9.8 **lee** el estado de las OC que cubren el pedido (Recibida > Facturada >
+> Emitida; `Cancelada` no cuenta) y no reescribe el plan ni la cobertura.

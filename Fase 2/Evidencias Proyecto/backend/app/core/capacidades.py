@@ -65,6 +65,13 @@ MAPA_OPERACION_CAPACIDAD: dict[tuple[str, str], str] = {
     # capacidad nueva: el conjunto cerrado de la 012 queda intacto. ---
     ("POST", "/api/v1/tickets/{ticket_id}/anulacion"): "kanban",
     ("POST", "/api/v1/tickets/{ticket_id}/rechazo"): "kanban",
+    # Ampliacion 25/Nov/2026 (spec §9.3/AC-44): la aprobacion es una decision
+    # de flujo, la misma familia que las transiciones y el tablero -> `kanban`.
+    # No se agrega ninguna capacidad nueva: el conjunto cerrado sigue intacto.
+    ("POST", "/api/v1/tickets/{ticket_id}/aprobacion"): "kanban",
+    # Ampliacion 25/Nov/2026 (spec §9.9, AC-44): la confirmacion de entrega es
+    # una operacion del pedido, no una decision de flujo -> capacidad `tickets`.
+    ("POST", "/api/v1/tickets/{ticket_id}/confirmacion-entrega"): "tickets",
     ("PUT", "/api/v1/tickets/{ticket_id}"): "tickets",
     ("GET", "/api/v1/tickets/{ticket_id}"): "tickets",
     ("GET", "/api/v1/tickets/{ticket_id}/historial"): "tickets",

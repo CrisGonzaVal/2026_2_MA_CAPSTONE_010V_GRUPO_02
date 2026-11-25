@@ -58,7 +58,10 @@ from tests.funcional.integracion._soporte_sede_011 import (
     producto_de_existencias,
     sesion,
 )
-from tests.funcional.integracion.test_ciclo_vida_autorizacion_013 import RETIRADAS_017
+from tests.funcional.integracion.test_ciclo_vida_autorizacion_013 import (
+    RESTRINGIDAS_013,
+    RETIRADAS_017,
+)
 from tests.no_funcional.seguridad.test_permisos_012 import MATRIZ_012
 
 # ---------------------------------------------------------------------------
@@ -94,9 +97,11 @@ CAPACIDADES_018: dict[tuple[str, str], str] = {
 #: Total de operaciones de la matriz tras las ampliaciones documentadas: la 018
 #: (60 -> 61), la Feature 019 (61 -> 62, `GET
 #: /api/v1/inventario/existencias/{producto_id}`), la Feature 020 (62 -> 72,
-#: diez rutas de compras) y la Feature 021 (72 -> 73, preview de cobertura). El
-#: baseline historico de la 018 sigue siendo 60 previas + su operacion de ambito.
-TOTAL_OPERACIONES_018 = 73
+#: diez rutas de compras), la Feature 021 (72 -> 73, preview de cobertura) y la
+#: ampliacion 25/Nov/2026 de la 013 (73 -> 75: aprobacion del pedido y
+#: confirmacion de entrega). El baseline historico de la 018 sigue siendo 60
+#: previas + su operacion de ambito.
+TOTAL_OPERACIONES_018 = 75
 
 _METODOS_OPENAPI = {"get", "put", "post", "delete", "patch"}
 _PREFIJO_CONTRATO = "/api/v1/"
@@ -847,6 +852,11 @@ def test_matriz_conserva_las_operaciones_previas_intactas():
     for clave, roles in MATRIZ_012.items():
         actual = permisos.MATRIZ_PERMISOS.get(clave)
         assert actual is not None, f"la operacion {clave} desaparecio de la matriz"
+        if clave in RESTRINGIDAS_013:
+            # Ampliacion 25/Nov/2026 de la 013 (§9.10, AC-49): el `PATCH /estado`
+            # se restringe a solo Administrador; la entrada no se retira.
+            assert set(actual) == RESTRINGIDAS_013[clave], clave
+            continue
         esperado = set(roles) - ({"Superadmin"} if clave in RETIRADAS_017 else set())
         assert set(actual) == esperado, clave
     for clave, roles in OPERACIONES_013.items():
@@ -865,20 +875,23 @@ def test_matriz_tiene_exactamente_61_operaciones_tras_018():
     El nombre conserva el baseline historico de la 018, pero la Feature 019
     amplia **explicitamente** el total a 62 (spec D-6/AC-11, plan §1.1.4): agrega
     `GET /api/v1/inventario/existencias/{producto_id}` sin cambiar ninguna fila
-    previa. La Feature 020 suma despues diez rutas de compras (62 -> 72) y la 021
-    el preview de cobertura (72 -> 73). Por eso `previas` pasa de 60 a 72: las
-    operaciones de la 019, la 020 y la 021 son, desde este modulo, anteriores a
-    la comprobacion de cardinalidad de la 018. Ampliacion documentada, no
+    previa. La Feature 020 suma despues diez rutas de compras (62 -> 72), la 021
+    el preview de cobertura (72 -> 73) y la ampliacion 25/Nov/2026 de la 013 la
+    aprobacion del pedido y la confirmacion de entrega (73 -> 75). Por eso
+    `previas` pasa de 60 a 74: las operaciones de la 019, la 020, la 021, la
+    aprobacion y la confirmacion son, desde este modulo, anteriores a la
+    comprobacion de cardinalidad de la 018. Ampliacion documentada, no
     reescritura silenciosa.
     """
     total = len(permisos.MATRIZ_PERMISOS)
     previas = set(permisos.MATRIZ_PERMISOS) - set(OPERACIONES_018)
     assert total == TOTAL_OPERACIONES_018, (
-        "la matriz debe tener 73 operaciones (60 previas + la de ambito de la 018 "
+        "la matriz debe tener 75 operaciones (60 previas + la de ambito de la 018 "
         f"+ el detalle de producto de la 019 + las 10 de compras de la 020 + el "
-        f"preview de la 021); tiene {total}"
+        f"preview de la 021 + la aprobacion y la confirmacion de la ampliacion de "
+        f"la 013); tiene {total}"
     )
-    assert len(previas) == 72, (
+    assert len(previas) == 74, (
         "la operacion nueva no puede sustituir a ninguna previa; "
         f"quedan {len(previas)} operaciones anteriores"
     )
@@ -960,8 +973,9 @@ def test_openapi_publica_61_operaciones_tras_018(cliente):
     El nombre conserva el baseline historico de la 018; la Feature 019 amplia
     **explicitamente** la cardinalidad a 62 al publicar
     `GET /api/v1/inventario/existencias/{producto_id}` (spec D-6/AC-11), la
-    Feature 020 la lleva a 72 con las diez rutas de compras y la Feature 021 a 73
-    con el preview de cobertura.
+    Feature 020 la lleva a 72 con las diez rutas de compras, la Feature 021 a 73
+    con el preview de cobertura y la ampliacion 25/Nov/2026 de la 013 a 75 con la
+    aprobacion del pedido y la confirmacion de entrega.
     """
     contrato = cliente.get("/openapi.json").json()
     total = sum(
@@ -972,5 +986,6 @@ def test_openapi_publica_61_operaciones_tras_018(cliente):
         if metodo in _METODOS_OPENAPI
     )
     assert total == TOTAL_OPERACIONES_018, (
-        f"/openapi.json debe publicar 73 operaciones v1; publica {total}"
+        f"/openapi.json debe publicar {TOTAL_OPERACIONES_018} operaciones v1; "
+        f"publica {total}"
     )

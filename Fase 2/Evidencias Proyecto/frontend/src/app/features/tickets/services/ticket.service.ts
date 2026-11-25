@@ -33,10 +33,38 @@ export class TicketService {
     return this.http.post<Ticket>(`${URL_API}/tickets/`, datos);
   }
 
-  actualizarEstado(ticketId: number, estadoId: number): Observable<Ticket> {
-    return this.http.patch<Ticket>(`${URL_API}/tickets/${ticketId}/estado`, {
-      estado_id: estadoId,
+  /**
+   * Aprobación del Administrador (Feature 013, ampliación 25/Nov/2026, D-15):
+   * `POST /tickets/{id}/aprobacion` sin cuerpo. El destino es siempre
+   * `EnCurso`; el stock solo decide la etiqueta de proceso.
+   */
+  aprobarTicket(ticketId: number): Observable<Ticket> {
+    return this.http.post<Ticket>(
+      `${URL_API}/tickets/${ticketId}/aprobacion`,
+      null,
+    );
+  }
+
+  /**
+   * Despacho de un pedido `EnCurso` (Feature 005, reutilizado en el detalle por
+   * D-19): `POST /tickets/{id}/despacho` con el `usuario_id` de la sesión.
+   */
+  despacharTicket(ticketId: number, usuarioId: number): Observable<Ticket> {
+    return this.http.post<Ticket>(`${URL_API}/tickets/${ticketId}/despacho`, {
+      usuario_id: usuarioId,
     });
+  }
+
+  /**
+   * Confirmación de entrega del Solicitante dueño (ampliación 25/Nov/2026,
+   * D-25): `POST /tickets/{id}/confirmacion-entrega` sin cuerpo. No cambia el
+   * estado canónico `Cerrado`; solo registra el evento.
+   */
+  confirmarEntrega(ticketId: number): Observable<Ticket> {
+    return this.http.post<Ticket>(
+      `${URL_API}/tickets/${ticketId}/confirmacion-entrega`,
+      null,
+    );
   }
 
   /** Detalle completo del ticket (Feature 013, spec §6, AC-23). */

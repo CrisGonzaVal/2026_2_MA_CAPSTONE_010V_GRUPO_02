@@ -676,9 +676,13 @@ def test_listar_tickets_no_hace_consultas_por_ticket(
     # consulta fija adicional (`alcance_institucional`); por eso el tope sube de 4
     # a 5. Feature 012 (D-6): el gating de capacidad resuelve el contexto tenant
     # con una sobrecarga fija (identidad global + mapa de tenant) que no depende
-    # del numero de tickets; por eso el tope sube de 5 a 7. Lo que protege esta
-    # prueba es que el numero NO crezca con los tickets.
-    assert with_tres <= 7, (
+    # del numero de tickets; por eso el tope sube de 5 a 7. Ampliacion de la 013
+    # (§9.2): el read model de proceso suma cinco consultas fijas —estado eager,
+    # cobertura de OC, resolucion del `Cerrado` canonico, confirmaciones y
+    # gestores— y deja el tope en 12; con estos tickets `Pendiente` no hay
+    # simulacion de stock. Lo que protege esta prueba es que el numero NO crezca
+    # con los tickets.
+    assert with_tres <= 12, (
         "carga eager en cadena debe resolverlo en pocas consultas fijas: "
         f"{with_tres} consultas con 3 tickets"
     )

@@ -369,3 +369,207 @@ migración, matriz ni permisos.
   (`Pendiente`/`FIJO`, sin selector) y `Media` preseleccionada y habilitada; «Cancelar»
   cierra sin errores de consola.
 
+## 10. Ampliación 25/Nov/2026 — cierre (T30): suites, contrato, recorrido 4200 con los dos caminos y humo 8080
+
+Cierre de la §9 de la spec (AC-28…AC-49). Recorrido **real de UI** en `4200` con
+sesiones Clerk de la semilla, capturas en esta carpeta y verificación SQL por
+`docker exec psql` tras cada camino. Sin escritura en `apt_erp` fuera del
+recorrido; los tests gated usan bases desechables.
+
+### 10.1 Suites, gated y build
+
+| Verificación | Comando | Resultado real |
+|---|---|---|
+| Backend SQLite (suite completa) | `cd backend; .venv\Scripts\python.exe -m pytest -q` | **1973 passed / 112 skipped / 0 failed** en 438,65 s (17 warnings de deprecación preexistentes) |
+| Gated PostgreSQL 16 (módulo T23) | `$env:POSTGRES_TEST_URL="postgresql://postgres:postgres@localhost:5433/postgres"; pytest tests/funcional/sistema/test_ciclo_vida_aprobacion_confirmacion_postgres_013.py -q` | **3 passed** en 27,76 s — concurrencia de aprobación y confirmación con una sola fila; `apt_erp` intacta |
+| Gated PostgreSQL 16 (suite completa) | misma variable; `pytest -q` | **2082 passed / 3 skipped / 0 failed** en 1080,12 s (18:00 min), sobre bases temporales desechables; los 3 `skipped` son los módulos gated de Redis, que exigen `REDIS_TEST_URL`; `apt_erp` intacta |
+| Frontend | `$env:CHROME_BIN="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"; npx ng test --watch=false --browsers=ChromeHeadless` | **TOTAL: 634 SUCCESS / 0 failed** (repetido tras el ajuste de JSDoc de `roles.ts`) |
+| Build de producción | `cd frontend; npx ng build` | limpio en 44,39 s; **`main-JE7KG3Z2.js`**, `Initial total 339.74 kB` (94.03 kB transferidos); lazy `ticket-detalle-component` 39,09 kB y `tickets-component` 23,22 kB |
+
+### 10.2 Contrato OpenAPI (backend vivo en `:8000`)
+
+`GET /openapi.json`: **77 operaciones** (75 bajo `/api/v1/` + `GET /` + `GET /health`).
+
+| Operación | Roles documentados | Códigos |
+|---|---|---|
+| `POST /api/v1/tickets/{ticket_id}/aprobacion` | solo Administrador (capacidad `kanban`) | 200, 401, 403, 404, 409, 422 |
+| `POST /api/v1/tickets/{ticket_id}/confirmacion-entrega` | solo Solicitante dueño (capacidad `tickets`) | 200, 401, 403, 404, 409, 422 |
+| `PATCH /api/v1/tickets/{ticket_id}/estado` | **solo Administrador** («contrato de legado»; la UI ya no lo invoca) | sin cambio de forma |
+| `POST /api/v1/tickets/{ticket_id}/despacho` | Administrador/Bodeguero (sin cambios de la 005) | sin cambio |
+| `POST /api/v1/tickets/{ticket_id}/rechazo` | Administrador/Bodeguero (sin cambios) | sin cambio |
+
+La descripción del `PATCH` deja de anunciar un destino efectivo distinto del
+solicitado y documenta el 409 del cierre reservado al despacho.
+
+### 10.3 Recorrido funcional en 4200 (escritura real)
+
+Backend en contenedor (`uvicorn --reload`, volumen `./backend/app`) + `npm start`
+(4200). Sesiones Clerk reales por el flujo documentado en §2 (`dev_browser` +
+*sign-in ticket* + `sign_ins` con `strategy=ticket`, `Origin: localhost:4200`),
+esta vez completado **sobre el mismo dev browser del navegador** para que Clerk JS
+adopte la sesión; tokens de API refrescados por petición y ningún secreto impreso.
+
+Cuentas (semilla INST-001): `ri.nilo@duocuc.cl` (Solicitante, Biblioteca → Sede
+Maipú), `crise.gonzalez@duocuc.cl` (Administrador, Dirección),
+`lu.illanes@duocuc.cl` (Bodeguero, Biblioteca → Sede Maipú).
+
+#### Camino A — con stock («Papel Premium A4», producto 10: stock 64, mínimo 10)
+
+| # | Actor | Acción en la UI | Observado | Captura |
+|---|---|---|---|---|
+| 1 | Solicitante | «+ Crear pedido»: 3 × Papel Premium A4, prioridad Media, estado **FIJO Pendiente** | 201 y tarjeta **#11** en la columna **Pendiente**; etiqueta «En aprobación» y «Sin gestión registrada» en ambos responsables | [01](30-4200-01-tablero-pendiente-etiqueta.png) |
+| 2 | Solicitante | Detalle `/tickets/11` | Estado canónico **Pendiente** + etiqueta **En aprobación** con su frase; acciones Editar/Anular; historial: creación (origen nulo) | [02](30-4200-02-detalle-pendiente-en-aprobacion.png) |
+| 3 | Administrador | «Aprobar» | **En Curso** + etiqueta **En confirmación de stock local**, badge «Stock disponible — Listo para despacho», «Pedido aprobado.», Último Administrador = Gonzalez, Cristian; historial `Pendiente → En Curso` con motivo `Aprobación del pedido`; `fecha_cierre` nula (no se muestra «Cerrado») | [03](30-4200-03-aprobacion-en-confirmacion-stock.png) |
+| 4 | Bodeguero | «Confirmar stock local y despachar» → diálogo sin motivo → «Confirmar despacho» | **Cerrado** + etiqueta **Despachado**, `fecha_cierre` 25/11 20:24, entregado 3/3, Último Bodeguero = Illanes, Luciano; historial `En Curso → Cerrado`; badge desaparece y la barra pasa a la nota terminal | [04](30-4200-04-despacho-cerrado-despachado.png) |
+| 5 | Solicitante | «Confirmar entrega» → diálogo → «Confirmar entrega» | Etiqueta **Entregado**, «Entregado el Nov 25, 2026, 8:24:49 PM **por Nilo, Ricardo**», «Entrega confirmada.», el botón desaparece y el estado sigue **Cerrado**; historial `Cerrado → Cerrado` con motivo `Entrega confirmada por el solicitante` | [05](30-4200-05-entrega-confirmada-entregado.png) |
+| 6 | Solicitante | Tablero | 4 columnas: **Pendiente**, **En Revisión** (heredado), **En Curso**, **Terminados**; #11 en «Terminados» con etiqueta **Entregado** y los dos responsables; sin columna `Anulado` ni botones Avanzar/Retroceder | [06](30-4200-06-tablero-terminados-entregado.png) |
+
+#### Camino B — sin stock («Resma Carta 75g A4», producto 1: stock 0 en Sede Maipú, mínimo 20)
+
+| # | Actor | Acción en la UI | Observado | Captura |
+|---|---|---|---|---|
+| 7 | Administrador | Compras (`/compras/necesidades`) **antes** de crear/aprobar el pedido | 4 filas; **no** aparece «Resma Carta 75g A4» de Sede Maipú (sin saldo ni demanda) y **tampoco** «Papel Premium A4» (caso #10: 61 > 10 y demanda 3 ≤ 61) | [07](30-4200-07-compras-sin-caso10-ni-resma.png) |
+| 8 | Solicitante | Alta de **#12**: 3 × Resma Carta 75g A4 | Nace **Pendiente** (etiqueta «En aprobación» en el detalle) | — |
+| 9 | Administrador | «Aprobar» #12 | **En Curso** + etiqueta **Por comprar** («no hay stock suficiente ni compra vigente»), sin acción de despacho (nota: el despacho se habilitará cuando la sede lo cubra) | [08](30-4200-08-aprobacion-por-comprar.png) |
+| 10 | Administrador | Compras | Aparece la fila **Sede Maipú / Resma Carta 75g A4**: stock 0, mínimo 20, demanda 3, sugerido **23**, y el pedido **#12** dentro de «Pedidos que componen la demanda» | [09](30-4200-09-compras-necesidad-ticket12.png) |
+| 11 | Administrador | «Crear OC» (precargada sede 2 / producto 1 / 23) → proveedor Papelera del Pacífico, precio 4.990 → creada → **Emitir** → **Facturar** `F-T30-0002` | **OC-2026-000002** Borrador → **Emitida** (1 asignación) → **Facturada** (factura F-T30-0002 · 25/11/2026) | [10](30-4200-10-oc-emitida-facturada.png) |
+| 12 | Administrador | Detalle #12 tras facturar | Etiqueta **Facturado** («la compra está facturada y pendiente de recepción»), cobertura comprado 3/recibido 0 y la OC Facturada en «Órdenes de compra que cubren el pedido» | [11](30-4200-11-ticket12-facturado.png) |
+| 13 | Bodeguero | Recepción de Compras → «Recepcionar» → «Confirmar recepción» | «Orden de compra recepcionada exitosamente.» y «Se desbloquearon 1 pedido(s): T30 sin stock: resma carta»; ya no quedan OC facturadas en la sede | [12](30-4200-12-recepcion-oc.png) |
+| 14 | Bodeguero | Detalle #12 | Etiqueta **En confirmación de stock local**, badge de stock, acción de despacho; historial añade `En Curso → En Curso` con motivo `Desbloqueo por reabastecimiento: OC OC-2026-000002 / Factura F-T30-0002` y la nota «OC … desbloqueó el pedido» | [13](30-4200-13-ticket12-en-confirmacion-tras-recepcion.png) |
+| 15 | Bodeguero | «Confirmar stock local y despachar» → confirmar | **Cerrado** + **Despachado**, `fecha_cierre` 25/11 20:28, entregado 3/3, historial `En Curso → Cerrado` | [14](30-4200-14-ticket12-despachado.png) |
+| 16 | Solicitante | «Confirmar entrega» | **Entregado** + «Entregado el … por Nilo, Ricardo», estado canónico **Cerrado**, historial `Cerrado → Cerrado` | [15](30-4200-15-ticket12-entregado.png) |
+| 17 | Solicitante | Tablero final | «Terminados» **2** (#11 y #12, ambas «Entregado»), #10 sigue en «En Curso» | [16](30-4200-16-tablero-final-terminados-2.png) |
+| 18 | Administrador | Tablero con el heredado | Columna **En Revisión** con **3** pedidos heredados (#3, #4, #9); #9 «En revisión» con su frase; en el detalle ofrece Aprobar/Rechazar/Anular y no Editar | [17](30-4200-17-tablero-en-revision-heredado.png) |
+
+Sin errores de consola en todo el recorrido (`list_console_messages` vacío).
+
+### 10.4 Verificación SQL (PostgreSQL real, `apt_erp` → `tenant_inst_001_038aa2a9`)
+
+Estados y cierre:
+
+| ticket | estado | `fecha_cierre` | sede | solicitante |
+|---|---|---|---|---|
+| 10 | EnCurso | NULL | 2 | 16 (Nilo) |
+| 11 | **Cerrado** | 2026-11-25 20:24:20.459839 | 2 | 16 (Nilo) |
+| 12 | **Cerrado** | 2026-11-25 20:28:21.992588 | 2 | 16 (Nilo) |
+
+Stock (`stock_sede`): producto 10 / Sede Maipú **64 → 61**; producto 1 / Sede
+Maipú **0 → 23** (recepción) **→ 20** (despacho). El saldo de producto 1 en Sede
+Providencia (51) no se tocó, y el stock de la 020/021 sigue intacto.
+
+Movimientos (`movimiento_inventario`, solo los del cierre):
+
+| id | tipo | cantidad | producto | sede | observación |
+|---|---|---|---|---|---|
+| 5 | ENTRADA | 19 | 10 | 2 | Recepción OC-2026-000001 / Factura 123123987398 (previo, 24/11) |
+| 6 | **SALIDA** | 3 | 10 | 2 | `Despacho ticket_id=11; detalle_id=12; producto_id=10` |
+| 7 | **ENTRADA** | 23 | 1 | 2 | `Recepción OC OC-2026-000002 / Factura F-T30-0002 — Bodeguero: lu.illanes@duocuc.cl` |
+| 8 | **SALIDA** | 3 | 1 | 2 | `Despacho ticket_id=12; detalle_id=13; producto_id=1` |
+
+Historial (`historial_transicion_ticket`), orden real por `fecha_transicion`:
+
+| id | ticket | origen → destino | actor | motivo | OC |
+|---|---|---|---|---|---|
+| 7 | 11 | (nulo) → Pendiente | 16 Ricardo | — | — |
+| 8 | 11 | Pendiente → EnCurso | 14 Cristian | `Aprobación del pedido` | — |
+| 9 | 11 | EnCurso → Cerrado | 15 Luciano | — | — |
+| 10 | 11 | **Cerrado → Cerrado** | 16 Ricardo | `Entrega confirmada por el solicitante` | — |
+| 11 | 12 | (nulo) → Pendiente | 16 Ricardo | — | — |
+| 12 | 12 | Pendiente → EnCurso | 14 Cristian | `Aprobación del pedido` | — |
+| 13 | 12 | EnCurso → EnCurso | 15 Luciano | `Desbloqueo por reabastecimiento: OC OC-2026-000002 / Factura F-T30-0002` | **2** |
+| 14 | 12 | EnCurso → Cerrado | 15 Luciano | — | — |
+| 15 | 12 | **Cerrado → Cerrado** | 16 Ricardo | `Entrega confirmada por el solicitante` | — |
+| 16 | 9 | Pendiente → **EnRevision** | 14 Cristian | — (nulo) | — |
+
+OC: `orden_compra 2` = `OC-2026-000002`, **Recibida**, proveedor 1, sede 2,
+factura `F-T30-0002`, monto 114770.00; `orden_compra_ticket` 1 fila
+`(OC 2, ticket 12, producto 1, cantidad_asignada 3)`.
+
+### 10.5 Comprobaciones de contrato por HTTP real
+
+| Caso | Resultado |
+|---|---|
+| `PATCH /tickets/10/estado {2}` como **Bodeguero** | **403** (matriz; sin cambio) |
+| `PATCH /tickets/10/estado {4}` como Administrador | **409** (cierre reservado al despacho) |
+| `PATCH /tickets/9/estado {2}` como Administrador | **200**, queda en `EnRevision` con fila motivo nulo (id 16) |
+| `POST /tickets/11/aprobacion` como Bodeguero | **403** |
+| `POST /tickets/11/aprobacion` como Administrador (ya `EnCurso`) | **409** |
+| `POST /tickets/11/confirmacion-entrega` como Administrador | **403** |
+| `POST /tickets/11/confirmacion-entrega` como Solicitante (ya confirmada) | **409** |
+
+### 10.6 Humo en 8080 (imagen reconstruida)
+
+`docker compose -f docker-compose.yml build frontend` + `up -d frontend`;
+contenedor **healthy** y bundle servido **`main-JE7KG3Z2.js`**. Detalle:
+
+- Imagen `evidenciasproyecto-frontend:latest` (manifest list `sha256:d983fdd217274da6106304e8da93b9d836c9bb41aab2777eadf0fc415744bba1`); `up -d frontend` recreó el contenedor y quedó **healthy**.
+- El `index.html` servido referencia **`main-JE7KG3Z2.js`** y `styles-E7WDQOQI.css` (el mismo `main` del `ng build` del host). Los chunks lazy del tablero (`chunk-4C5P26XT.js`) contienen «Terminados» y el del detalle (`chunk-QF6ALCPA.js`) «Confirmar stock local y despachar» y «Confirmar la entrega».
+- `GET /` y `GET /tickets/11` (try_files de nginx) responden **200** con el shell SPA; `GET /api/v1/tickets/11` sin token responde **401** (la autorización sobrevive al proxy).
+- En el navegador (sesión Clerk compartida en `localhost`), 8080 sirve la vista nueva: tablero de **4 columnas**, «Terminados» con **4** pedidos (#11 y #12 «Entregado», con «Último Bodeguero» y «Último Administrador»), y detalle de #11 con estado canónico `Cerrado`, etiqueta «Entregado», «Entregado el … por Nilo, Ricardo», historial de 4 filas y **sin acciones**. Sin errores de consola.
+- API por el proxy con token real: `GET :8080/api/v1/tickets/11` → **200**, `estado_nombre=Cerrado`, `etiqueta_proceso=Entregado`, `entrega_confirmada=true`, `fecha_cierre=2026-11-25T20:24:20`.
+- Caché: el navegador solo solicitó `main-JE7KG3Z2.js` (200) y ningún bundle viejo; no hizo falta recargar con `ignoreCache`.
+- Captura: [30-8080-01-detalle-entregado.png](30-8080-01-detalle-entregado.png).
+
+### 10.7 Mapeo AC-28…AC-49 → evidencia
+
+| AC | Evidencia |
+|---|---|
+| AC-28 | Tests `test_ciclo_vida_aprobacion_013.py::test_patch_estado_conserva_su_contrato_de_legado_para_el_administrador_ac_49` y `test_flujo_aprobacion_entrega_013.py::test_patch_de_legado_solo_administrador_y_cierre_reservado`; vivo: PATCH de #9 a `EnRevision` **200** con motivo nulo (SQL id 16) y PATCH a `Cerrado` **409**. §10.4-10.5 |
+| AC-29 | Tests `test_aprobacion_desde_origen_elegible_deja_el_pedido_en_curso_ac_29`, `test_aprobacion_siempre_lleva_a_en_curso_y_el_stock_solo_cambia_la_etiqueta_ac_29`, `test_aprobacion_no_toca_stock_ni_movimientos_ac_29`; 4200: #11 (con stock) y #12 (sin stock) quedan **En Curso** con etiquetas distintas. Capturas 03 y 08 |
+| AC-30 | Test `test_aprobacion_escribe_una_sola_fila_con_actor_y_motivo_ac_30` y `test_si_la_fila_de_historial_falla_el_estado_no_cambia_ac_30`; SQL filas 8 y 12 (una por pedido, actor Administrador, motivo literal, `orden_compra_id` nulo) |
+| AC-31 | E2E `test_flujo_aprobacion_entrega_013.py::test_aprobacion_sin_stock_aparece_en_compras_y_la_oc_mueve_la_etiqueta`; 4200: necesidad ausente antes (07) y presente tras aprobar (09), OC Facturada (11), recepción desbloquea (13) y el cierre sigue siendo el despacho |
+| AC-32 | Specs `ticket-detalle.component.spec.ts`; 4200: #11 Pendiente (Solicitante: Editar/Anular; Administrador: Aprobar/Editar/Rechazar/Anular), EnCurso (Bodeguero: despachar), Cerrado (Solicitante: confirmar), sin Avanzar/Retroceder. Capturas 02-05, 08, 13 |
+| AC-33 | Specs del detalle y servicio; 4200: despacho de #11 y #12 con diálogo sin motivo, 200, `Cerrado` con `fecha_cierre`, entregado 3/3 y fila de despacho; SQL: dos `SALIDA` (ids 6 y 8). Capturas 04 y 14 |
+| AC-34 | Specs de 409 en `role="alert"` y suite 005 de despacho; 4200: la acción no se ofrece al Solicitante (capturas 02 y 05), el tablero no ofrece despacho ni transiciones (06/16) y un despacho repetido está cubierto por los tests de la 005 |
+| AC-35 | Caso #10 fuera de Compras en la UI (captura 07: sin fila «Papel Premium A4»); tests `test_flujo_aprobacion_entrega_013.py::test_caso_10_equivalente_omitido_en_compras_y_cierra_normal`, suite 021; sin DDL: token `026.0`, 26/23 tablas, 21 entidades (suite de control y gated) |
+| AC-36 | Vivo: PATCH `Pendiente → EnRevision` deja `EnRevision` (no salta a `EnCurso`) y PATCH a `Cerrado` responde 409; tests de flujo y `test_patch…ac_49`; única vía a `EnCurso` es la aprobación (capturas 03/08) |
+| AC-37 | Tests unitarios e integración `test_ticket_proceso_013.py` (etiquetas/frases de los cinco estados, `Cerrado` con y sin confirmación, degradación de estado desconocido); 4200: «En aprobación» (02), «En revisión» (17), «Por comprar» (08), «Facturado» (11), «En confirmación de stock local» (03/13), «Despachado» (04/14), «Entregado» (05/15) |
+| AC-38 | Tests `test_ac_38_*` (precedencia Recibida > Facturada > Emitida, cancelada no cuenta, stock y «Por comprar»); 4200: «Por comprar» → «Facturado» → «En confirmación de stock local» con la misma OC (08, 11, 13) |
+| AC-39 | Tests `test_ac_37_*`, `test_ac_39_*` (listado y detalle exponen los campos y coinciden, detalle conserva listas); 4200: detalle muestra estado canónico + etiqueta + frase (02), listado y tablero coinciden; contrato OpenAPI con los campos |
+| AC-40 | Tests `test_ac_40_ultimo_gestor_por_fecha_y_desempate_por_id` y `test_ac_40_sin_historial_o_sin_rol_gestor_queda_en_none`; 4200: «Sin gestión registrada» antes (02) y «Illanes, Luciano» / «Gonzalez, Cristian» después (03, 04, 16) |
+| AC-41 | Specs de `tickets.component.spec.ts`; 4200: columnas Pendiente / En Revisión / En Curso / **Terminados** con contador sumado (2), sin columna `Anulado`, etiqueta visible, frase accesible y dos responsables (06, 16, 17) |
+| AC-42 | Tests `test_confirmacion_del_dueno_responde_200_con_una_fila_cerrado_cerrado_ac_42`, `test_la_confirmacion_no_reabre_ni_mueve_el_pedido_ac_42`, `test_listado_y_detalle_reflejan_la_entrega_confirmada_ac_42`; 4200 y SQL filas 10 y 15: una `Cerrado → Cerrado`, motivo literal, actor dueño, estado y `fecha_cierre` intactos, sin movimiento nuevo. Capturas 05/15 |
+| AC-43 | Tests `test_confirmacion_ajena_e_inexistente_responden_404_identico_ac_43`, `test_confirmacion_no_se_concede_a_otros_roles_ac_43`, `…sin_sesion…401`, `…capacidad_tickets_apagada…403`, `…no_cerrado…409`, `…repetida…409 sin una segunda fila`, `test_un_pedido_creado_por_un_administrador_no_admite_confirmacion_ac_43`; vivo: 403 Administrador, 409 repetida (§10.5); gated: `(200, 409)` con una sola fila |
+| AC-44 | `test_permisos_endpoints.py` (inventario rutas↔matriz 75) y `test_cobertura_021.py::test_openapi_publica_el_preview_y_75_operaciones`; `GET /openapi.json` **77** operaciones (75 v1), sin capacidades/estados/DDL nuevos (§10.2) |
+| AC-45 | Tests `test_aprobacion_no_se_concede_a_otros_roles_ac_45`, `test_aprobacion_con_kanban_apagada_responde_403_sin_mutar_ac_45`, `test_matriz_declara_la_aprobacion_y_el_patch_solo_para_administrador_ac_44`; vivo: 403 Bodeguero y 409 ya `EnCurso` (§10.5); 4200: Aprobar visible solo con Administrador (02/03) |
+| AC-46 | Tests `test_aprobacion_de_un_estado_ya_avanzado_o_terminal_responde_409_ac_46`, `…estado_no_elegible…409`, `…sin_en_curso…409`, `…404_identico`, `…401`; vivo 403/409; sin payload obligatorio |
+| AC-47 | 4200: ningún alta produce `EnRevision` (estado fijo Pendiente), el tablero conserva la columna con 3 heredados (#3, #4, #9) y #9 ofrece Aprobar/Rechazar/Anular; solo el PATCH de legado produce `EnRevision` (vivo, §10.5). Captura 17 |
+| AC-48 | Specs de detalle/tablero (sin Avanzar/Retroceder, sin `PATCH`); 4200: barras semánticas (02-05, 08, 13); vivo: `PATCH` 403 para Bodeguero, 200/409 para Administrador (§10.5) |
+| AC-49 | Vivo: `PATCH` Bodeguero **403** y Administrador **200/409**; `POST /despacho` y `/rechazo` conservan Administrador/Bodeguero (tests `test_el_bodeguero_conserva_despacho_y_rechazo_ac_49`); matriz 75 (misma cuenta de operaciones) |
+
+### 10.8 Hallazgos y datos residuales
+
+- **Hallazgo menor — RESUELTO en T31 (25/Nov/2026):** tras un alta, la tarjeta
+  del pedido nuevo mostraba como etiqueta el nombre canónico («Pendiente») en
+  lugar de «En aprobación», porque el tablero inserta el `201` de `POST
+  /tickets/` (que devolvía el ORM, con `etiqueta_proceso` vacía por defecto) sin
+  reconsultar. **Corrección:** `crear_ticket` devuelve `TicketRespuesta`
+  construido con `_respuesta_ticket_con_proceso` (el mismo read model del
+  listado y el detalle), sin cambiar el alta (sigue naciendo en `Pendiente`,
+  AC-27) ni el contrato de la operación. Evidencia: backend
+  `test_ticket_proceso_013.py::test_ac_39_el_201_*` (Administrador y
+  Solicitante como creadores)
+  y frontend `tickets.component.spec.ts` «la tarjeta del pedido recién creado
+  muestra «En aprobación» (T31)». El hallazgo original se conserva descrito
+  arriba como contexto; ya no es deuda abierta.
+- **Datos QA residuales:** pedidos #11 y #12 en `Cerrado`/«Entregado»; OC
+  `OC-2026-000002` en `Recibida`; el pedido #9 pasó de `Pendiente` a
+  `EnRevision` por la comprobación del `PATCH` de legado (fila 16, motivo nulo);
+  producto 10 / Sede Maipú con stock 61 y producto 1 / Sede Maipú con 20.
+  **Estos datos ya no existen:** la base QA se reseteó tras el cierre (§10.9).
+- No se agregaron usuarios, proveedores ni productos. Las credenciales no se
+  registraron en esta evidencia.
+
+### 10.9 Reset de la base QA post-cierre (25/Nov/2026)
+
+- Se ejecutó `docker compose -f docker-compose.yml down -v` y `up -d` después de
+  cerrar T31: el volumen se recreó desde `01_esquema.sql` + `02_datos_semilla.sql`
+  y desaparecieron los datos del recorrido (§10.8): pedidos #11/#12, OC
+  `OC-2026-000002`, el #9 movido a `EnRevision` y los saldos 61/20.
+- Verificación: `docker compose ps` con `db`, `redis`, `backend` y `frontend`
+  arriba; token `026.0`; **26** tablas en `control` y **23** por tenant; cuentas
+  demo de la semilla presentes (`crise.gonzalez`, `lu.illanes`, `ri.nilo`);
+  tickets y stock de la semilla intactos; `/health` y `/ready` en **200**.
+- Las capturas y consultas del recorrido (§10.1–§10.7) siguen siendo evidencia
+  histórica válida del comportamiento verificado; no describen el estado actual
+  de la base, que es el de la semilla.

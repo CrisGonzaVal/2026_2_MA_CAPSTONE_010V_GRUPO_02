@@ -49,8 +49,15 @@ export const ROLES_NEGOCIO = [
 export const ROLES_CONTROL = ['Superadmin'] as const;
 
 /**
- * Roles que operan el Kanban: avanzar/retroceder estado y despachar. El
- * Solicitante consulta y crea tickets, pero no opera (AC-3, AC-6, AC-7).
+ * Roles operativos del ciclo de vida de un pedido (AC-3, AC-6, AC-7). El
+ * Solicitante solicita, edita lo suyo y confirma la entrega; no está aquí.
+ *
+ * Desde la ampliación de la Feature 013 (25/Nov/2026) el tablero es **solo
+ * lectura**: no hay «Avanzar» ni «Retroceder» y ninguna pantalla invoca
+ * `PATCH /estado`. Las operaciones semánticas tienen sus propios helpers
+ * (`puedeAprobarTicket` —solo Administrador—, `puedeDespacharTicket`,
+ * `puedeRechazarTicket`) y el `PATCH` de legado quedó restringido al
+ * Administrador en la matriz del backend (AC-48/AC-49).
  *
  * **No** es la lista de acceso a la vista de tickets: el Superadmin opera por
  * API, pero desde la Feature 012 no navega a `/tickets` (ver `ROLES_TICKETS`).
@@ -103,6 +110,37 @@ export const ROLES_RECHAZO_TICKETS = ['Administrador', 'Bodeguero'] as const;
  * vista de detalle, el Solicitante además debe ser el dueño del ticket.
  */
 export const ROLES_EDICION_TICKETS = ['Administrador', 'Solicitante'] as const;
+
+/**
+ * Roles que ven el alta de pedidos («+ Crear pedido») en la vista de tickets.
+ *
+ * Cambio de demo del 25/Nov/2026: solo el Solicitante. Es **presentación**; la
+ * matriz del backend (`_ESCRITURA_TICKETS` en `permisos.py`) sigue admitiendo
+ * también a Administrador y Bodeguero hasta la implementación de negocio del
+ * alta por sede. No es una frontera de seguridad.
+ */
+export const ROLES_CREACION_TICKETS = ['Solicitante'] as const;
+
+/**
+ * Roles que aprueban pedidos (Feature 013, ampliación 25/Nov/2026, D-15/AC-32).
+ * La aprobación es una operación semántica propia del Administrador
+ * Institucional y siempre deja el pedido en `EnCurso`.
+ */
+export const ROLES_APROBACION_TICKETS = ['Administrador'] as const;
+
+/**
+ * Roles que despachan pedidos `EnCurso` con stock disponible (Feature 005,
+ * reutilizado en el detalle por D-19/AC-33). No es el `PATCH /estado`: es
+ * `POST /tickets/{id}/despacho`.
+ */
+export const ROLES_DESPACHO_TICKETS = ['Administrador', 'Bodeguero'] as const;
+
+/**
+ * Roles que confirman la entrega de un pedido despachado (ampliación
+ * 25/Nov/2026, D-26/AC-42). En el detalle el Solicitante además debe ser el
+ * dueño del pedido.
+ */
+export const ROLES_CONFIRMACION_ENTREGA = ['Solicitante'] as const;
 
 /**
  * Roles que ven la sección de ciclo de vida del catálogo en inventario
@@ -199,11 +237,6 @@ export function puedeAsignarRol(
   return false;
 }
 
-/** `true` si el rol puede operar tickets (Kanban/estado/despacho). */
-export function puedeOperarTickets(rol: string | null): boolean {
-  return contiene(ROLES_OPERATIVOS_TICKETS, rol);
-}
-
 /** `true` si el rol puede navegar al dashboard consolidado (017, AC-15). */
 export function puedeVerDashboard(rol: string | null): boolean {
   return contiene(ROLES_DASHBOARD, rol);
@@ -247,6 +280,44 @@ export function puedeRechazarTicket(rol: string | null): boolean {
  */
 export function puedeEditarTicket(rol: string | null): boolean {
   return contiene(ROLES_EDICION_TICKETS, rol);
+}
+
+/**
+ * `true` si el rol ve el botón «+ Crear pedido».
+ *
+ * Cambio de demo del 25/Nov/2026: solo Solicitante. Es presentación pura; la
+ * API sigue siendo la frontera y, por ahora, admite también a Administrador y
+ * Bodeguero. La restricción de negocio se implementará después.
+ */
+export function puedeCrearTicket(rol: string | null): boolean {
+  return contiene(ROLES_CREACION_TICKETS, rol);
+}
+
+/**
+ * `true` si el rol puede aprobar tickets (Feature 013, ampliación 25/Nov/2026,
+ * D-15/AC-32). Espejo de la matriz: solo Administrador. Presentación pura; la
+ * API sigue siendo la frontera y responde 403 al resto.
+ */
+export function puedeAprobarTicket(rol: string | null): boolean {
+  return contiene(ROLES_APROBACION_TICKETS, rol);
+}
+
+/**
+ * `true` si el rol puede despachar tickets (Feature 013, ampliación
+ * 25/Nov/2026, D-19/AC-33). Espejo de la matriz: Administrador y Bodeguero; el
+ * detalle exige además `EnCurso` y `stock_disponible`.
+ */
+export function puedeDespacharTicket(rol: string | null): boolean {
+  return contiene(ROLES_DESPACHO_TICKETS, rol);
+}
+
+/**
+ * `true` si el rol puede confirmar la entrega (ampliación 25/Nov/2026,
+ * D-26/AC-42). Espejo de la matriz: solo Solicitante; el detalle exige además
+ * que sea el dueño y que el pedido esté `Cerrado` sin confirmar.
+ */
+export function puedeConfirmarEntrega(rol: string | null): boolean {
+  return contiene(ROLES_CONFIRMACION_ENTREGA, rol);
 }
 
 /** `true` si el rol puede acceder al área administrativa. */

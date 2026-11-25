@@ -238,6 +238,9 @@ def test_matriz_central_conserva_la_esperada_para_008():
 
     Feature 017 (D-9/AC-15): las 11 lecturas retiradas al Superadmin ajustan
     solo ese rol; los roles institucionales conservan el conjunto de la 008.
+    Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH /estado` de la
+    transcripcion historica se **restringe** a solo Administrador; la entrada
+    no se retira y el Bodeguero conserva despacho, rechazo y recepcion.
     """
     vigente = {
         clave: set(roles) for clave, roles in permisos.MATRIZ_PERMISOS.items()
@@ -245,6 +248,8 @@ def test_matriz_central_conserva_la_esperada_para_008():
     for clave, roles in MATRIZ_008.items():
         if clave in RETIRADAS_017:
             assert vigente.get(clave) == roles - {"Superadmin"}, clave
+        elif clave in RESTRINGIDAS_013:
+            assert vigente.get(clave) == RESTRINGIDAS_013[clave], clave
         else:
             assert vigente.get(clave) == roles, clave
     assert len(MATRIZ_008) == 49
@@ -275,8 +280,24 @@ def test_administrador_conserva_las_escrituras_institucionales():
 # HTTP: allow/deny por rol en las operaciones ajustadas
 # ---------------------------------------------------------------------------
 
+#: Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.10, AC-49): el
+#: `PATCH /estado` de la transcripcion historica queda **solo** para el
+#: Administrador; es una restriccion documentada de la entrada, que no se
+#: retira, y el Bodeguero conserva despacho, rechazo y recepcion de compras.
+RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+}
+
 CASOS_AJUSTADOS = [
-    (metodo, ruta, rol, 200 if rol in MATRIZ_008[(metodo, ruta)] else 403)
+    (
+        metodo,
+        ruta,
+        rol,
+        200
+        if rol
+        in RESTRINGIDAS_013.get((metodo, ruta), MATRIZ_008[(metodo, ruta)])
+        else 403,
+    )
     for (metodo, ruta) in OPERACIONES_AJUSTADAS
     for rol in _ROLES
 ]

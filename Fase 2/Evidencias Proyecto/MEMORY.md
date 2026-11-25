@@ -9,11 +9,12 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 - **Base consolidada:** `database/` solo `01_esquema.sql` (26 en control + 23 por tenant) y `02_datos_semilla.sql` (`026.0`, guardia fail-closed). Sin migraciones: reset = `down -v` + `up -d`.
 - **Cierre 026:** 4200 con 409 por duplicado (sede, departamento, RUT, correo), movimiento por `stock_sede_id` (201) y legado (422), dashboard sin campos legados; 8080 con imagen reconstruida y 8 rutas directas OK.
 - **027 (cerrada, 24/Nov/2026):** backend **1863 passed/109 skipped**, gated PG **1969/3**, gated Redis **3**, frontend **597 SUCCESS**, build `main-NQGWSVMA.js`, 75/73 OpenAPI y `026.0`/26/23; 4200 con ticket #9, proveedor #4 y 422/409/201; 8080 reconstruido. DT-13…DT-16 cerrados.
+- **013 enmienda (cerrada, 25/Nov/2026):** aprobación Admin-only a `EnCurso`, etiqueta de proceso y responsables en tablero/detalle, columna «Terminados», confirmación de entrega del Solicitante y `PATCH /estado` solo Administrador. Backend **1973/112**, gated PG **2082/3**, frontend **634 SUCCESS**, `main-JE7KG3Z2.js`, matriz **75**/OpenAPI **77**, `026.0` y 26/23/21. 4200 con los dos caminos (#11 con stock, #12 sin stock/OC-2026-000002); 8080 reconstruido. Evidencia en `013-ciclo-vida-ticket/evidencia/README.md` §10. Corrección post-cierre T31: el `201` de `POST /tickets/` devuelve el read model y la tarjeta muestra «En aprobación» de inmediato (backend **1975/112**, `ng test` **639**, base QA reseteada).
+- **Demo 25/Nov/2026:** «+ Crear pedido» de `/tickets` oculto a Administrador y Bodeguero; solo Solicitante (`ROLES_CREACION_TICKETS`). Es presentación, no seguridad: `_ESCRITURA_TICKETS` sigue admitiendo a los tres. Excepción aprobada; el alta por sede queda como negocio pendiente (no hay carpeta 028). Frontend **638 SUCCESS**.
 - **RUT (027):** módulo 11 en `core/rut.py` y espejo `shared/utils/rut.ts`; se guarda la forma visible, la unicidad sigue normalizada. Semilla y fixtures con siete RUT corregidos.
 - **Contrato (027):** `extra="forbid"` en DTO de entrada (no en respuestas), ids `ge=1`, límites del DDL, `tipo_movimiento` `Literal` y `EmailStr` institucional. `IntegrityError`/`DataError` → 409/422 con `X-Request-ID`, sin mensaje crudo.
 - **Parser 422:** `validacion-http.ts` centraliza `loc`/`type`/traducción; `errores-http.ts` lo usa antes del texto genérico. Tickets, compras, control y administración muestran el campo culpable.
 - **Config por entorno (23/Nov/2026):** `config.py` sin ningún valor de BD (usuario, clave, host, puerto y base salen del `.env` raíz o del entorno); `DB_URL` (no `DATABASE_URL`, ocupada por otro proyecto) manda sobre `DB_*` y normaliza `postgres://`; compose fija `DB_PORT=5432` interno; la suite fija SQLite en `conftest`. Backend **1675 passed/105 skipped**.
-- **024/023/022/021 cerradas:** hardening (`X-Request-ID`, `/ready`, `/metrics`, 429 nginx, `URL_API=/api/v1`), `compra_service` como paquete con fachada y `orden_compra_ticket` como intención de cobertura. Detalle en la evidencia de cada feature.
 - **Flujos por actor (11/Nov/2026):** 12 diagramas HTML+PNG en `docs/diagramas/flujos-actores/`.
 
 ## Feature 026 — decisiones clave
@@ -43,7 +44,7 @@ Memoria entre sesiones. Máximo ~50 líneas: resume lo útil y elimina lo que ya
 - **Autoría del ticket = identidad de sesión;** la sede sale de `departamento.sede_id`. **Carreras gated:** `Barrier` no fija el orden del lock.
 
 ## Próximos pasos
-- **Sprint 7 (03/Nov – 11/Dic/2026):** la **027** se cerró el 24/Nov; siguen **015** (informes) y **016** (notificaciones), luego **028–029**. **Hito 2** el **11/Dic/2026**.
+- **Sprint 7 (03/Nov – 11/Dic/2026):** la **027** se cerró el 24/Nov y la **enmienda 013** el 25/Nov; siguen **015** (informes) y **016** (notificaciones), luego **028–029**. **Hito 2** el **11/Dic/2026**.
 - **Diagramas:** 5+5 casos de uso, 8 del modelo 4+1 y 12 flujos por actor en `docs/diagramas/`.
 - **Deuda técnica:** registro único en `docs/spec/deuda-tecnica.md` (auditoría de seguridad del 16/Nov/2026 incluida). Los items `admin017` y el aviso de accesibilidad se mudaron al registro; quedan fuera de `MEMORY.md` por mantenerlo ≤50 líneas.
 - **Tests por tipo:** `backend/tests/funcional/` (`unitarios`, `integracion`, `sistema`, `e2e`, `aceptacion`, `humo`) y `backend/tests/no_funcional/` (`rendimiento`, `seguridad`, + 4 pendientes). Índice en `backend/tests/README.md`; el frontend se clasifica por índice en `frontend/src/testing/funcional/README.md` (specs Angular siguen junto a su sujeto).

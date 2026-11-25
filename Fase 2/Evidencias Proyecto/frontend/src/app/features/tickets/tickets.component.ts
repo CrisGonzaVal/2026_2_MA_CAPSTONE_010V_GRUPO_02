@@ -14,10 +14,12 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
+import { puedeCrearTicket } from '../../core/auth/roles';
 import { AutenticacionService } from '../../core/services/auth.service';
 import {
   CatalogosTicket,
   DetalleTicketCrear,
+  GestorProceso,
   Prioridad,
   ProductoCatalogo,
   Solicitante,
@@ -33,10 +35,20 @@ import {
 } from '../../shared/utils/validacion-http';
 import { TicketService } from './services/ticket.service';
 
-/** Encabezado de una columna del tablero, una por estado del catalogo. */
+/**
+ * Encabezado de una columna del tablero.
+ *
+ * Desde la ampliación 25/Nov/2026 (D-24/AC-41), una columna puede agrupar más
+ * de un estado del catálogo: «Terminados» reúne `Cerrado` y `Anulado`. Por eso
+ * ya no hay un único `estado_id`; `clave` identifica la columna para `track` y
+ * `estado_ids` declara los estados que agrupa.
+ */
 interface ColumnaKanban {
-  estado_id: number;
-  /** Nombre canonico: la logica (roles, estados) nunca lee la etiqueta. */
+  /** Clave estable para `track`: nombre canónico o «Terminados». */
+  clave: string;
+  /** Estados del catálogo que la columna agrupa, en el orden del catálogo. */
+  estado_ids: number[];
+  /** Nombre canónico de la columna; «Terminados» no es un estado canónico. */
   estado: string;
   /** Feature 021 (V-3): rotulo visible, con las palabras separadas. */
   etiqueta: string;
@@ -51,6 +63,9 @@ interface ColumnaKanban {
  * Es **informativa** (Feature 013, D-14): no resuelve controles de mutacion.
  * La tarjeta entera es un enlace al detalle en el template; el gating por
  * estado y rol vive en esa vista, no aqui.
+ *
+ * Desde la ampliación 25/Nov/2026 (§9.8) también presenta el read model de
+ * proceso: etiqueta derivada, frase corta y los dos responsables del historial.
  */
 interface TarjetaKanban {
   ticket: Ticket;
@@ -60,6 +75,21 @@ interface TarjetaKanban {
   solicitante: string;
   fechaCreacion: string;
   fechaCierre: string | null;
+  /** Nombre canónico del estado resuelto desde el catálogo (AC-41). */
+  estadoCanonico: string;
+  /** Etiqueta de proceso del backend; si falta, el nombre canónico (AC-37). */
+  etiquetaProceso: string;
+  /** Frase corta derivada por el servidor; vacía si no vino (AC-37). */
+  explicacionProceso: string;
+  /** Último Bodeguero («Apellido, Nombre») o «Sin gestión registrada». */
+  gestorBodeguero: string;
+  /** `false` cuando no hay fila de ese rol: la tarjeta pinta `—` accesible. */
+  tieneGestorBodeguero: boolean;
+  /** Último Administrador («Apellido, Nombre») o «Sin gestión registrada». */
+  gestorAdministrador: string;
+  tieneGestorAdministrador: boolean;
+  /** Nombre accesible del enlace: estado, etapa y responsables (AC-41). */
+  descripcionAccesible: string;
 }
 
 const CLASES_PRIO: Record<string, string> = {
@@ -77,6 +107,19 @@ const CLASE_PRIORIDAD_NEUTRA = 'text-slate-600 bg-slate-100';
  * posiciones, porque el catalogo es mutable y replicado por tenant.
  */
 const NOMBRE_ESTADO_ANULADO = 'anulado';
+
+/**
+ * Nombre canonico del estado terminal positivo (ampliación 25/Nov/2026,
+ * D-24): se agrupa con `Anulado` en la columna «Terminados», resuelto por
+ * nombre normalizado y nunca por id.
+ */
+const NOMBRE_ESTADO_CERRADO = 'cerrado';
+
+/** Título de la columna terminal agrupada (D-24); no es un estado canónico. */
+const NOMBRE_COLUMNA_TERMINADOS = 'Terminados';
+
+/** Texto de ausencia del read model de responsables (D-23/AC-40). */
+const SIN_GESTION_REGISTRADA = 'Sin gestión registrada';
 
 /**
  * Nombre canonico del estado inicial del alta (enmienda AC-27): todo ticket
@@ -100,9 +143,10 @@ const NOMBRE_PRIORIDAD_MEDIA = 'media';
  *
  * **El tablero es real**: se arma con `GET /tickets/catalogos` (estados ya
  * ordenados por `estado_id`) y `GET /tickets/`, disparados al construir el
- * componente. Una columna por estado del catalogo, en su orden —incluida la de
- * `Anulado`, que surge sola del catálogo—, con las vacias (AC-1); dentro, los
- * tickets de ese `estado_id` ordenados por `fecha_creacion` descendente y, en
+ * componente. Las columnas son las operativas del catálogo (`Pendiente`,
+ * `EnRevision` heredado y `EnCurso`) más una terminal agrupada, «Terminados»,
+ * que reúne `Cerrado` y `Anulado` (D-24/AC-41); las vacías se conservan
+ * (AC-1). Dentro, los tickets ordenados por `fecha_creacion` descendente y, en
  * empate, por `ticket_id` descendente (AC-2). Ningun id de estado se codifica
  * a mano: el nombre sale del catalogo.
  *
@@ -140,10 +184,14 @@ export class TicketsComponent {
   );
 
   /**
-   * Columnas del tablero: una por estado del catalogo, en su orden, incluidas
-   * las que no tienen tickets (AC-1). Dentro de cada una, los tickets de ese
-   * `estado_id` (AC-2) ordenados por `fecha_creacion` descendente y, en empate,
-   * por `ticket_id` descendente. Es `computed` y no `signal`: todo sale de
+   * Columnas del tablero: las operativas del catalogo en su orden (`Pendiente`,
+   * `EnRevision` heredado, `EnCurso`…) y una unica terminal agrupada,
+   * «Terminados», que reune `Cerrado` y `Anulado` (D-24/AC-41). La columna
+   * terminal aparece en la posicion del primero de esos estados y no se
+   * inventa si el catalogo no contiene ninguno. Las columnas vacias se
+   * conservan (AC-1). Dentro de cada una, los tickets de sus `estado_ids`
+   * (AC-2) ordenados por `fecha_creacion` descendente y, en empate, por
+   * `ticket_id` descendente. Es `computed` y no `signal`: todo sale de
    * `estados()`, `tickets()` y las señales de filtro, no hay estado propio que
    * mantener.
    *
@@ -163,30 +211,75 @@ export class TicketsComponent {
         (busqueda === '' || this.normalizar(ticket.asunto).includes(busqueda))
     );
 
-    return this.estados().map((estado) => ({
-      estado_id: estado.estado_id,
-      estado: estado.nombre,
-      etiqueta: etiquetaEstado(estado.nombre),
-      tarjetas: filtrados
-        .filter((ticket) => ticket.estado_id === estado.estado_id)
+    const grupos: ColumnaKanban[] = [];
+    let terminados: ColumnaKanban | null = null;
+
+    for (const estado of this.estados()) {
+      const nombre = this.normalizar(estado.nombre);
+      const esTerminal =
+        nombre === NOMBRE_ESTADO_CERRADO || nombre === NOMBRE_ESTADO_ANULADO;
+
+      if (esTerminal) {
+        if (terminados === null) {
+          terminados = {
+            clave: NOMBRE_COLUMNA_TERMINADOS,
+            estado_ids: [],
+            estado: NOMBRE_COLUMNA_TERMINADOS,
+            etiqueta: NOMBRE_COLUMNA_TERMINADOS,
+            tarjetas: [],
+          };
+          grupos.push(terminados);
+        }
+        terminados.estado_ids.push(estado.estado_id);
+        continue;
+      }
+
+      grupos.push({
+        clave: estado.nombre,
+        estado_ids: [estado.estado_id],
+        estado: estado.nombre,
+        etiqueta: etiquetaEstado(estado.nombre),
+        tarjetas: [],
+      });
+    }
+
+    for (const grupo of grupos) {
+      grupo.tarjetas = filtrados
+        .filter((ticket) => grupo.estado_ids.includes(ticket.estado_id))
         .sort(
           (a, b) =>
             Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion) ||
             b.ticket_id - a.ticket_id
         )
-        .map((ticket) => this.resolverTarjeta(ticket)),
-    }));
+        .map((ticket) => this.resolverTarjeta(ticket));
+    }
+
+    return grupos;
   });
 
   /**
    * Resuelve ids contra los catalogos para que el template no conozca ninguno
    * ni calcule indices. Solo datos de presentación: la tarjeta no ofrece
    * controles de mutación (D-14).
+   *
+   * El read model de proceso (§9.8) llega ya derivado del backend; aquí solo se
+   * resuelve el nombre del estado canónico para el `aria-label` y se aplican
+   * los fallbacks de presentación: etiqueta vacía → nombre canónico; gestor
+   * ausente → «Sin gestión registrada».
    */
   private resolverTarjeta(ticket: Ticket): TarjetaKanban {
     const prioridad = this.prioridades().find((p) => p.prioridad_id === ticket.prioridad_id);
     const solicitante = this.solicitantes().find((s) => s.usuario_id === ticket.usuario_id);
     const nombrePrioridad = prioridad?.nombre ?? `Prioridad #${ticket.prioridad_id}`;
+    const estadoCanonico = this.nombreEstado(ticket.estado_id);
+    const etiquetaProceso = ticket.etiqueta_proceso?.trim()
+      ? ticket.etiqueta_proceso
+      : etiquetaEstado(estadoCanonico);
+    const bodeguero = this.resolverGestor(ticket.gestionado_por_bodeguero ?? null);
+    const administrador = this.resolverGestor(
+      ticket.gestionado_por_administrador ?? null
+    );
+
     return {
       ticket,
       asunto: ticket.asunto,
@@ -197,7 +290,43 @@ export class TicketsComponent {
         : `Usuario #${ticket.usuario_id}`,
       fechaCreacion: ticket.fecha_creacion,
       fechaCierre: ticket.fecha_cierre,
+      estadoCanonico,
+      etiquetaProceso,
+      explicacionProceso: ticket.explicacion_proceso ?? '',
+      gestorBodeguero: bodeguero.nombre,
+      tieneGestorBodeguero: bodeguero.registrado,
+      gestorAdministrador: administrador.nombre,
+      tieneGestorAdministrador: administrador.registrado,
+      descripcionAccesible: `Pedido #${ticket.ticket_id}: ${ticket.asunto}. Estado: ${estadoCanonico}. Etapa del proceso: ${etiquetaProceso}. Último Bodeguero: ${bodeguero.nombre}. Último Administrador: ${administrador.nombre}.`,
     };
+  }
+
+  /** Nombre canónico del estado por su id; degrada a `Estado #id` si no está. */
+  private nombreEstado(estadoId: number): string {
+    return (
+      this.estados().find((estado) => estado.estado_id === estadoId)?.nombre ??
+      `Estado #${estadoId}`
+    );
+  }
+
+  /**
+   * Resuelve un gestor del read model a «Apellido, Nombre», con el texto de
+   * ausencia cuando no hay fila (D-23/AC-40). El flag `registrado` permite que
+   * la tarjeta pinte `—` visible sin perder el texto accesible.
+   */
+  private resolverGestor(gestor: GestorProceso | null): {
+    nombre: string;
+    registrado: boolean;
+  } {
+    if (gestor === null) {
+      return { nombre: SIN_GESTION_REGISTRADA, registrado: false };
+    }
+    const nombre = [gestor.apellido, gestor.nombre]
+      .filter((parte) => parte !== '')
+      .join(', ');
+    return nombre === ''
+      ? { nombre: SIN_GESTION_REGISTRADA, registrado: false }
+      : { nombre, registrado: true };
   }
 
   /**
@@ -252,6 +381,16 @@ export class TicketsComponent {
    * separado.
    */
   readonly identidad = this.autenticacion.identidad;
+
+  /**
+   * Cambio de demo del 25/Nov/2026: el alta de pedidos se oculta a
+   * Administrador y Bodeguero; solo el Solicitante ve el botón. Es
+   * presentación: la API sigue admitiendo a los tres roles hasta la
+   * implementación de negocio del alta por sede.
+   */
+  readonly puedeCrearPedido = computed(() =>
+    puedeCrearTicket(this.identidad()?.rol ?? null),
+  );
 
   readonly modalAbierto = signal(false);
   readonly catalogos = signal<CatalogosTicket | null>(null);

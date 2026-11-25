@@ -634,11 +634,13 @@ def test_solicitante_ignora_usuario_ajeno_y_conserva_autoatribucion(motor, parti
 
 def test_patch_ticket_ajeno_404_sin_cambiar(motor, particion):
     # Feature 017 (D-9/AC-15): el Superadmin ya no lista tickets; el estado se
-    # observa por ORM antes y despues.
+    # observa por ORM antes y despues. Ampliacion 25/Nov/2026 (AC-49): el
+    # `PATCH /estado` es solo del Administrador; el 404 de ocultamiento se mide
+    # con un actor autorizado para no confundirlo con el 403 de matriz.
     with sessionmaker(bind=motor)() as db:
         antes = db.get(Ticket, particion["ticket_ajeno_estado_id"]).estado_id
 
-    with _cliente(motor, "Bodeguero", particion["departamento_id"]) as cliente:
+    with _cliente(motor, "Administrador", particion["departamento_id"]) as cliente:
         respuesta = cliente.patch(
             f"{RUTA_TICKETS}{particion['ticket_ajeno_estado_id']}/estado",
             json={"estado_id": particion["estado_en_curso_id"]},
@@ -710,18 +712,25 @@ def test_despacho_falta_stock_409_sin_efectos(motor, particion):
 def test_despacho_valido_actualiza_stock_entrega_estado_y_auditoria(motor, particion):
     # Actor persistido: el despacho registra su fila de historial con FK a
     # `usuario` (013, AC-9); la sonda sintetica 9999 no existe en la BD.
+    # Ampliacion 25/Nov/2026 (AC-49): el pedido se abre por la API con el
+    # Administrador (unico rol del `PATCH /estado`); el despacho lo ejecuta el
+    # Bodeguero, que conserva su operacion.
+    with _cliente(
+        motor, "Administrador", particion["departamento_id"], particion["usuario_id"]
+    ) as administrador:
+        ticket_id = _abrir_ticket_en_curso(
+            administrador,
+            particion,
+            particion["solicitante_id"],
+            particion["producto_propio_id"],
+            cantidad=3,
+        )
+
     with _cliente(
         motor, "Bodeguero", particion["departamento_id"], particion["usuario_id"]
     ) as cliente:
         stock_inicial = _stock_sede(
             motor, particion["sede_propia_id"], particion["producto_propio_id"]
-        )
-        ticket_id = _abrir_ticket_en_curso(
-            cliente,
-            particion,
-            particion["solicitante_id"],
-            particion["producto_propio_id"],
-            cantidad=3,
         )
         respuesta = cliente.post(
             f"{RUTA_TICKETS}{ticket_id}/despacho",
@@ -756,9 +765,11 @@ def test_despacho_revierte_todo_si_el_commit_falla(motor, particion):
     from sqlalchemy.orm import Session
 
     # Actor persistido para la fila de historial del despacho (013, AC-9).
+    # Ampliacion 25/Nov/2026 (AC-49): el pedido se abre por la API con el
+    # Administrador (unico rol del `PATCH /estado`).
     with _cliente(
         motor,
-        "Bodeguero",
+        "Administrador",
         particion["departamento_id"],
         particion["usuario_id"],
     ) as cliente_previo:

@@ -267,6 +267,20 @@ export interface DetalleTicket {
   producto: Producto | null;
 }
 
+/**
+ * Actor que gestionó un pedido, resuelto del historial (Feature 013,
+ * ampliación 25/Nov/2026, D-23).
+ *
+ * Es un **read model**: lo arma el servidor con el último usuario de rol
+ * vigente `Bodeguero` o `Administrador` que dejó una fila en
+ * `historial_transicion_ticket`. No se persiste ni es una entidad propia.
+ */
+export interface GestorProceso {
+  usuario_id: number;
+  nombre: string;
+  apellido: string;
+}
+
 export interface Ticket {
   ticket_id: number;
   usuario_id: number;
@@ -277,6 +291,22 @@ export interface Ticket {
   fecha_creacion: string;
   fecha_cierre: string | null;
   detalles: DetalleTicket[];
+  /**
+   * Feature 013 (ampliación 25/Nov/2026, §9.8): campos de lectura derivados
+   * que el servidor calcula sin DDL. `etiqueta_proceso` describe la etapa
+   * operativa y **no sustituye** al estado canónico `estado_id`; la frase
+   * `explicacion_proceso` dice qué falta o qué sigue.
+   *
+   * Son opcionales para no romper fixtures anteriores a la ampliación; el
+   * backend siempre los envía en `TicketRespuesta`.
+   */
+  etiqueta_proceso?: string;
+  explicacion_proceso?: string;
+  estado_orden_cobertura?: string | null;
+  stock_disponible?: boolean;
+  entrega_confirmada?: boolean;
+  gestionado_por_bodeguero?: GestorProceso | null;
+  gestionado_por_administrador?: GestorProceso | null;
 }
 
 export interface DetalleTicketCrear {
@@ -455,9 +485,25 @@ export interface TicketDetalle {
    * simulación greedy que usa la recepción de compras. `true` si el saldo de la
    * sede cubre todos los ítems del ticket; no reserva stock ni cambia el estado.
    * Opcional porque los fixtures anteriores a la 020 no lo declaran; el backend
-   * siempre lo envía.
+   * siempre lo envía. Desde la ampliación de la 013 (D-21) vive en la base de
+   * `TicketRespuesta` y el detalle la hereda.
    */
   stock_disponible?: boolean | null;
+  /**
+   * Feature 013 (ampliación 25/Nov/2026, §9.8): read model derivado del
+   * servidor, sin DDL. La etiqueta de proceso describe la etapa operativa y
+   * **no sustituye** al estado canónico; se muestran juntos.
+   */
+  etiqueta_proceso?: string;
+  explicacion_proceso?: string;
+  estado_orden_cobertura?: string | null;
+  entrega_confirmada?: boolean;
+  gestionado_por_bodeguero?: GestorProceso | null;
+  gestionado_por_administrador?: GestorProceso | null;
+  /** Fecha del servidor de la confirmación de entrega (D-25). */
+  entrega_confirmada_en?: string | null;
+  entrega_confirmada_por_nombre?: string | null;
+  entrega_confirmada_por_apellido?: string | null;
   /** Feature 021 (AC-5): OC que cubren el pedido, incluidas las canceladas. */
   asignaciones?: AsignacionTicket[];
   /** Feature 021 (AC-5): avance por producto solicitado/comprado/recibido/… */

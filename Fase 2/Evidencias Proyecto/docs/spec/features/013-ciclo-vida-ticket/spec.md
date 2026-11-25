@@ -10,7 +10,7 @@
 > conservan solo las pruebas de instalación limpia y del token de versión; los
 > casos de migración se retiraron junto con los scripts.
 
-**Estado:** aprobada y cerrada (19/Oct/2026) — con las enmiendas incorporadas: D-4/AC-26 (terminalidad por nombre en cualquier catálogo), AC-18 (403 de matriz vs 404 de ocultamiento) y AC-27 (05/Nov/2026: alta fija en `Pendiente` y prioridad `Media`)  
+**Estado:** aprobada y cerrada (19/Oct/2026; enmienda del 25/Nov/2026 verificada y cerrada) — con las enmiendas incorporadas: D-4/AC-26 (terminalidad por nombre en cualquier catálogo), AC-18 (403 de matriz vs 404 de ocultamiento), AC-27 (05/Nov/2026: alta fija en `Pendiente` y prioridad `Media`) y AC-28…AC-49 (25/Nov/2026: aprobación del Administrador, etiqueta de proceso, responsables, «Terminados» y confirmación de entrega).  
 **Release:** 2.0 — Sprint 6
 **Tipo:** Evolución del ciclo de vida del ticket y auditoría
 
@@ -386,6 +386,11 @@ comportamiento ordinal de la 004). Sigue siendo el mecanismo de transición del 
 los cuatro estados operativos, pero ahora se invoca **desde la vista de detalle** (D-14): el
 tablero de solo lectura no lo invoca y su contrato no cambia.
 
+*Enmienda post-cierre (25/Nov/2026): esta operación se conserva como contrato de **legado** y
+**no evalúa stock**; la UI ya no la invoca y la aprobación del Administrador
+(`POST /tickets/{id}/aprobacion`) es la que lleva el pedido a `EnCurso`. Se concede **solo al
+Administrador**; el resto del contrato de transición no cambia. Ver §9.*
+
 ## 7. Criterios de aceptación
 
 ### Reglas de flujo y estados
@@ -636,3 +641,783 @@ capacidad de priorizar.
   en el alta queda derogado; `Cerrado` solo se alcanza por el despacho transaccional de la 005.
   El resto del AC-17 (sellado de la fecha al cerrar) permanece intacto. La spec de la 004 se
   conserva sin editar: es registro histórico de su release.
+
+## 9. Enmienda post-cierre (25/Nov/2026): aprobación del Administrador, etiqueta de proceso y confirmación de entrega
+
+> **Qué enmienda.** No reescribe los AC-1…AC-27 ni retira la evidencia de la feature cerrada.
+> Añade reglas, contrato, interfaz y AC nuevos (AC-28…AC-49). Sustituye «Avanzar» y «Retroceder»
+> por una **aprobación semántica** del Administrador que siempre deja el pedido en `EnCurso`
+> (el stock solo decide la etiqueta), conserva `EnRevision` como estado heredado y deja el
+> `PATCH /estado` como contrato de legado que la UI ya no usa y que se concede **solo al
+> Administrador**. Agrega una **etiqueta de proceso**
+> derivada (§9.8), dos **responsables** de lectura y **dos** operaciones nuevas —aprobación
+> (§9.4) y confirmación de entrega (§9.9)—, que llevan la matriz de **73 a 75** operaciones
+> (OpenAPI 75 → 77). No toca Compras, la cadena de la OC, el despacho de la 005 ni el modelo de
+> datos.
+
+### 9.1 Problema y objetivo
+
+**El caso reportado (verificado el 25/Nov/2026).** El pedido #10 «falta de papel confort» de
+la Sede Maipú está en `EnCurso` y pide 3 unidades de «Papel Premium A4»; su `stock_sede` tiene
+64 unidades y el `stock_minimo` del producto es 10. El pedido **no aparece en Compras**, y no
+es un fallo: `GET /compras/necesidades` omite las filas `(sede, producto)` en las que
+`stock_actual > stock_minimo` y `demanda_tickets <= stock_actual`; aquí 64 > 10 y 3 ≤ 64. La
+regla de las Features 020/021 es correcta: comprar lo que el saldo ya cubre duplicaría la
+compra.
+
+**Lo que falta es el gobierno del flujo.** (a) La vista de detalle muestra el aviso «Stock
+disponible — Listo para despacho» cuando `stock_disponible` es `true`, pero **no ofrece
+despachar**, aunque `POST /api/v1/tickets/{ticket_id}/despacho` existe desde la Feature 005;
+esa feature excluyó expresamente el frontend («El frontend incluido se limita a ocultar la
+transición manual de cierre»), y sin acción la confirmación de stock es un callejón sin
+salida. (b) La barra de acciones ofrece «Avanzar» y «Retroceder» genéricos, que no expresan la
+decisión del negocio: el Administrador no «avanza un paso», **aprueba** el pedido, y el pedido
+aprobado debe quedar en `EnCurso` con independencia del stock; el stock solo decide la etiqueta
+(«En confirmación de stock local» o «Por comprar»). (c) `EnRevision` es un estado **heredado**: el flujo
+nuevo no lo produce y el tablero lo conserva para los pedidos existentes.
+
+**La expectativa de que el pedido «se avance solo» con la compra no se cumple y no debe
+cumplirse.** Emitir, facturar o recepcionar una OC no cambian el estado del pedido (020/021):
+la recepción solo incrementa stock y, como mucho, escribe una fila `EnCurso → EnCurso` de
+desbloqueo; el cierre es el despacho, que rebaja stock y firma la `SALIDA`
+(`constitucion.md` §2/§3). El avance del flujo es la **aprobación humana** del Administrador; no
+hay auto-avance por stock ni por compra.
+
+**Objetivo.**
+
+1. Sustituir «Avanzar» y «Retroceder» por **«Aprobar»** (solo Administrador), que siempre lleva
+   el pedido de `Pendiente` o `EnRevision` a `EnCurso`; el stock no decide el destino, solo la
+   etiqueta. Si no hay stock, el pedido queda «Por comprar» y aparece en Compras para generar la
+   OC.
+2. Mantener `EnRevision` como estado **heredado**: el flujo nuevo no lo produce, el tablero
+   conserva su columna y los pedidos existentes se aprueban con la misma acción.
+3. Ofrecer en el detalle la acción **«Despachar»** («Confirmar stock local y despachar») para el
+   pedido `EnCurso` cubierto, reutilizando el despacho de la 005 con el `usuario_id` de la sesión.
+4. Exponer en el tablero y en el detalle una **etiqueta de proceso** derivada —sin estados
+   canónicos nuevos— que diga en qué punto está el pedido, junto con el **último Bodeguero** y
+   el **último Administrador** que lo gestionaron.
+5. Permitir que el **Solicitante dueño** confirme la entrega después del despacho, sin cambiar
+   el estado canónico `Cerrado` ni reabrir el pedido.
+
+Sin estados canónicos, tablas, columnas, capacidades ni versión de esquema nuevos. Se agregan
+**dos** operaciones (aprobación y confirmación de entrega) y la matriz pasa de **73 a 75**;
+Compras y la cadena de la OC no cambian.
+
+### 9.2 Decisiones
+
+#### D-15 — «Aprobar» sustituye a «Avanzar» y «Retroceder» y siempre lleva a `EnCurso`
+
+La aprobación es una operación semántica propia (`POST /tickets/{id}/aprobacion`), no un paso
+genérico del flujo. Solo el Administrador Institucional la ejecuta; el origen es `Pendiente` o
+`EnRevision` (heredado) y el destino es **siempre** el `EnCurso` canónico, con stock o sin él.
+El stock no decide el destino: decide la etiqueta de proceso después de la aprobación (§9.8). La
+aprobación es una **excepción semántica documentada** a la regla de un paso de la 004: el
+`PATCH /estado` sigue siendo de un paso, pero la aprobación es una operación propia que va
+directo a `EnCurso`.
+
+**Por qué:** el Administrador no «avanza un paso»: decide que el pedido se atiende. Hacer
+depender el destino del stock obligaba a dos caminos y a un estado intermedio que el negocio no
+quiere; con la aprobación siempre a `EnCurso`, el pedido entra en la cola operativa y Compras
+decide si hay que comprar. La excepción se documenta en vez de deformar la regla del `PATCH`,
+que se conserva para legado y compatibilidad.
+
+#### D-16 — Una sola fila de historial por aprobación, con el Administrador como actor
+
+La aprobación escribe **exactamente una** fila: origen = el estado real del pedido (`Pendiente` o
+`EnRevision`), destino = `EnCurso`, `usuario_id` = el Administrador de la sesión, `motivo`
+literal `Aprobación del pedido` y `orden_compra_id` nulo. No se escriben dos filas ni se inventa
+un actor «sistema»; si la fila no puede escribirse, la transición se revierte y el pedido
+conserva su estado (AC-11 vigente).
+
+**Por qué:** una fila por mutación de estado (AC-9); el estado intermedio no existe; el actor es
+quien aprobó y el motivo canónico permite distinguir la aprobación de un `PATCH` de legado.
+
+#### D-17 — La aprobación no evalúa stock; la etiqueta sí, con la simulación de la 020
+
+La aprobación no reserva, no evalúa la cobertura y no incluye el pedido en ninguna simulación de
+candidato. Una vez en `EnCurso`, la etiqueta de proceso (§9.8) usa `stock_disponible` —la
+simulación todo-o-nada de la 020, solo `EnCurso`— y el estado de las OC que cubren el pedido.
+La ausencia de stock no impide aprobar: el pedido queda «Por comprar» y aparece en Compras como
+necesidad; cuando se reciba la compra, `stock_disponible` pasará a `true` y la etiqueta a «En
+confirmación de stock local» sin cambiar el estado.
+
+**Por qué:** el flujo casi automático que pidió el usuario no necesita una simulación previa:
+aprueba y deja que el saldo y la compra decidan la etiqueta. Mantener el candidato fuera de la
+simulación conserva el contrato de la 020 y elimina la regla de auto-avance que esta enmienda
+sustituye.
+
+#### D-18 — Sin reserva: el despacho sigue siendo la validación real
+
+La aprobación no bloquea ni aparta stock. Dos pedidos pueden quedar en `EnCurso` contra el mismo
+saldo y el segundo despacho responderá **409** («Stock insuficiente…») sin efectos, que es la
+garantía vigente de la 005 (validación total antes de escribir y bloqueo de las filas en el
+despacho). La aprobación serializa por la fila del pedido para que dos aprobaciones concurrentes
+produzcan una sola transición y la segunda responda 409 (patrón de la 005; SQLite no acredita el
+bloqueo).
+
+**Por qué:** reservar exigiría un estado o una columna persistidos —prohibidos por esta
+enmienda— y cambiaría la semántica de stock de las 020/021. El despacho ACID ya es la frontera
+que impide una doble rebaja; la aprobación solo decide que el pedido entra en la cola.
+
+#### D-19 — El despacho se ofrece en el detalle y reutiliza el endpoint de la 005
+
+La acción «Despachar» («Confirmar stock local y despachar») vive en la barra de acciones del detalle
+(D-14), se ofrece solo a `Administrador` y `Bodeguero`, solo con el pedido en `EnCurso` y solo con
+`stock_disponible = true`; pide confirmación previa sin motivo y envía
+`POST /api/v1/tickets/{ticket_id}/despacho` con el `usuario_id` de la sesión (`GET /auth/me`).
+No hay una segunda ruta de cierre ni un payload nuevo.
+
+**Por qué:** la 005 dejó el frontend fuera y sin esta acción el badge de stock no tiene
+continuación posible en la aplicación; reutilizar el endpoint conserva la transacción ACID, los
+movimientos `SALIDA`, las cantidades entregadas y el historial, y evita que el cierre tenga dos
+implementaciones que puedan divergir. La condición `stock_disponible` es la misma que muestra el
+aviso; el servidor sigue validando de nuevo y responde 409 si el saldo cambió entre la lectura y
+la confirmación.
+
+#### D-20 — Compras sigue midiendo faltantes reales; la aprobación a `EnCurso` es lo que hace aparecer el pedido
+
+`GET /compras/necesidades` conserva su regla de omisión (fila con `stock_actual > stock_minimo`
+y `demanda_tickets <= stock_actual` no se muestra), su demanda de solo pedidos `EnCurso` y su
+sugerido neto. Un pedido en `Pendiente` o `EnRevision` **no** cuenta como demanda; al aprobarlo y
+quedar en `EnCurso`, entra en la demanda y aparece en Compras cuando su `(sede, producto)` tiene
+necesidad neta. Un pedido cubierto por stock sigue sin aparecer. Emitir, facturar, recepcionar o
+cancelar una OC no cambian el estado del pedido: la recepción solo puede añadir la fila
+`EnCurso → EnCurso` de desbloqueo con su `orden_compra_id` (020/021) y el cierre sigue siendo el
+despacho.
+
+**Por qué:** comprar lo que el saldo cubre duplica la compra, y mover el estado con hitos de
+compra cerraría pedidos sin la salida de inventario que exige `constitucion.md` §3. El estado
+del pedido describe aprobación, preparación y entrega; la compra es logística de reposición y se
+sigue en la OC, no en el estado del pedido.
+
+### 9.3 Reglas del flujo
+
+**Flujo principal.** `Pendiente` —**Aprobar** (Administrador)—→ `EnCurso` —**Despachar**
+(Bodeguero/Administrador, con `stock_disponible`)—→ `Cerrado` —**Confirmar entrega** (Solicitante
+dueño)—→ `Cerrado` con etiqueta «Entregado». En `Pendiente` y `EnRevision` (heredado) también se
+puede **Rechazar** (Bodeguero/Administrador) y **Anular** (Solicitante dueño/Administrador); en
+`Pendiente` se puede **Editar** (dueño/Administrador). `Anulado` no admite ninguna acción.
+`EnRevision` no se produce en el flujo nuevo: solo existe para pedidos heredados.
+
+| Acción | Origen | Destino | Quién | Historial |
+|---|---|---|---|---|
+| **Aprobar** | `Pendiente` / `EnRevision` | **`EnCurso`** siempre | Administrador | 1: origen → `EnCurso`, motivo `Aprobación del pedido` |
+| **Rechazar** | `Pendiente` / `EnRevision` | `Anulado` | Bodeguero / Administrador | 1: origen → `Anulado`, motivo obligatorio |
+| **Anular** | `Pendiente` / `EnRevision` | `Anulado` | Solicitante dueño / Administrador | 1: origen → `Anulado`, motivo obligatorio |
+| **Editar** | `Pendiente` | `Pendiente` | Solicitante dueño / Administrador | — (no es transición) |
+| **Despachar** | `EnCurso` | `Cerrado` | Bodeguero / Administrador | 1: `EnCurso` → `Cerrado` |
+| **Confirmar entrega** | `Cerrado` | `Cerrado` (evento) | Solicitante dueño | 1: `Cerrado` → `Cerrado`, motivo canónico |
+| **PATCH /estado** (legado) | catálogo | un paso | **Administrador** | 1: origen → destino |
+
+**Aprobación.** `POST /api/v1/tickets/{ticket_id}/aprobacion` (Administrador, capacidad
+`kanban`) acepta un pedido en `Pendiente` o `EnRevision` y lo deja **siempre** en `EnCurso`:
+
+- No evalúa stock, no reserva y no incluye el pedido en ninguna simulación. El stock solo decide
+  la etiqueta después de la aprobación (§9.8).
+- Escribe una **sola** fila de historial: origen real → `EnCurso`, actor = el Administrador de la
+  sesión, `motivo` literal `Aprobación del pedido` y `orden_compra_id` nulo. La fila y el cambio
+  de estado son una sola transacción; si la fila falla, el pedido conserva su estado.
+- Si el pedido ya está `EnCurso`, `Cerrado` o `Anulado`, o su estado no es `Pendiente` ni
+  `EnRevision` (incluido un estado fuera del catálogo), responde **409** sin escribir.
+- Si el catálogo no contiene `EnCurso`, responde **409** (fail-closed).
+- Un pedido de otra institución o inexistente responde **404** idéntico; un rol sin la operación
+  (Bodeguero, Solicitante o Superadmin) **403**; sin sesión, **401**. La precedencia es
+  **401 → 403 → 404 → 409**.
+- No hay payload obligatorio; no se espera **422** por cuerpo.
+- Serializa por la fila del pedido (patrón de la 005): dos aprobaciones concurrentes producen una
+  sola transición y la segunda responde 409. SQLite no acredita el bloqueo.
+- Es una **excepción semántica documentada** a la regla de un paso de la 004: el `PATCH /estado`
+  sigue siendo de un paso; la aprobación es una operación propia que va directo a `EnCurso`.
+
+**Por qué `kanban`:** es la capacidad que ya gatea las transiciones del ciclo de vida (anulación
+y rechazo) y el tablero; la aprobación es una decisión de flujo, no de contenido ni de lectura.
+`tickets` seguiría funcionando, pero mezclaría la decisión de flujo con la edición y la lectura
+del pedido, que es lo que la matriz separa. El Administrador es el rol que autoriza la atención
+del pedido; el Bodeguero prepara y despacha, y el Solicitante solicita y confirma la entrega.
+
+**Aprobación y Compras.** Al quedar en `EnCurso`, el pedido entra en la demanda de
+`GET /compras/necesidades` y aparece como necesidad cuando su `(sede, producto)` tiene necesidad
+neta; antes (`Pendiente` o `EnRevision`) no cuenta. La emisión, facturación, recepción y
+cancelación de la OC **no** cambian el estado del pedido; la recepción solo puede añadir su fila
+`EnCurso → EnCurso` de desbloqueo. La Feature 021 no cambia de algoritmo.
+
+**`PATCH /estado` (legado).** Se conserva para compatibilidad y **solo lo concede el
+Administrador**: un paso entre estados contiguos, `EnCurso → Cerrado` reservado al despacho,
+`Cerrado` y `Anulado` terminales por nombre y `Anulado` fuera del flujo. Ya **no** evalúa stock ni
+salta a `EnCurso`: una petición a `EnRevision` deja el pedido en `EnRevision` y su fila con
+`motivo` nulo. La UI no lo usa (ver §9.5).
+
+**Despacho.** `POST /despacho` conserva íntegro su contrato y su semántica: solo desde
+`EnCurso`, cierra en `Cerrado`, rebaja `stock_sede`, escribe una `SALIDA` por detalle, fija
+`cantidad_entregada`, sella `fecha_cierre` y registra su fila de historial. La enmienda no lo
+modifica; solo lo invoca desde la interfaz.
+
+**Confirmación de entrega.** Después del despacho, el Solicitante dueño puede confirmar la
+entrega (§9.9); no cambia el estado canónico, no reabre el pedido y no toca stock.
+
+**Concurrencia y etiqueta.** La aprobación no reserva; el despacho valida. Al entrar en
+`EnCurso`, el pedido participa en la simulación de la 020 y puede bajar el `stock_disponible` de
+pedidos de menor prioridad: es el mismo efecto que produce cualquier pedido `EnCurso`, no un
+cambio de la regla. La etiqueta se recalcula al leer y no cambia el estado.
+
+### 9.4 Contrato
+
+#### `POST /api/v1/tickets/{ticket_id}/aprobacion` — nueva
+
+- **Payload:** ninguno. Un cuerpo ausente o vacío es válido; no hay 422 por cuerpo.
+- **Roles:** `Administrador`; capacidad `kanban` (justificación en §9.3). Con la capacidad
+  apagada, 403.
+- **Éxito:** **200** con `TicketRespuesta` con `estado_id` = `EnCurso` y la etiqueta derivada
+  (§9.8); el historial registra la fila de D-16. La UI reconsulta el detalle.
+- **Errores, en orden:** **401** sin sesión; **403** rol fuera de la matriz o capacidad `kanban`
+  apagada; **404** pedido inexistente o de otra institución (idénticos); **409** pedido ya
+  `EnCurso`, `Cerrado` o `Anulado`, estado no elegible o catálogo sin `EnCurso`.
+- **Sin efectos colaterales:** no toca stock, `fecha_cierre`, OC ni Compras; solo el estado y su
+  fila de historial. No reserva stock.
+- **Concurrencia:** serializa por la fila del pedido; una petición responde 200 y la otra 409,
+  con una sola fila de historial. SQLite no acredita el bloqueo.
+
+#### `PATCH /api/v1/tickets/{ticket_id}/estado` — legado, mismo contrato de transición y rol restringido
+
+- **Petición:** sin cambios. `{"estado_id": <id del destino>}`; **rol `Administrador`
+  únicamente**. El `Bodeguero` recibe **403** por matriz; 401/403/404/422 con su orden vigente.
+- **Autorización:** la operación deja de concederse al `Bodeguero`. El contrato de transición de
+  la 004/005 no cambia: un paso entre estados contiguos, `EnCurso → Cerrado` reservado al despacho
+  y `Cerrado`/`Anulado` terminales por nombre. Lo único que cambia es el rol.
+- **Éxito:** **200** con `TicketRespuesta`. El destino es el **solicitado**: un paso entre
+  estados contiguos; `EnCurso → Cerrado` responde **409** con el detalle que dirige al despacho;
+  `Cerrado` y `Anulado` son terminales por nombre y no admiten salida; `Anulado` queda fuera del
+  flujo. **Ya no evalúa stock ni salta a `EnCurso`**: una petición a `EnRevision` deja el pedido
+  en `EnRevision` con su fila y `motivo` nulo.
+- **Uso:** se conserva para compatibilidad y clientes de legado. **La UI no lo invoca** (ver
+  §9.5).
+- **Historial:** una fila por transición aceptada, con el actor de la sesión y `motivo` nulo; el
+  `GET /tickets/{id}/historial` no cambia de forma.
+- **Superficie:** no agrega campos a `TicketDespacho` ni cambia su payload. La enmienda sí agrega
+  **campos de lectura derivados** a `TicketRespuesta` y `TicketDetalleRespuesta` (§9.8) y **dos**
+  operaciones nuevas —aprobación (arriba) y confirmación de entrega (§9.9)—: la matriz pasa de
+  **73 a 75** operaciones v1 (`/openapi.json`, de 75 a 77 entradas con `GET /` y `/health`). **El
+  `PATCH` conserva su entrada pero pasa de `Administrador`/`Bodeguero` a solo `Administrador`**;
+  las demás operaciones conservan roles y códigos. La capacidad `kanban` gatea la aprobación y la
+  capacidad `tickets` la confirmación. Las descripciones OpenAPI del `PATCH` dejan de anunciar un
+  destino efectivo distinto del solicitado.
+
+#### `POST /api/v1/tickets/{ticket_id}/despacho` — sin cambios
+
+Conserva su contrato de la 005 (`{"usuario_id": <id existente>}`, 200 `Cerrado`, 404, 409, 422,
+un solo cierre por pedido). El `usuario_id` que envía la vista es el de la sesión.
+
+#### `POST /api/v1/tickets/{ticket_id}/confirmacion-entrega` — nueva
+
+Se detalla en §9.9: solo `Solicitante` dueño, capacidad `tickets`, fila `Cerrado → Cerrado` con
+motivo canónico, 409 si ya está confirmada y sin cambios de estado ni stock.
+
+### 9.5 Interfaz (detalle del pedido)
+
+**Barra de acciones sin «Avanzar» ni «Retroceder».** La barra se arma por estado y rol; no
+ofrece transiciones genéricas ni invoca `PATCH /estado`:
+
+| Estado | Acciones ofrecidas |
+|---|---|
+| `Pendiente` | **Aprobar** (Administrador), **Rechazar** (Bodeguero/Administrador), **Anular** (Solicitante dueño/Administrador), **Editar** (dueño/Administrador) |
+| `EnRevision` (heredado) | **Aprobar** (Administrador), **Rechazar** (Bodeguero/Administrador), **Anular** (Solicitante dueño/Administrador) |
+| `EnCurso` | **Despachar** / «Confirmar stock local y despachar» (Bodeguero/Administrador, `stock_disponible = true`) |
+| `Cerrado` | **Confirmar entrega** (Solicitante dueño, si no está confirmada) |
+| `Anulado` | Ninguna |
+
+**Por qué no hay «Avanzar» ni «Retroceder»:** un botón genérico no dice qué decisión se toma y
+obliga a conocer la posición del catálogo; las acciones semánticas se leen solas. El
+`PATCH /estado` se conserva como contrato de legado, pero ninguna pantalla lo invoca.
+
+**El `PATCH /estado` no aparece en la barra:** es solo del Administrador. El Bodeguero conserva
+**Despachar** (`POST /despacho`), **Rechazar** (`POST /rechazo`) y la recepción de compras (su
+endpoint de compras), que son operaciones propias y no el `PATCH`.
+
+- **Aprobar.** Solo el Administrador; no pide motivo; se ejecuta con un clic y, al 200, la vista
+  muestra el pedido en `EnCurso`, su etiqueta («En confirmación de stock local» o «Por comprar») y
+  reconsulta detalle e historial. Un 409 (ya `EnCurso`/terminal/catálogo) se muestra en
+  `role="alert"` sin cambiar el estado por cuenta propia. El Bodeguero y el Solicitante no ven el
+  botón.
+- **Aviso de stock.** Se conserva el badge «Stock disponible — Listo para despacho»
+  (`role="status"`) cuando `stock_disponible` es `true`. Un pedido en `EnRevision` no lo muestra
+  porque no participa en la simulación de la 020; la vista no agrega un aviso de «sin stock» que
+  el servidor no pueda sostener.
+- **Despachar.** «Confirmar stock local y despachar» aparece solo si el pedido está en `EnCurso`,
+  `stock_disponible` es estrictamente `true` y el rol es `Administrador` o `Bodeguero`. Pide
+  confirmación previa en un diálogo nativo `<dialog>` (mismo patrón que anulación y rechazo), sin
+  motivo, con «Confirmar»/«Cancelar», `Esc` y foco atrapado. Mientras la petición está en vuelo,
+  el indicador de operación deshabilita todos los controles (sin doble envío).
+- **Éxito del despacho.** `role="status"` y reconsulta de detalle e historial: el pedido se
+  muestra `Cerrado`, con `fecha_cierre`, las cantidades entregadas y la fila del despacho; el
+  badge desaparece y la barra pasa a la nota de estado terminal.
+- **409 del despacho.** `role="alert"` con el mensaje del servidor (p. ej. «Stock insuficiente
+  para el producto …»), sin cambiar el estado por cuenta propia y reconsultando el detalle, que
+  retira la acción si ya no aplica. 404 y 403 conservan su tratamiento vigente.
+- **Editar, Rechazar y Anular.** Conservan el comportamiento de la 013: edición solo en
+  `Pendiente`; rechazo y anulación solo en `Pendiente`/`EnRevision`, con motivo obligatorio y
+  confirmación previa; `Anulado` no ofrece nada.
+- **Accesibilidad.** Cada acción tiene etiqueta y `aria-label` propios; los mensajes se anuncian
+  en regiones vivas (`status`/`alert`); las confirmaciones no dependen solo del color y el foco
+  vuelve al botón que las abrió al cancelar.
+
+### 9.6 Fuera de alcance (no-goals)
+
+- **Compras no cambia:** ni la detección de necesidades, ni el sugerido neto, ni el preview de
+  cobertura, ni la emisión, facturación, recepción o cancelación de la OC, ni el plan de
+  `orden_compra_ticket`. Un pedido cubierto por stock sigue sin aparecer; la aprobación a
+  `EnCurso` es lo que hace aparecer al que tiene necesidad neta.
+- **Ningún estado canónico nuevo ni cambio de la cadena:** nada de «En OC», «Comprado»,
+  «Recibido» o «Entregado» como estado canónico; las etiquetas de proceso son de lectura (§9.8);
+  `EnRevision` es heredado y no se produce en el flujo nuevo; `Cerrado` sigue siendo el despacho
+  y `Anulado` el terminal negativo; los hitos de compra no mueven el estado.
+- **El despacho de la 005 no se reimplementa:** sin cambios de contrato, códigos, transacción,
+  bloqueo, observación ni movimientos.
+- **Sin DDL ni cambios de modelo:** sin tablas, columnas, índices, semilla, migración, token de
+  versión (`026.0`), entidades de dominio ni estructuras auxiliares. La confirmación de entrega
+  reutiliza una fila de `historial_transicion_ticket` (§9.9); si el plan concluyera que no basta,
+  se detiene como cambio de modelo que exige aprobación en `docs/spec/stack.md`.
+- **Autorización acotada:** las **dos** operaciones nuevas son la aprobación
+  (`POST /tickets/{id}/aprobacion`, `Administrador`, capacidad `kanban`) y la confirmación de
+  entrega (`POST /tickets/{id}/confirmacion-entrega`, `Solicitante`, capacidad `tickets`); la
+  matriz pasa de **73 a 75** y no se agregan capacidades, roles ni guards nuevos. Además, el
+  `PATCH /estado` deja de concederse al `Bodeguero` y queda solo para el `Administrador` (cambia
+  el rol de una entrada existente, no su número).
+- **El `PATCH /estado` no se retira:** se conserva para compatibilidad y legado con su regla de
+  un paso, pero **solo lo concede el `Administrador`**, la UI no lo usa y no ofrece «Avanzar» ni
+  «Retroceder».
+- **Sin reserva de stock**, sin bloqueo nuevo en el `PATCH`, sin notificaciones, sin correo, sin
+  tablero editable y sin despacho desde el Kanban.
+- **Sin simulación de candidato ni auto-avance por stock:** la aprobación no evalúa stock y la
+  etiqueta usa `stock_disponible` de la 020 (solo `EnCurso`); `calcular_cobertura_tickets` no
+  cambia.
+
+### 9.7 Criterios de aceptación del flujo
+
+- [x] **AC-28 (PATCH de legado, sin auto-avance)** DADO un pedido en `Pendiente`, CUANDO se envía
+      `PATCH /api/v1/tickets/{ticket_id}/estado` con el `estado_id` de `EnRevision`, ENTONCES
+      queda en `EnRevision`, con una fila `Pendiente → EnRevision` y `motivo` nulo, sin evaluar
+      stock ni saltar a `EnCurso`; el `PATCH` conserva su regla de un paso y `EnCurso → Cerrado`
+      sigue respondiendo 409 con el detalle del despacho. `Cerrado` y `Anulado` siguen siendo
+      terminales.
+  - **Evidencia (25/Nov/2026):** `backend/tests/funcional/integracion/test_ciclo_vida_aprobacion_013.py::test_patch_estado_conserva_su_contrato_de_legado_para_el_administrador_ac_49` y `backend/tests/funcional/e2e/test_flujo_aprobacion_entrega_013.py::test_patch_de_legado_solo_administrador_y_cierre_reservado`; vivo (25/Nov/2026): `PATCH` de #9 a `EnRevision` **200** con fila `Pendiente → EnRevision` y `motivo` nulo (historial id 16) y `PATCH` a `Cerrado` **409**. `evidencia/README.md` §10.4-§10.5.
+- [x] **AC-29 (aprobación: siempre a `EnCurso`)** DADO un pedido en `Pendiente` o `EnRevision`,
+      CUANDO el Administrador lo aprueba, ENTONCES el estado final es **siempre `EnCurso`**, con
+      stock o sin él; la etiqueta se rige por la precedencia de AC-38 —«En confirmación de stock
+      local» si el stock local está disponible o hay una OC `Recibida`, «Facturado»/«En compra» si
+      hay OC `Facturada`/`Emitida`, y «Por comprar» si no hay stock ni OC activa—. No se evalúa
+      stock para decidir el destino, no se reserva y `fecha_cierre` sigue nula.
+  - **Evidencia (25/Nov/2026):** `test_ciclo_vida_aprobacion_013.py::test_aprobacion_desde_origen_elegible_deja_el_pedido_en_curso_ac_29`, `::test_aprobacion_siempre_lleva_a_en_curso_y_el_stock_solo_cambia_la_etiqueta_ac_29`, `::test_aprobacion_no_toca_stock_ni_movimientos_ac_29`; recorrido 4200: #11 (con stock) queda «En confirmación de stock local» y #12 (sin stock) «Por comprar», ambos **En Curso** y con `fecha_cierre` nula (capturas 03 y 08).
+- [x] **AC-30 (aprobación: historial y atomicidad)** DADO que la aprobación se acepta, ENTONCES
+      escribe **exactamente una** fila `origen → EnCurso` con el `usuario_id` del Administrador
+      de la sesión, `motivo` literal `Aprobación del pedido` y `orden_compra_id` nulo; no hay dos
+      filas ni actor «sistema». Si la fila no puede escribirse, el pedido conserva su estado y no
+      hay efectos parciales.
+  - **Evidencia (25/Nov/2026):** `test_ciclo_vida_aprobacion_013.py::test_aprobacion_escribe_una_sola_fila_con_actor_y_motivo_ac_30` y `::test_si_la_fila_de_historial_falla_el_estado_no_cambia_ac_30`; SQL: historial ids 8 y 12, una fila por pedido, actor Administrador, motivo literal `Aprobación del pedido` y `orden_compra_id` nulo.
+- [x] **AC-31 (Compras y 021)** DADO un pedido en `Pendiente` o `EnRevision`, CUANDO el
+      Administrador consulta `GET /compras/necesidades`, ENTONCES no aparece en `tickets` ni suma
+      `demanda_tickets` (solo `EnCurso`). CUANDO lo aprueba y queda `EnCurso`, ENTONCES pasa a
+      contar como demanda y a ser asignable por una OC cuando su `(sede, producto)` tiene
+      necesidad neta. Emitir, facturar, recepcionar o cancelar una OC no cambian el estado del
+      pedido; la recepción solo puede añadir su fila `EnCurso → EnCurso` de desbloqueo y el
+      cierre sigue siendo el despacho. La 021 no cambia de algoritmo.
+  - **Evidencia (25/Nov/2026):** `backend/tests/funcional/e2e/test_flujo_aprobacion_entrega_013.py::test_aprobacion_sin_stock_aparece_en_compras_y_la_oc_mueve_la_etiqueta` y suite de la 021; recorrido 4200: la fila no aparece antes de aprobar (captura 07), aparece con #12 en la demanda tras aprobar (09), la OC emitida/facturada mueve la etiqueta a «Facturado» (10/11), la recepción desbloquea (13) y el cierre es el despacho (14).
+- [x] **AC-32 (barra de acciones del detalle)** DADO un pedido, ENTONCES la barra de acciones
+      ofrece: `Pendiente` → Aprobar (Administrador), Rechazar (Bodeguero/Administrador), Anular
+      (Solicitante dueño/Administrador), Editar (dueño/Administrador); `EnRevision` → Aprobar,
+      Rechazar, Anular; `EnCurso` → Despachar; `Cerrado` → Confirmar entrega (Solicitante dueño,
+      si no está confirmada); `Anulado` → ninguna. No ofrece «Avanzar» ni «Retroceder» y no
+      invoca `PATCH /estado`.
+  - **Evidencia (25/Nov/2026):** `frontend/src/app/features/tickets/ticket-detalle.component.spec.ts` (acciones por estado/rol, sin Avanzar/Retroceder, sin `PATCH`); recorrido 4200 con las barras semánticas de Pendiente (02), EnCurso (03/13), Cerrado (05/15) y `Anulado` sin acciones, y la del Administrador (02/08).
+- [x] **AC-33 (despacho desde el detalle)** DADO un pedido `EnCurso` con `stock_disponible =
+      true`, CUANDO un Administrador o Bodeguero pulsa «Confirmar stock local y despachar» y
+      confirma, ENTONCES se envía `POST /api/v1/tickets/{ticket_id}/despacho` con el `usuario_id`
+      de la sesión, sin doble envío, y al 200 la vista muestra el pedido `Cerrado` con
+      `fecha_cierre`, las cantidades entregadas y la fila del despacho; el stock quedó rebajado y
+      hay una `SALIDA` por detalle.
+  - **Evidencia (25/Nov/2026):** Specs de `ticket-detalle.component.spec.ts` y `ticket.service.spec.ts`; recorrido 4200: despacho de #11 y #12 con diálogo sin motivo, `Cerrado` con `fecha_cierre` y entregado 3/3 (capturas 04 y 14); SQL: `SALIDA` ids 6 y 8 y stock 64→61 y 23→20.
+- [x] **AC-34 (409 del despacho y roles)** SI el stock dejó de cubrir el pedido entre la carga y
+      la confirmación (o ya fue despachado), ENTONCES el despacho responde **409**, la vista lo
+      muestra en `role="alert"` y reconsulta; la acción no se ofrece al Solicitante ni a roles
+      sin permiso de despacho, y el tablero sigue sin ofrecer despacho ni transiciones.
+  - **Evidencia (25/Nov/2026):** Specs del detalle (409 en `role="alert"` y reconsulta) y suite de la 005 (`test_despacho_transaccional.py`); recorrido 4200: el Solicitante no ve la acción de despacho (capturas 02 y 05) y el tablero no ofrece despacho ni transiciones (06/16).
+- [x] **AC-35 (invariantes del modelo)** DADO el caso #10 (pedido `EnCurso` de la Sede Maipú, 3
+      unidades, stock 64, mínimo 10), CUANDO el Administrador consulta `GET
+      /compras/necesidades`, ENTONCES la fila `(sede, producto)` sigue omitida. Se conservan
+      `calcular_cobertura_tickets` y el significado de `stock_disponible` (solo `EnCurso`), los
+      códigos de `PATCH /estado` y `POST /despacho`, el token `026.0`, 26/23 tablas, 21 entidades
+      de dominio y la ausencia de DDL; no se agrega ninguna tabla, columna, semilla, capacidad ni
+      estado canónico. La matriz y el rol del `PATCH` se verifican en AC-44 y AC-49.
+  - **Evidencia (25/Nov/2026):** Recorrido 4200: «Papel Premium A4» de Sede Maipú (caso #10) no aparece en Compras (captura 07); `test_flujo_aprobacion_entrega_013.py::test_caso_10_equivalente_omitido_en_compras_y_cierra_normal` y suite 020/021; sin DDL: token `026.0`, 26/23 tablas y 21 entidades (suites de control y gated).
+- [x] **AC-36 (sin auto-avance)** DADO un pedido en `Pendiente` o `EnRevision`, ENTONCES la única
+      vía a `EnCurso` es la aprobación: un `PATCH` a `EnRevision` no lo deja en `EnCurso` ni
+      evalúa stock, y un `PATCH` de `Pendiente` a `EnCurso` sigue siendo 409 por saltarse un paso.
+      No existe la regla de auto-avance por stock.
+  - **Evidencia (25/Nov/2026):** Vivo: `PATCH` `Pendiente → EnRevision` deja el pedido en `EnRevision` y `PATCH` a `Cerrado` responde **409**; tests de flujo y `test_ciclo_vida_aprobacion_013.py`; en 4200 la única vía a `EnCurso` es «Aprobar» (capturas 03 y 08).
+
+### 9.8 Etiqueta de proceso y responsables
+
+**Problema.** El estado canónico no dice en qué punto operativo está el pedido. Un `EnCurso`
+puede estar esperando que se emita la OC, con la compra facturada, con la mercadería recibida o
+sin stock y por comprar; un `Cerrado` puede estar despachado o ya entregado. El tablero y el
+detalle no lo distinguen, y tampoco dicen quién lo gestionó.
+
+**Decisión.** Se agrega una **etiqueta de proceso derivada**, de solo lectura, que no es un
+estado canónico, no se persiste y no altera la máquina de estados, Compras, la OC ni el stock.
+La calcula el servidor una sola vez y viaja en el read model del listado y del detalle, para que
+tablero y detalle no puedan divergir.
+
+#### D-21 — La etiqueta de proceso la deriva el servidor y se expone en el read model
+
+`TicketRespuesta` (listado y base del detalle) gana estos campos **aditivos**:
+
+| Campo | Tipo | Contenido |
+|---|---|---|
+| `etiqueta_proceso` | `str` | Etiqueta canónica de proceso (tabla de D-22). |
+| `explicacion_proceso` | `str` | Frase corta que dice qué falta o qué sigue. |
+| `estado_orden_cobertura` | `str \| None` | Estado de la OC activa más avanzada que cubre el pedido (`Recibida`, `Facturada` o `Emitida`); `None` si no hay. |
+| `stock_disponible` | `bool` | La propiedad de la 020; se expone también en el listado (antes solo en el detalle). |
+| `entrega_confirmada` | `bool` | `True` si el Solicitante dueño ya confirmó la entrega (§9.9). |
+| `gestionado_por_bodeguero` | `GestorProcesoRespuesta \| None` | Último Bodeguero del historial, con `usuario_id`, `nombre` y `apellido`. |
+| `gestionado_por_administrador` | `GestorProcesoRespuesta \| None` | Último Administrador del historial, con la misma forma. |
+
+`TicketDetalleRespuesta` agrega `entrega_confirmada_en` y `entrega_confirmada_por_nombre` /
+`entrega_confirmada_por_apellido` para la línea «Entregado el … por …», y conserva
+`asignaciones` con todas las OC del pedido (incluidas las canceladas). No hay DDL: todos son
+campos de lectura derivados de tablas existentes.
+
+**Por qué:** si el frontend derivara la etiqueta por su cuenta, el tablero y el detalle podrían
+mostrar cosas distintas para el mismo pedido y cada vista tendría que replicar la precedencia de
+OC y stock. Un único cálculo en el servidor mantiene una sola verdad y deja el contrato
+verificable.
+
+#### D-22 — Mapeo y precedencia de la etiqueta
+
+| Estado canónico | Condición | `etiqueta_proceso` |
+|---|---|---|
+| `Pendiente` | — | «En aprobación» |
+| `EnRevision` | — | «En revisión» (estado heredado; el detalle muestra el estado canónico `EnRevision`) |
+| `Anulado` | — | «Rechazado» (el detalle muestra además el estado canónico `Anulado`) |
+| `Cerrado` | `entrega_confirmada = false` | «Despachado» |
+| `Cerrado` | `entrega_confirmada = true` | «Entregado» |
+| `EnCurso` | OC `Recibida` que cubre el pedido | «En confirmación de stock local» |
+| `EnCurso` | si no, OC `Facturada` que cubre | «Facturado» |
+| `EnCurso` | si no, OC `Emitida` que cubre | «En compra» |
+| `EnCurso` | si no, `stock_disponible = true` | «En confirmación de stock local» |
+| `EnCurso` | si no | «Por comprar» |
+
+Precedencia: **Recibida > Facturada > Emitida > stock > sin cobertura**. Una OC `Cancelada` **no
+cuenta** como activa y no participa; si solo hay canceladas, se evalúa el stock. «Cubre el
+pedido» significa que la OC tiene al menos una fila de plan con `cantidad_asignada > 0` para ese
+pedido; la etiqueta describe la **etapa**, no la suficiencia: el badge de stock y la cadena por
+producto del detalle dicen si la cantidad alcanza, y el despacho sigue siendo la validación
+real. Varias OC del mismo estado no cambian la etiqueta y el orden no depende del orden de las
+filas ni de la fecha de la OC.
+
+Frases cortas (`explicacion_proceso`): «En aprobación: pendiente de revisión por Bodega o
+Administración.»; «En revisión: estado heredado; se aprueba con la acción Aprobar.»; «En compra:
+la orden está emitida y pendiente de facturación.»; «Facturado: la compra está facturada y
+pendiente de recepción.»; «En confirmación de stock local: el stock local está disponible; falta
+que el Bodeguero lo confirme y despache.»; «Por comprar: no hay stock suficiente ni compra
+vigente.»; «Despachado: pendiente de confirmación de entrega.»; «Entregado: confirmado por el
+solicitante.»; «Rechazado: el pedido no se despachará.».
+
+**Por qué:** el orden Recibida > Facturada > Emitida es el avance real de la compra y evita que
+una OC vieja emitida oculte una recepción; el stock solo decide cuando no hay compra vigente,
+porque una OC activa explica mejor la etapa que el saldo. «Por comprar» se elige sobre
+«Verificando stock» porque dice qué falta y no insinúa una comprobación en curso. Los estados
+fuera del conjunto canónico degradan a su nombre visible con la explicación «Estado no
+reconocido por la etiqueta de proceso», sin romper la lectura.
+
+#### D-23 — Los responsables son el último Bodeguero y el último Administrador del historial
+
+Cada pedido expone `gestionado_por_bodeguero` y `gestionado_por_administrador`: el actor de la
+última fila de `historial_transicion_ticket` cuyo usuario tiene **vigente** el rol `Bodeguero` o
+`Administrador`, con desempate `fecha_transicion DESC`, `historial_transicion_id DESC`. Si no
+hay ninguna fila de ese rol, el campo es `null` y la UI muestra «Sin gestión registrada» (`—` en
+la tarjeta, con el texto accesible). Incluye la fila de creación si su actor tiene ese rol,
+porque también es una transición registrada. El rol se resuelve con el usuario actual: el
+historial no persiste el rol del momento. No sustituye al solicitante: este sigue mostrándose
+donde ya se muestra.
+
+**Por qué:** «quiénes lo gestionaron» se responde con la evidencia que ya existe (el historial
+con actor y fecha) y sin inventar una asignación ni una columna nueva. El desempate por fecha e
+id es el mismo orden determinista del historial y evita que dos filas del mismo instante
+produzcan respuestas distintas. La aclaración del rol vigente es honesta: el historial guarda el
+actor, no su rol histórico, y no se agrega DDL para cambiarlo.
+
+#### D-24 — El tablero agrupa los dos estados terminales en una columna «Terminados»
+
+El tablero deja de renderizar una columna por estado: conserva `Pendiente`, `EnRevision`
+(heredado) y `EnCurso` y agrupa `Cerrado` y `Anulado` en una única columna terminal titulada
+**«Terminados»**, en la posición que ocupaba `Cerrado`. Su contador suma ambos estados, pero solo las tarjetas
+`Cerrado` pueden mostrar «Despachado» o «Entregado»; ninguna `Anulado` cuenta como entregada.
+Cada tarjeta `Anulado` muestra «Rechazado» y su detalle el estado canónico `Anulado`; cada
+tarjeta `Cerrado` muestra «Despachado» o «Entregado» y su detalle el estado canónico `Cerrado`.
+El tablero sigue siendo de solo lectura y la tarjeta sigue siendo el enlace al detalle.
+
+**Interfaz del tablero y del detalle.** La tarjeta muestra la etiqueta de proceso como texto
+visible, los dos responsables («Último Bodeguero: …», «Último Administrador: …») y, si el espacio
+lo permite, la frase corta como texto secundario o descripción accesible; nunca solo en un tooltip
+que dependa del hover. Si falta un responsable, muestra `—` con el texto accesible «Sin gestión
+registrada». La descripción accesible de la tarjeta incluye el estado canónico, la etiqueta de
+proceso y los responsables. El detalle muestra el estado canónico con su etiqueta actual, la
+etiqueta de proceso con su frase, los dos responsables y, si existe, la línea de entrega. La
+etiqueta de proceso no reemplaza al estado canónico ni al helper de etiquetas de estado: se
+muestran juntos.
+
+**Por qué:** «Cerrado / Anulado» como título leería dos estados como si fueran uno y
+reintroduciría en el nombre la división que la columna única busca quitar; «Terminados» describe
+la categoría (los dos terminales) sin renombrar ningún estado canónico, y la etiqueta de cada
+tarjeta conserva la distinción. Se elige la posición de `Cerrado` para no alterar el orden del
+flujo operativo.
+
+### 9.9 Confirmación de entrega
+
+**Problema.** El despacho cierra el pedido, pero no registra que el Solicitante recibió los
+insumos. El tablero no distingue «despachado» de «entregado» y el Solicitante no tiene forma de
+confirmar la recepción, aunque es el único que puede hacerlo.
+
+**Decisión.** Después del despacho, el pedido queda en `Cerrado` y su etiqueta es «Despachado».
+Solo el Solicitante **dueño** puede confirmar la entrega desde el detalle; la operación registra
+actor y fecha en una fila de historial `Cerrado → Cerrado`, cambia la etiqueta a «Entregado» y
+no altera el estado canónico: `Cerrado` sigue siendo terminal.
+
+#### D-25 — La confirmación se persiste como evento en el historial, sin DDL
+
+La confirmación inserta **una** fila en `historial_transicion_ticket` con
+`estado_origen_id = estado_destino_id = <Cerrado canónico>`, `usuario_id` = el Solicitante dueño,
+`fecha_transicion` = el instante del servidor, `motivo` literal
+`Entrega confirmada por el solicitante` y `orden_compra_id` nulo. No cambia `ticket.estado_id`,
+no sella ni borra `fecha_cierre`, no toca stock ni movimientos y no crea columnas ni tablas. La
+confirmación existe si y solo si hay una fila `Cerrado → Cerrado` con ese motivo exacto para el
+pedido; una segunda petición responde **409**.
+
+**Por qué:** la tabla ya guarda actor, fecha, estados y motivo, y la 021 estableció el precedente
+de filas sin cambio de estado (`EnCurso → EnCurso` para el desbloqueo por recepción). Reutilizarla
+evita DDL, una migración y una segunda fuente de verdad para la fecha de entrega; `fecha_cierre`
+conserva su significado de cierre por despacho (D-5). Si la implementación concluyera que la fila
+no basta, se detiene y se eleva como cambio de modelo que exige justificación y aprobación en
+`docs/spec/stack.md`; esta spec no lo aprueba.
+
+#### D-26 — Solo confirma el Solicitante dueño; no se delega
+
+La operación se concede **solo** al rol `Solicitante` en la matriz central y el servicio exige
+además que el `usuario_id` del pedido sea el de la sesión. Un Administrador, Bodeguero o
+Superadmin recibe **403** por matriz; un Solicitante sobre un pedido ajeno recibe **404**
+idéntico al inexistente. Si el pedido fue creado por un Administrador o un Bodeguero, su dueño
+no tiene el rol `Solicitante`: la operación no se ofrece y el pedido permanece «Despachado» para
+siempre. No se inventa una confirmación por otro rol.
+
+**Por qué:** la entrega la recibe quien pidió los insumos; el dueño es el único que puede
+atestiguarla sin inferirla. Delegarla al Bodeguero convertiría la confirmación en una segunda
+validación del despacho, y permitirla al Administrador borraría la distinción entre quien opera
+y quien recibe. El caso del alta administrativa queda explícito y sin una confirmación ficticia.
+
+#### Contrato — `POST /api/v1/tickets/{ticket_id}/confirmacion-entrega`
+
+- **Payload:** ninguno.
+- **Roles:** `Solicitante`, con la capacidad `tickets` (la misma que el resto de operaciones de
+  pedidos). La matriz pasa de **73 a 75** operaciones v1 (aprobación + confirmación); el
+  `PATCH /estado` conserva su entrada pero pasa a solo `Administrador`. `/openapi.json` pasa de 75
+  a 77 entradas.
+- **Éxito:** **200** con `TicketRespuesta` (`entrega_confirmada = true` y `etiqueta_proceso =
+  «Entregado»`); la fila del historial queda escrita en la misma operación. La UI reconsulta el
+  detalle para mostrar la fecha y el actor.
+- **Errores, en orden:** **401** sin sesión; **403** rol fuera de la matriz (Administrador,
+  Bodeguero, Superadmin) o capacidad `tickets` apagada; **404** pedido inexistente o ajeno
+  (idénticos); **409** pedido que no está `Cerrado` y **409** pedido ya confirmado. Sin 422: no
+  hay cuerpo que validar.
+- **Sin efectos colaterales:** no cambia el estado canónico, `fecha_cierre`, el stock, los
+  movimientos ni Compras; no reabre el pedido y no admite una segunda confirmación. Se elige
+  **409** y no un 200 idempotente para que el doble envío no pase inadvertido y la UI reconsulte
+  la verdad del servidor.
+- **Concurrencia:** las confirmaciones del mismo pedido se serializan; la primera escribe la fila
+  y la segunda, tras esperar, observa la confirmación y responde **409**. Nunca quedan dos filas
+  ni dos respuestas 200. La garantía se verifica en PostgreSQL 16; SQLite no acredita el bloqueo.
+
+#### Interfaz
+
+- El detalle muestra «Confirmar entrega» solo si el estado es `Cerrado`, `entrega_confirmada` es
+  `false`, el rol es `Solicitante` y el pedido es del usuario de la sesión. Confirmación previa
+  con diálogo nativo (mismo patrón que anulación y rechazo), sin motivo; el botón se deshabilita
+  durante la petición (sin doble envío).
+- Al 200, mensaje `role="status"` y reconsulta de detalle e historial: la etiqueta pasa a
+  «Entregado», aparece «Entregado el {fecha} por {nombre} {apellido}» y el botón desaparece.
+- Ante 409 (no está `Cerrado` o ya confirmado) se muestra `role="alert"` con el mensaje del
+  servidor y se reconsulta; 404 y 403 conservan su tratamiento.
+- El tablero no ofrece la confirmación: sigue siendo de solo lectura y la mutación vive en el
+  detalle (D-14).
+
+### 9.10 Derogaciones parciales
+
+- **013 AC-24 y D-14, en lo que exigían «Avanzar» y «Retroceder» desde el detalle:** derogados.
+  La barra usa acciones semánticas (Aprobar, Rechazar, Anular, Editar, Despachar, Confirmar
+  entrega) y no ofrece transiciones genéricas; ninguna pantalla invoca `PATCH /estado`. El
+  `PATCH` se conserva como contrato de API para compatibilidad y legado, con su regla de un paso
+  y el cierre reservado al despacho, y la 004 sigue vigente para él. La parte de D-14 que
+  concentra las mutaciones en el detalle y mantiene el tablero de solo lectura **no** se deroga.
+- **013 AC-17 y 004, en lo que concedían `PATCH /estado` al `Bodeguero`:** derogados. La matriz
+  restringe esa entrada a **solo `Administrador`**; el `Bodeguero` recibe **403** y conserva sus
+  operaciones propias (`POST /despacho`, `POST /rechazo` y la recepción de compras). No cambia el
+  número de operaciones (sigue 73 → 75): cambian los roles de una entrada existente.
+- **La regla de auto-avance `EnRevision → EnCurso` por stock de esta misma enmienda:** superada.
+  La aprobación va **siempre** a `EnCurso`; el stock solo decide la etiqueta y no hay simulación
+  del candidato. AC-28, AC-29 y AC-36 se reescriben en consecuencia y no queda ningún texto que
+  haga depender el destino del stock.
+- **013 AC-24 y D-14, en lo que exigen o mencionan una columna `Anulado` propia:** derogados.
+  El tablero agrupa `Cerrado` y `Anulado` en «Terminados» (D-24); las tarjetas `Anulado` ya no
+  tienen columna separada y el contador terminal suma ambos estados. La mención equivalente de
+  §3 («el tablero añade la columna `Anulado`») queda superada.
+- **013 AC-24, en lo que dice «ninguna acción en `Cerrado` o `Anulado`»:** derogado solo para la
+  confirmación de entrega del Solicitante dueño (§9.9). El resto de acciones del ciclo de vida
+  sigue sin ofrecerse en los dos terminales, y `Anulado` no admite ninguna.
+- **004 AC-1, en lo que exige una columna por cada estado del catálogo:** derogado parcialmente.
+  El tablero conserva una columna por estado operativo y una columna terminal agrupada; las
+  columnas vacías de los estados operativos se conservan.
+- **013 AC-9, aclaración sin derogación:** la confirmación de entrega no es una mutación de
+  estado; es un evento del ciclo de vida, como las filas `EnCurso → EnCurso` de la 021. AC-9
+  conserva su regla de una fila por mutación de estado y el historial sigue siendo de solo
+  lectura por API (AC-10).
+- **013 AC-23, ampliación sin derogación:** el detalle sigue mostrando cabecera, ítems e
+  historial, y añade la etiqueta de proceso con su frase, los dos responsables y la línea de
+  entrega.
+- **`fecha_cierre` (D-5) y la terminalidad por nombre (D-4/AC-26):** intactas. La confirmación no
+  sella `fecha_cierre`, no reabre `Cerrado` y no crea un estado `Entregado`.
+
+### 9.11 Criterios de aceptación de la ampliación
+
+- [x] **AC-37** DADO un pedido en `Pendiente`, `EnRevision`, `Anulado` o `Cerrado`, CUANDO se
+      consulta el listado o el detalle, ENTONCES `etiqueta_proceso` es «En aprobación»
+      (`Pendiente`), «En revisión» (`EnRevision` heredado), «Rechazado» (`Anulado`), «Despachado»
+      (`Cerrado` sin confirmación) o «Entregado» (`Cerrado` con confirmación), y
+      `explicacion_proceso` es la frase corta correspondiente. Un estado fuera del conjunto
+      canónico degrada a su nombre visible con la explicación «Estado no reconocido por la
+      etiqueta de proceso», sin error de lectura.
+  - **Evidencia (25/Nov/2026):** `backend/tests/funcional/unitarios/test_ticket_proceso_013.py` e `integracion/test_ticket_proceso_013.py` (etiquetas y frases de los cinco estados, `Cerrado` con/sin confirmación, degradación de estado desconocido); recorrido 4200 con todas las etiquetas: «En aprobación» (02), «En revisión» (17), «Por comprar» (08), «Facturado» (11), «En confirmación de stock local» (03/13), «Despachado» (04/14) y «Entregado» (05/15).
+- [x] **AC-38** DADO un pedido `EnCurso`, ENTONCES la etiqueta se decide por la OC activa más
+      avanzada que lo cubre, con la escala **Recibida > Facturada > Emitida**: «En confirmación de
+      stock local», «Facturado» y «En compra» respectivamente; una OC `Cancelada` no cuenta. Si no
+      hay OC activa, `stock_disponible = true` da «En confirmación de stock local» y `false` da
+      «Por comprar». Varias OC del mismo estado no cambian la etiqueta y el resultado no depende
+      del orden de las filas ni de la fecha de la OC.
+  - **Evidencia (25/Nov/2026):** `test_ticket_proceso_013.py::test_ac_38_*` (precedencia Recibida > Facturada > Emitida, cancelada no cuenta, stock y «Por comprar», orden indiferente); recorrido 4200 con la misma OC: «Por comprar» (08) → «Facturado» (11) → «En confirmación de stock local» tras la recepción (13).
+- [x] **AC-39** DADO un pedido, ENTONCES `GET /tickets/` y `GET /tickets/{id}` exponen
+      `etiqueta_proceso`, `explicacion_proceso`, `estado_orden_cobertura`, `stock_disponible`,
+      `entrega_confirmada`, `gestionado_por_bodeguero` y `gestionado_por_administrador`; el
+      detalle agrega `entrega_confirmada_en`, `entrega_confirmada_por_nombre` /
+      `entrega_confirmada_por_apellido` y conserva `asignaciones`. La etiqueta del mismo pedido
+      coincide en listado, tablero y detalle. Todos son campos de lectura derivados: no hay DDL,
+      tabla ni columna nueva. El detalle muestra el estado canónico y, junto a él, la etiqueta y
+      la frase.
+  - **Evidencia (25/Nov/2026):** `test_ticket_proceso_013.py::test_ac_37_*` y `::test_ac_39_*` (campos en listado y detalle, etiqueta coherente, listas conservadas); recorrido 4200: detalle con estado canónico + etiqueta + frase (02) y tablero coincidente (06/16); contrato en `/openapi.json`.
+  - **Corrección post-cierre T31 (25/Nov/2026):** el `201` de `POST /tickets/` también publica el read model (mismo helper que listado y detalle), verificado por `test_ac_39_el_201_*` (gestores según el rol del creador y coincidencia con el listado); no cambia el alta (`Pendiente`, AC-27) ni el contrato de la operación.
+- [x] **AC-40** DADO un pedido con filas de historial de varios actores, CUANDO se lee su tarjeta
+      o su detalle, ENTONCES se muestra el último actor con rol vigente `Bodeguero` y el último
+      con rol vigente `Administrador`, por `fecha_transicion DESC` y
+      `historial_transicion_id DESC`, con nombre y apellido; si no hay ninguno de ese rol, se
+      muestra «Sin gestión registrada» (`—` en la tarjeta con texto accesible). La fila de
+      creación cuenta si su actor tiene el rol; el solicitante sigue mostrándose y no se
+      sustituye. Un actor cuyo usuario o rol no se resuelve no cuenta.
+  - **Evidencia (25/Nov/2026):** `test_ticket_proceso_013.py::test_ac_40_ultimo_gestor_por_fecha_y_desempate_por_id` y `::test_ac_40_sin_historial_o_sin_rol_gestor_queda_en_none`; recorrido 4200: «Sin gestión registrada» antes (02) y «Illanes, Luciano» / «Gonzalez, Cristian» después (03, 04, 16).
+- [x] **AC-41** DADO el tablero, ENTONCES no existe una columna `Anulado` separada: las tarjetas
+      `Cerrado` y `Anulado` aparecen en la columna terminal «Terminados», cuyo contador suma
+      ambos estados, y cada tarjeta muestra su etiqueta de proceso («Despachado», «Entregado» o
+      «Rechazado») y los dos responsables. Las columnas `Pendiente`, `EnRevision` (heredado) y
+      `EnCurso` se conservan; el tablero sigue siendo de solo lectura y cada tarjeta sigue siendo
+      el enlace al detalle. La etiqueta no depende solo del color, los nombres tienen `aria-label`,
+      la descripción accesible de la tarjeta incluye el estado canónico y la frase corta es
+      accesible sin depender del hover.
+  - **Evidencia (25/Nov/2026):** `frontend/src/app/features/tickets/tickets.component.spec.ts` (4 columnas, «Terminados» con Cerrado+Anulado, sin columna `Anulado`, etiqueta/frase/responsables, tarjeta-enlace); recorrido 4200: tablero final con «Terminados» en 2 (16) y la columna heredada (17).
+  - **Corrección post-cierre T31 (25/Nov/2026):** la tarjeta insertada tras el alta muestra «En aprobación» de inmediato, no el nombre canónico: el `201` de `POST /tickets/` devuelve el read model y el spec `la tarjeta del pedido recién creado muestra «En aprobación» (T31)` lo fija.
+- [x] **AC-42** DADO un pedido `Cerrado` del Solicitante de la sesión y sin confirmación,
+      CUANDO pulsa «Confirmar entrega» y confirma, ENTONCES
+      `POST /api/v1/tickets/{ticket_id}/confirmacion-entrega` responde **200**, la etiqueta pasa
+      a «Entregado», el detalle muestra «Entregado el … por …» y el botón desaparece; el
+      historial registra una fila `Cerrado → Cerrado` con `motivo`
+      `Entrega confirmada por el solicitante`, el actor dueño y la fecha del servidor. El estado
+      canónico sigue en `Cerrado`, `fecha_cierre` no cambia, no hay movimiento de stock y el
+      pedido no se reabre.
+  - **Evidencia (25/Nov/2026):** `backend/tests/funcional/integracion/test_ciclo_vida_confirmacion_013.py::test_confirmacion_del_dueno_responde_200_con_una_fila_cerrado_cerrado_ac_42`, `::test_la_confirmacion_no_reabre_ni_mueve_el_pedido_ac_42`, `::test_listado_y_detalle_reflejan_la_entrega_confirmada_ac_42`; recorrido 4200 (capturas 05 y 15) y SQL historial ids 10 y 15 con la línea «Entregado el … por …».
+- [x] **AC-43** SI el pedido no existe o es de otro Solicitante, ENTONCES 404 idéntico; SI no
+      está `Cerrado`, ENTONCES 409 sin escribir; SI ya está confirmado, ENTONCES 409 sin una
+      segunda fila; SI el rol no es `Solicitante` (Administrador, Bodeguero o Superadmin),
+      ENTONCES 403 por matriz; sin sesión, 401. La precedencia es 401 → 403 → 404 → 409. Si el
+      pedido fue creado por un Administrador o Bodeguero, su dueño no tiene el rol `Solicitante`:
+      la acción no se ofrece y el pedido permanece «Despachado» (no hay confirmación de otro rol).
+  - **Evidencia (25/Nov/2026):** `test_ciclo_vida_confirmacion_013.py::test_confirmacion_ajena_e_inexistente_responden_404_identico_ac_43`, `::test_confirmacion_no_se_concede_a_otros_roles_ac_43`, `::test_confirmacion_sin_sesion_responde_401_ac_43`, `::test_confirmacion_con_la_capacidad_tickets_apagada_responde_403_ac_43`, `::test_confirmacion_de_un_pedido_no_cerrado_responde_409_sin_escribir_ac_43`, `::test_confirmacion_repetida_responde_409_sin_una_segunda_fila_ac_43`, `::test_un_pedido_creado_por_un_administrador_no_admite_confirmacion_ac_43`; vivo: 403 Administrador y 409 repetida; gated PG: `(200, 409)` con una sola fila.
+- [x] **AC-44** DADO QUE se publica el contrato, CUANDO se consultan `/openapi.json` y la matriz
+      central, ENTONCES esta pasa de **73 a 75** operaciones v1 por **dos** operaciones nuevas:
+      `POST /api/v1/tickets/{ticket_id}/aprobacion` (`Administrador`, capacidad `kanban`) y
+      `POST /api/v1/tickets/{ticket_id}/confirmacion-entrega` (`Solicitante`, capacidad
+      `tickets`). `/openapi.json` publica **77** entradas (75 v1 + `GET /` + `/health`); las 73
+      operaciones previas conservan sus roles y códigos **salvo el `PATCH /estado`, que pasa a
+      solo `Administrador`** (AC-49). No se agregan capacidades, guards, estados canónicos,
+      tablas, columnas, semillas ni versiones de esquema. `PATCH /estado` y `POST /despacho`
+      conservan su contrato de transición; el `PATCH` deja de anunciar un destino efectivo
+      distinto del solicitado.
+  - **Evidencia (25/Nov/2026):** `backend/tests/no_funcional/seguridad/test_permisos_endpoints.py` (inventario rutas↔matriz) y `test_cobertura_021.py::test_openapi_publica_el_preview_y_75_operaciones`; `GET /openapi.json` del backend vivo: **77** entradas (75 v1 + `GET /` + `/health`), aprobación `Administrador`/`kanban` y confirmación `Solicitante`/`tickets`; sin capacidades, estados, tablas ni versiones nuevas.
+- [x] **AC-45 (aprobación Admin-only)** DADO un pedido en `Pendiente` o `EnRevision`, CUANDO
+      invoca `POST /api/v1/tickets/{ticket_id}/aprobacion` un Administrador, ENTONCES 200; el
+      Bodeguero, el Solicitante y el Superadmin reciben 403 por matriz, y el Administrador con la
+      capacidad `kanban` apagada también 403. La operación no concede nada a los demás roles.
+  - **Evidencia (25/Nov/2026):** `test_ciclo_vida_aprobacion_013.py::test_aprobacion_no_se_concede_a_otros_roles_ac_45`, `::test_aprobacion_con_kanban_apagada_responde_403_sin_mutar_ac_45`, `::test_matriz_declara_la_aprobacion_y_el_patch_solo_para_administrador_ac_44`; vivo: 403 Bodeguero y 409 ya `EnCurso`; 4200: «Aprobar» visible solo con Administrador (02/03).
+- [x] **AC-46 (aprobación: estados y códigos)** DADO un pedido, CUANDO se aprueba, ENTONCES:
+      inexistente o de otra institución → 404 idéntico; ya `EnCurso`, `Cerrado` o `Anulado` →
+      409; estado no elegible → 409; catálogo sin `EnCurso` → 409 sin escribir; sin sesión → 401.
+      La precedencia es 401 → 403 → 404 → 409; no hay payload obligatorio ni 422 por cuerpo. Un
+      error no escribe historial ni cambia el estado.
+  - **Evidencia (25/Nov/2026):** `test_ciclo_vida_aprobacion_013.py::test_aprobacion_de_un_estado_ya_avanzado_o_terminal_responde_409_ac_46`, `::test_aprobacion_de_un_estado_no_elegible_responde_409_sin_escribir_ac_46`, `::test_aprobacion_sin_en_curso_en_el_catalogo_responde_409_sin_escribir_ac_46`, `::test_aprobacion_inexistente_y_ajena_responden_404_identico_ac_46`, `::test_aprobacion_sin_sesion_responde_401_ac_46`; vivo 403/409; sin payload obligatorio.
+- [x] **AC-47 (EnRevision heredado)** DADO el flujo nuevo, ENTONCES ningún pedido nuevo pasa por
+      `EnRevision` desde la UI; el estado sigue en el catálogo y el tablero conserva su columna
+      para los heredados; un pedido existente en `EnRevision` se aprueba, rechaza o anula con las
+      mismas acciones. El `PATCH` de legado puede seguir produciendo `EnRevision` por API, pero
+      no lo usa ninguna pantalla.
+  - **Evidencia (25/Nov/2026):** Recorrido 4200: el alta fija `Pendiente` (D-11) y ninguna pantalla produce `EnRevision`; el tablero conserva la columna con 3 heredados (#3, #4, #9) y #9 ofrece Aprobar/Rechazar/Anular (captura 17); solo el `PATCH` de legado puede producir `EnRevision` (vivo, §10.5 de la evidencia).
+- [x] **AC-48 (sin botones genéricos y PATCH de legado)** DADO el detalle de un pedido, ENTONCES
+      no ofrece «Avanzar» ni «Retroceder» y no invoca `PATCH /estado`; el `PATCH` sigue disponible
+      **solo para el Administrador** en la API, con su regla de un paso, el cierre
+      `EnCurso → Cerrado` reservado al despacho y `Cerrado`/`Anulado` terminales, para
+      compatibilidad y legado.
+  - **Evidencia (25/Nov/2026):** Specs de detalle y tablero (sin Avanzar/Retroceder ni `PATCH`); recorrido 4200 con acciones semánticas (02-05, 08, 13); vivo: `PATCH` **403** para Bodeguero y **200/409** para Administrador.
+- [x] **AC-49 (rol del `PATCH` de legado)** DADO un Bodeguero, CUANDO invoca
+      `PATCH /api/v1/tickets/{ticket_id}/estado`, ENTONCES recibe **403** por matriz; el
+      Administrador conserva la operación con su contrato de un paso, el cierre reservado al
+      despacho y la terminalidad. `POST /despacho`, `POST /rechazo` y la recepción de compras
+      conservan sus roles (Bodeguero/Administrador donde corresponda). La matriz sigue en **75**
+      operaciones: cambian los roles de una entrada existente, no su número.
+  - **Evidencia (25/Nov/2026):** Vivo: `PATCH` del Bodeguero **403** y del Administrador **200/409**; `test_ciclo_vida_aprobacion_013.py::test_el_bodeguero_conserva_despacho_y_rechazo_ac_49`; matriz en **75** operaciones (misma cuenta, cambian los roles de una entrada).
+
+**Cierre de la enmienda.** No se marca cerrada hasta que `pytest`, `ng test` y `ng build` estén
+en verde, `/openapi.json` publique 75 operaciones v1, y el recorrido se haga en los dos puertos
+conforme a `AGENTS.md` §8.5–§8.6: 4200 con escritura real (aprobación, despacho y confirmación de
+entrega) y humo en 8080 con la imagen reconstruida.
+
+### 9.12 Relación con las Features 005, 020 y 021
+
+- **005 (despacho transaccional):** se conserva sin cambios. Esta enmienda incorpora en el
+  detalle la acción que invoca su endpoint con el `usuario_id` de la sesión y cierra la exclusión
+  de frontend de su §3. La aprobación del Administrador es un paso **previo** y la confirmación de
+  entrega un evento **posterior** al despacho: ninguna cambia su contrato, su ACID, sus códigos ni
+  su bloqueo, que siguen siendo la única vía a `Cerrado`.
+- **020 (reabastecimiento):** `calcular_cobertura_tickets`, `stock_disponible`, la recepción, el
+  desbloqueo `EnCurso → EnCurso` y la regla de no comprar lo cubierto se conservan. La aprobación
+  **no evalúa stock**; la etiqueta de proceso (§9.8) **lee** `stock_disponible` (solo `EnCurso`) y
+  el estado de las OC, sin recalcular ni cambiar la simulación de la 020.
+- **021 (cobertura automática):** el plan de `orden_compra_ticket`, la necesidad neta parcial, el
+  preview y la cadena de la OC no cambian. Un pedido aprobado por el Administrador entra a
+  `EnCurso` y participa desde entonces de la demanda y del plan; uno en `Pendiente` o `EnRevision`
+  sigue fuera hasta la aprobación. Las OC no intervienen en la decisión de aprobación (no se
+  descuenta `plan_previo`). La etiqueta de proceso solo **lee** el estado de las OC que cubren el
+  pedido (Recibida > Facturada > Emitida; `Cancelada` no cuenta) y no reescribe el plan; la
+  confirmación de entrega reutiliza el precedente de evento sin cambio de estado que la 021
+  estrenó con `EnCurso → EnCurso`.
+- **Qué enmienda la 013 a sí misma:** el flujo de la UI de D-13/D-14 —que ahora usa acciones
+  semánticas y no «Avanzar»/«Retroceder»—, el alcance del detalle (despacho, etiqueta,
+  responsables y confirmación de entrega) y las derogaciones parciales de §9.10 (columna
+  `Anulado`, «ninguna acción en `Cerrado`», columna por estado de la 004 y avance/retroceso
+  genéricos). El `PATCH /estado` conserva su contrato de transición —un paso, cierre reservado y
+  terminalidad— y su papel de legado, pero la UI ya no lo usa y **pasa a concederse solo al
+  Administrador**; el Bodeguero conserva despacho, rechazo y recepción. Los AC-1…AC-27 no se
+  reescriben, salvo las derogaciones expresas de §9.10. La matriz gana **dos** operaciones
+  (aprobación y confirmación de entrega), el `PATCH` cambia de rol y el resto del contrato se
+  conserva.

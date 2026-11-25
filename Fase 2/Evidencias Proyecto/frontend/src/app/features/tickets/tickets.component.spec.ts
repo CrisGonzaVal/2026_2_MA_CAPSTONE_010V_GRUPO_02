@@ -141,10 +141,11 @@ const TICKETS: Ticket[] = [
 ];
 
 /**
- * Fixture de T11: la de T6 mas un ticket en cada **terminal** del catalogo 013
- * —cerrado (5, con `fecha_cierre`) y anulado (6, con `fecha_cierre` nula)—
- * para probar que ambas columnas pintan tarjetas y que toda tarjeta es un
- * enlace al detalle sin importar su estado.
+ * Fixture de la ampliación 25/Nov/2026 (D-24/AC-41): la de T6 mas los tres
+ * **terminales** del catálogo 013 —cerrado despachado (5), anulado/rechazado
+ * (6) y cerrado entregado (7)—. Los tres caen en la columna «Terminados» y
+ * cada uno lleva la etiqueta de proceso y los responsables que resuelve el
+ * backend en el read model.
  */
 const TICKETS_013: Ticket[] = [
   ...TICKETS,
@@ -158,6 +159,15 @@ const TICKETS_013: Ticket[] = [
     fecha_creacion: '2026-10-04T10:00:00',
     fecha_cierre: FECHA_CIERRE,
     detalles: [],
+    etiqueta_proceso: 'Despachado',
+    explicacion_proceso: 'Despachado: pendiente de confirmación de entrega.',
+    entrega_confirmada: false,
+    gestionado_por_bodeguero: { usuario_id: 9, nombre: 'Luis', apellido: 'Illanes' },
+    gestionado_por_administrador: {
+      usuario_id: 8,
+      nombre: 'Cristian',
+      apellido: 'Gonzalez',
+    },
   },
   {
     ticket_id: 6,
@@ -169,6 +179,28 @@ const TICKETS_013: Ticket[] = [
     fecha_creacion: '2026-10-05T10:00:00',
     fecha_cierre: null,
     detalles: [],
+    etiqueta_proceso: 'Rechazado',
+    explicacion_proceso: 'Rechazado: el pedido no se despachará.',
+    gestionado_por_administrador: {
+      usuario_id: 8,
+      nombre: 'Cristian',
+      apellido: 'Gonzalez',
+    },
+  },
+  {
+    ticket_id: 7,
+    usuario_id: 1,
+    prioridad_id: 1,
+    estado_id: 4,
+    asunto: 'Ticket entregado al solicitante',
+    descripcion: null,
+    fecha_creacion: '2026-10-06T10:00:00',
+    fecha_cierre: FECHA_CIERRE,
+    detalles: [],
+    etiqueta_proceso: 'Entregado',
+    explicacion_proceso: 'Entregado: confirmado por el solicitante.',
+    entrega_confirmada: true,
+    gestionado_por_bodeguero: { usuario_id: 9, nombre: 'Luis', apellido: 'Illanes' },
   },
 ];
 
@@ -269,6 +301,30 @@ function ticketRespuesta(ticket_id: number, estado_id = 1): Ticket {
   };
 }
 
+/**
+ * `201` de `POST /tickets/` desde la corrección post-cierre T31: el backend
+ * devuelve el read model de proceso completo, no el ORM desnudo. El tablero
+ * inserta esta respuesta sin reconsultar, así que la tarjeta del pedido nuevo
+ * debe mostrar «En aprobación» y no el nombre canónico del estado.
+ */
+function ticketRespuestaConReadModel(ticket_id: number, estado_id = 1): Ticket {
+  return {
+    ...ticketRespuesta(ticket_id, estado_id),
+    etiqueta_proceso: 'En aprobación',
+    explicacion_proceso:
+      'En aprobación: pendiente de revisión por Bodega o Administración.',
+    estado_orden_cobertura: null,
+    stock_disponible: false,
+    entrega_confirmada: false,
+    gestionado_por_bodeguero: null,
+    gestionado_por_administrador: {
+      usuario_id: 1,
+      nombre: 'Ana',
+      apellido: 'Perez',
+    },
+  };
+}
+
 describe('TicketsComponent', () => {
   let fixture: ComponentFixture<TicketsComponent>;
   let componente: TicketsComponent;
@@ -325,9 +381,11 @@ describe('TicketsComponent', () => {
   }
 
   beforeEach(async () => {
-    // El tablero no condiciona su UI al rol (D-14: sin controles de mutación
-    // que ocultar), pero el modal sí lee la identidad para presentar el autor
-    // informativo (AC-34). Se inyecta un doble con una señal para poder variarla.
+    // El tablero no condiciona su lectura al rol (D-14: sin controles de
+    // mutación que ocultar), pero el alta de pedidos sí se oculta por rol
+    // (cambio de demo 25/Nov/2026) y el modal lee la identidad para presentar
+    // el autor informativo (AC-34). Se inyecta un doble con una señal para
+    // poder variarla.
     identidad = signal<IdentidadAutenticada | null>(crearIdentidad());
 
     await TestBed.configureTestingModule({
@@ -737,29 +795,46 @@ describe('TicketsComponent', () => {
   });
 
   describe('tablero Kanban', () => {
-    it('debe mostrar una columna por estado del catalogo, en orden, incluidas las vacias', () => {
-      responderArranque();
+    it('debe mostrar las cuatro columnas del flujo, en orden, incluidas las vacías (AC-41)', () => {
+      responderArranque(CATALOGOS_013, TICKETS_013);
 
       const columnas = componente.columnas();
-      expect(columnas.length).toBe(3);
-      expect(columnas.map((columna) => columna.estado_id)).toEqual([1, 2, 4]);
+      expect(columnas.map((columna) => columna.clave)).toEqual([
+        'Pendiente',
+        'EnRevision',
+        'EnCurso',
+        'Terminados',
+      ]);
       expect(columnas.map((columna) => columna.estado)).toEqual([
         'Pendiente',
         'EnRevision',
-        'Cerrado',
+        'EnCurso',
+        'Terminados',
       ]);
+      expect(columnas.map((columna) => columna.etiqueta)).toEqual([
+        'Pendiente',
+        'En Revisión',
+        'En Curso',
+        'Terminados',
+      ]);
+      // La columna agrupada declara los estados terminales del catálogo.
+      expect(columnas[3].estado_ids).toEqual([4, 5]);
 
-      const vacia = columnas.find((columna) => columna.estado_id === 4);
-      expect(vacia?.tarjetas.length).toBe(0);
+      // `EnCurso` no tiene tickets en el fixture y su columna vacía se conserva.
+      const enCurso = columnas.find((columna) => columna.clave === 'EnCurso')!;
+      expect(enCurso.estado_ids).toEqual([3]);
+      expect(enCurso.tarjetas.length).toBe(0);
     });
 
     it('debe agrupar cada ticket en la columna de su estado', () => {
       responderArranque();
 
       const columnas = componente.columnas();
-      const pendiente = columnas.find((columna) => columna.estado_id === 1)!;
-      const enRevision = columnas.find((columna) => columna.estado_id === 2)!;
+      const pendiente = columnas.find((columna) => columna.clave === 'Pendiente')!;
+      const enRevision = columnas.find((columna) => columna.clave === 'EnRevision')!;
 
+      expect(pendiente.estado_ids).toEqual([1]);
+      expect(enRevision.estado_ids).toEqual([2]);
       expect(pendiente.tarjetas.map((tarjeta) => tarjeta.ticket.ticket_id).sort()).toEqual([1, 2]);
       expect(enRevision.tarjetas.map((tarjeta) => tarjeta.ticket.ticket_id).sort()).toEqual([
         3, 4,
@@ -772,11 +847,11 @@ describe('TicketsComponent', () => {
       const columnas = componente.columnas();
 
       // Estado 1: fechas distintas -> el 2 (03-10) va antes que el 1 (01-10).
-      const pendiente = columnas.find((columna) => columna.estado_id === 1)!;
+      const pendiente = columnas.find((columna) => columna.clave === 'Pendiente')!;
       expect(pendiente.tarjetas.map((tarjeta) => tarjeta.ticket.ticket_id)).toEqual([2, 1]);
 
       // Estado 2: misma fecha -> desempata por ticket_id descendente -> 4 antes que 3.
-      const enRevision = columnas.find((columna) => columna.estado_id === 2)!;
+      const enRevision = columnas.find((columna) => columna.clave === 'EnRevision')!;
       expect(enRevision.tarjetas.map((tarjeta) => tarjeta.ticket.ticket_id)).toEqual([4, 3]);
     });
 
@@ -801,6 +876,17 @@ describe('TicketsComponent', () => {
       expect(sinCierre.solicitante).toBe('Contreras, Isabel · Docencia');
       expect(sinCierre.fechaCreacion).toBe('2026-10-01T10:00:00');
       expect(sinCierre.fechaCierre).toBeNull();
+
+      // Sin read model en el fixture, la etiqueta cae al nombre canónico del
+      // estado y los responsables a «Sin gestión registrada» (fallbacks de
+      // AC-37/AC-40).
+      expect(sinCierre.estadoCanonico).toBe('Pendiente');
+      expect(sinCierre.etiquetaProceso).toBe('Pendiente');
+      expect(sinCierre.explicacionProceso).toBe('');
+      expect(sinCierre.gestorBodeguero).toBe('Sin gestión registrada');
+      expect(sinCierre.tieneGestorBodeguero).toBe(false);
+      expect(sinCierre.gestorAdministrador).toBe('Sin gestión registrada');
+      expect(sinCierre.tieneGestorAdministrador).toBe(false);
     });
 
     it('debe tratar un catalogo de estados vacio como error visible', () => {
@@ -861,15 +947,19 @@ describe('TicketsComponent', () => {
       httpMock.expectNone(RUTA_ESTADO(6));
     });
 
-    it('ofrece la tarjeta-enlace también en la columna terminal y en la de Anulado', () => {
-      expect(tarjetaDe(5)).toBeTruthy(); // Cerrado (terminal)
-      expect(tarjetaDe(6)).toBeTruthy(); // Anulado (terminal)
+    it('ofrece la tarjeta-enlace también en la columna terminal Terminados', () => {
+      expect(tarjetaDe(5)).toBeTruthy(); // Cerrado → «Despachado»
+      expect(tarjetaDe(6)).toBeTruthy(); // Anulado → «Rechazado»
+      expect(tarjetaDe(7)).toBeTruthy(); // Cerrado → «Entregado»
 
       expect(
         fixture.nativeElement.querySelector('a[href="/tickets/5"]')
       ).not.toBeNull();
       expect(
         fixture.nativeElement.querySelector('a[href="/tickets/6"]')
+      ).not.toBeNull();
+      expect(
+        fixture.nativeElement.querySelector('a[href="/tickets/7"]')
       ).not.toBeNull();
     });
 
@@ -925,15 +1015,21 @@ describe('TicketsComponent', () => {
     });
 
     it('no pinta el banner de «solo consulta» de la 004 (derogado con D-14)', () => {
-      // El tablero ya no muta para nadie: no hay UI condicionada al rol que
-      // avisar ni controles que ocultar.
+      // El tablero ya no muta para nadie: no hay controles de transición que
+      // ocultar. La única pieza condicionada al rol es el alta de pedidos
+      // (cambio de demo 25/Nov/2026), no el Kanban.
       expect(fixture.nativeElement.textContent).not.toContain('Vista de solo consulta');
-      expect('rolActual' in componente).toBe(false);
+      expect(
+        fixture.nativeElement.querySelector('button[aria-label^="Avanzar ticket"]')
+      ).toBeNull();
+      expect(
+        fixture.nativeElement.querySelector('button[aria-label^="Retroceder ticket"]')
+      ).toBeNull();
     });
 
     it('hace exactamente dos peticiones al arranque y ninguna por tarjeta (sin N+1)', () => {
-      // `responderArranque` ya descargo catálogos y lista: el render de cinco
-      // columnas con seis tarjetas no añade peticiones…
+      // `responderArranque` ya descargo catálogos y lista: el render de las
+      // cuatro columnas con siete tarjetas no añade peticiones…
       expect(tarjetasEnlazadas().length).toBe(TICKETS_013.length);
 
       // …ni los filtros, que son de cliente sobre el conjunto cargado…
@@ -953,22 +1049,57 @@ describe('TicketsComponent', () => {
   });
 
   /**
-   * D-1 / D-14 (013): el tablero añade la columna `Anulado`; no hay ids fijos,
-   * la columna surge del catálogo igual que las demás.
+   * D-24 / AC-41 (ampliación 25/Nov/2026): el tablero conserva las columnas
+   * operativas y agrupa `Cerrado` y `Anulado` en una única columna terminal
+   * «Terminados», sin columna `Anulado` separada. La agrupación se resuelve por
+   * nombre normalizado del catálogo, nunca por ids fijos.
    */
-  describe('columna Anulado (D-1/D-14)', () => {
-    it('surge del catálogo junto a las demás, con sus tarjetas', () => {
+  describe('columna Terminados (D-24, AC-41)', () => {
+    it('agrupa Cerrado y Anulado en una sola columna y suma el contador', () => {
       responderArranque(CATALOGOS_013, TICKETS_013);
 
       const columnas = componente.columnas();
-      expect(columnas.map((columna) => columna.estado_id)).toEqual([1, 2, 3, 4, 5]);
+      expect(columnas.map((columna) => columna.estado)).toEqual([
+        'Pendiente',
+        'EnRevision',
+        'EnCurso',
+        'Terminados',
+      ]);
+      // Ninguna columna lleva el nombre del terminal negativo.
+      expect(columnas.some((columna) => columna.estado === 'Anulado')).toBe(false);
 
-      const anulado = columnas.find((columna) => columna.estado === 'Anulado')!;
-      expect(anulado.estado_id).toBe(5);
-      expect(anulado.tarjetas.map((tarjeta) => tarjeta.ticket.ticket_id)).toEqual([6]);
+      const terminados = columnas.find((columna) => columna.clave === 'Terminados')!;
+      expect(terminados.estado_ids).toEqual([4, 5]);
+      expect(
+        terminados.tarjetas.map((tarjeta) => tarjeta.ticket.ticket_id).sort()
+      ).toEqual([5, 6, 7]);
+      // El contador de la columna suma ambos estados (Cerrado 5 y 7 + Anulado 6).
+      expect(terminados.tarjetas.length).toBe(3);
     });
 
-    it('un ticket anulado queda solo en la columna de Anulado', () => {
+    it('cada tarjeta terminal muestra su etiqueta de proceso, no solo el color', () => {
+      responderArranque(CATALOGOS_013, TICKETS_013);
+
+      const terminados = componente
+        .columnas()
+        .find((columna) => columna.clave === 'Terminados')!;
+      const etiquetas = new Map(
+        terminados.tarjetas.map((tarjeta) => [
+          tarjeta.ticket.ticket_id,
+          tarjeta.etiquetaProceso,
+        ])
+      );
+      expect(etiquetas.get(5)).toBe('Despachado');
+      expect(etiquetas.get(7)).toBe('Entregado');
+      expect(etiquetas.get(6)).toBe('Rechazado');
+
+      const texto = fixture.nativeElement.textContent ?? '';
+      expect(texto).toContain('Despachado');
+      expect(texto).toContain('Entregado');
+      expect(texto).toContain('Rechazado');
+    });
+
+    it('un ticket anulado queda solo en Terminados y conserva fecha_cierre nula', () => {
       responderArranque(CATALOGOS_013, TICKETS_013);
 
       const conElTicket = componente
@@ -978,9 +1109,128 @@ describe('TicketsComponent', () => {
         );
 
       expect(conElTicket.length).toBe(1);
-      expect(conElTicket[0].estado).toBe('Anulado');
+      expect(conElTicket[0].clave).toBe('Terminados');
+      const anulado = conElTicket[0].tarjetas.find(
+        (tarjeta) => tarjeta.ticket.ticket_id === 6
+      )!;
       // `fecha_cierre` nula en el anulado (D-5): la tarjeta no pinta cierre.
-      expect(conElTicket[0].tarjetas[0].fechaCierre).toBeNull();
+      expect(anulado.fechaCierre).toBeNull();
+      expect(anulado.estadoCanonico).toBe('Anulado');
+    });
+
+    it('no inventa Terminados si el catálogo no trae Cerrado ni Anulado', () => {
+      const sinTerminales: CatalogosTicket = {
+        ...CATALOGOS_013,
+        estados: CATALOGOS_013.estados.filter(
+          (estado) => estado.nombre !== 'Cerrado' && estado.nombre !== 'Anulado'
+        ),
+      };
+      responderArranque(sinTerminales, []);
+
+      expect(componente.columnas().map((columna) => columna.clave)).toEqual([
+        'Pendiente',
+        'EnRevision',
+        'EnCurso',
+      ]);
+    });
+
+    it('agrupa por nombre normalizado aunque venga en otras mayúsculas', () => {
+      // Catálogo hostil: `cerrado` y `ANULADO` con ids no canónicos.
+      const hostil: CatalogosTicket = {
+        ...CATALOGOS_013,
+        estados: [
+          { estado_id: 10, nombre: 'cerrado', descripcion: 'Minúsculas' },
+          ...CATALOGOS_013.estados.filter(
+            (estado) => estado.nombre !== 'Cerrado' && estado.nombre !== 'Anulado'
+          ),
+          { estado_id: 11, nombre: 'ANULADO', descripcion: 'Mayúsculas' },
+        ],
+      };
+      responderArranque(hostil, []);
+
+      const terminados = componente
+        .columnas()
+        .filter((columna) => columna.clave === 'Terminados');
+      expect(terminados.length).toBe(1);
+      expect([...terminados[0].estado_ids].sort()).toEqual([10, 11]);
+    });
+  });
+
+  /**
+   * §9.8 (AC-37/AC-40/AC-41): la tarjeta expone la etiqueta de proceso como
+   * texto visible, la frase corta de forma accesible y los dos responsables del
+   * historial, con «Sin gestión registrada» cuando falta alguno. Sigue siendo
+   * un enlace al detalle sin controles de mutación.
+   */
+  describe('read model de la tarjeta (AC-37, AC-40, AC-41)', () => {
+    /** Busca una tarjeta por el id de su ticket, aplanando las columnas. */
+    function tarjetaDe(ticketId: number) {
+      return componente
+        .columnas()
+        .flatMap((columna) => columna.tarjetas)
+        .find((tarjeta) => tarjeta.ticket.ticket_id === ticketId)!;
+    }
+
+    beforeEach(() => responderArranque(CATALOGOS_013, TICKETS_013));
+
+    it('resuelve etiqueta, frase y los dos responsables del read model', () => {
+      const tarjeta = tarjetaDe(5);
+
+      expect(tarjeta.estadoCanonico).toBe('Cerrado');
+      expect(tarjeta.etiquetaProceso).toBe('Despachado');
+      expect(tarjeta.explicacionProceso).toBe(
+        'Despachado: pendiente de confirmación de entrega.'
+      );
+      expect(tarjeta.gestorBodeguero).toBe('Illanes, Luis');
+      expect(tarjeta.tieneGestorBodeguero).toBe(true);
+      expect(tarjeta.gestorAdministrador).toBe('Gonzalez, Cristian');
+      expect(tarjeta.tieneGestorAdministrador).toBe(true);
+    });
+
+    it('muestra etiqueta, frase y responsables como texto visible (sin hover)', () => {
+      const enlace = fixture.nativeElement.querySelector(
+        'a[href="/tickets/5"]'
+      ) as HTMLAnchorElement;
+      const texto = (enlace.textContent ?? '').replace(/\s+/g, ' ');
+
+      expect(texto).toContain('Despachado');
+      expect(texto).toContain('Despachado: pendiente de confirmación de entrega.');
+      expect(texto).toContain('Último Bodeguero:');
+      expect(texto).toContain('Illanes, Luis');
+      expect(texto).toContain('Último Administrador:');
+      expect(texto).toContain('Gonzalez, Cristian');
+    });
+
+    it('sin responsable cae a «Sin gestión registrada» con — visible', () => {
+      const tarjeta = tarjetaDe(7);
+      expect(tarjeta.gestorBodeguero).toBe('Illanes, Luis');
+      expect(tarjeta.gestorAdministrador).toBe('Sin gestión registrada');
+      expect(tarjeta.tieneGestorAdministrador).toBe(false);
+
+      const enlace = fixture.nativeElement.querySelector(
+        'a[href="/tickets/7"]'
+      ) as HTMLAnchorElement;
+      const texto = (enlace.textContent ?? '').replace(/\s+/g, ' ');
+      expect(texto).toContain('Último Administrador:');
+      expect(texto).toContain('—');
+      // El texto accesible acompaña al guion visual.
+      expect(texto).toContain('Sin gestión registrada');
+    });
+
+    it('el aria-label incluye estado canónico, etiqueta y responsables', () => {
+      const enlace = fixture.nativeElement.querySelector(
+        'a[href="/tickets/5"]'
+      ) as HTMLAnchorElement;
+      const etiqueta = enlace.getAttribute('aria-label') ?? '';
+
+      expect(etiqueta).toContain('Cerrado');
+      expect(etiqueta).toContain('Despachado');
+      expect(etiqueta).toContain('Illanes, Luis');
+      expect(etiqueta).toContain('Gonzalez, Cristian');
+
+      // La tarjeta sigue siendo un enlace, sin controles de mutación.
+      expect(enlace.tagName).toBe('A');
+      expect(enlace.querySelector('button, select, input, textarea')).toBeNull();
     });
   });
 
@@ -1200,8 +1450,12 @@ describe('TicketsComponent', () => {
       componente.cambiarPrioridad('2');
       fixture.detectChanges();
 
-      const columnaPendiente = componente.columnas().find((c) => c.estado_id === 1)!;
-      const columnaRevision = componente.columnas().find((c) => c.estado_id === 2)!;
+      const columnaPendiente = componente
+        .columnas()
+        .find((c) => c.clave === 'Pendiente')!;
+      const columnaRevision = componente
+        .columnas()
+        .find((c) => c.clave === 'EnRevision')!;
 
       // Cargados: Pendiente 3 y EnRevision 3. Filtrados por prioridad 2: 2 y 1.
       expect(columnaPendiente.tarjetas.length).toBe(2);
@@ -1283,7 +1537,7 @@ describe('TicketsComponent', () => {
     });
 
     it('debe diferenciar el vacio por filtros del vacio normal (AC-5)', () => {
-      // Sin filtros: la columna Cerrado (id 4) esta vacia.
+      // Sin filtros: la columna terminal Terminados esta vacia.
       expect(componente.hayFiltros()).toBe(false);
       expect(fixture.nativeElement.textContent).toContain('Sin pedidos en esta columna');
 
@@ -1308,9 +1562,11 @@ describe('TicketsComponent', () => {
         .find((tarjeta) => tarjeta.ticket.ticket_id === ticketId);
     }
 
-    /** La columna de un estado del catalogo. */
+    /** La columna que agrupa un estado del catálogo. */
     function columna(estadoId: number) {
-      return componente.columnas().find((c) => c.estado_id === estadoId)!;
+      return componente
+        .columnas()
+        .find((c) => c.estado_ids.includes(estadoId))!;
     }
 
     it('el ticket creado aparece en el tablero sin recargar', () => {
@@ -1327,6 +1583,29 @@ describe('TicketsComponent', () => {
       expect(tarjetaDe(42)).toBeTruthy();
       expect(columna(1).tarjetas.some((t) => t.ticket.ticket_id === 42)).toBe(true);
       // Sin reconsulta: el alta se refleja con la respuesta del POST.
+      httpMock.expectNone(RUTA_TICKETS);
+    });
+
+    it('la tarjeta del pedido recién creado muestra «En aprobación» (T31)', () => {
+      // El backend ya publica el read model en el `201` (corrección T31): la
+      // tarjeta insertada no puede caer al nombre canónico hasta recargar.
+      abrirConCatalogos();
+
+      completarFormulario();
+      componente.enviar();
+
+      httpMock.expectOne(RUTA_TICKETS).flush(ticketRespuestaConReadModel(42));
+      fixture.detectChanges();
+
+      const tarjeta = tarjetaDe(42)!;
+      expect(tarjeta.estadoCanonico).toBe('Pendiente');
+      expect(tarjeta.etiquetaProceso).toBe('En aprobación');
+      expect(tarjeta.etiquetaProceso).not.toBe(tarjeta.estadoCanonico);
+      expect(tarjeta.descripcionAccesible).toContain(
+        'Etapa del proceso: En aprobación'
+      );
+      expect(fixture.nativeElement.textContent).toContain('En aprobación');
+      // Sigue sin reconsultar el listado.
       httpMock.expectNone(RUTA_TICKETS);
     });
 
@@ -1512,6 +1791,56 @@ describe('TicketsComponent', () => {
       expect('usuario_id' in cuerpo).toBe(false);
 
       peticion.flush(ticketRespuesta(500));
+    });
+  });
+
+  /**
+   * Cambio de demo del 25/Nov/2026: el alta de pedidos se oculta a
+   * Administrador y Bodeguero; el Solicitante la conserva. Es solo la
+   * visibilidad del botón: la API sigue admitiendo a los tres roles hasta la
+   * implementación de negocio del alta por sede.
+   */
+  describe('alta de pedidos por rol (demo 25/Nov/2026)', () => {
+    function botonCrearPedido(): HTMLButtonElement | null {
+      const botones = Array.from(
+        fixture.nativeElement.querySelectorAll(
+          'button'
+        ) as NodeListOf<HTMLButtonElement>
+      );
+      return (
+        botones.find(
+          (boton) =>
+            !boton.closest('dialog') &&
+            (boton.textContent ?? '').includes('Crear pedido')
+        ) ?? null
+      );
+    }
+
+    it('el Solicitante ve el botón de alta y abre el modal', () => {
+      responderArranque();
+
+      const boton = botonCrearPedido();
+      expect(boton).not.toBeNull();
+
+      boton!.click();
+      fixture.detectChanges();
+      expect(componente.modalAbierto()).toBe(true);
+    });
+
+    it('el Administrador no ve el botón de alta', () => {
+      identidad.set({ ...crearIdentidad(), rol: 'Administrador' });
+      responderArranque();
+
+      expect(botonCrearPedido()).toBeNull();
+      expect(componente.modalAbierto()).toBe(false);
+    });
+
+    it('el Bodeguero no ve el botón de alta', () => {
+      identidad.set({ ...crearIdentidad(), rol: 'Bodeguero' });
+      responderArranque();
+
+      expect(botonCrearPedido()).toBeNull();
+      expect(componente.modalAbierto()).toBe(false);
     });
   });
 });

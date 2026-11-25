@@ -6,13 +6,15 @@
         Gestión de solicitudes e insumos entre departamentos
       </p>
     </div>
-    <button
-      type="button"
-      (click)="abrirModal()"
-      class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg shadow transition"
-    >
-      + Crear pedido
-    </button>
+    @if (puedeCrearPedido()) {
+      <button
+        type="button"
+        (click)="abrirModal()"
+        class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg shadow transition"
+      >
+        + Crear pedido
+      </button>
+    }
   </div>
 
   @if (ticketCreado() !== null) {
@@ -285,10 +287,10 @@
       </label>
     </div>
 
-    <!-- Cinco columnas para el catálogo canónico de la 013 (cuatro operativos
-         + `Anulado`); la cantidad real sale del catálogo, no de aqui. -->
-    <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
-      @for (columna of columnas(); track columna.estado_id) {
+    <!-- D-24 (AC-41): tres columnas operativas + una terminal agrupada,
+         «Terminados», que suma `Cerrado` y `Anulado`. -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+      @for (columna of columnas(); track columna.clave) {
         <div class="bg-slate-200/60 p-4 rounded-xl flex flex-col space-y-4">
           <div class="flex justify-between items-center">
             <h3 class="font-bold text-slate-700">{{ columna.etiqueta }}</h3>
@@ -304,6 +306,7 @@
                  detalle, donde vive todo el ciclo de vida (AC-24). -->
             <a
               [routerLink]="['/tickets', tarjeta.ticket.ticket_id]"
+              [attr.aria-label]="tarjeta.descripcionAccesible"
               class="block bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-2 hover:border-blue-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition"
             >
               <div class="flex justify-between items-start gap-2">
@@ -316,7 +319,39 @@
                 <span class="text-xs text-slate-400">#{{ tarjeta.ticket.ticket_id }}</span>
               </div>
               <h4 class="font-bold text-slate-800 text-sm">{{ tarjeta.asunto }}</h4>
+              <!-- Etiqueta de proceso visible (AC-37/AC-41): no depende del
+                   color ni de un tooltip. -->
+              <p
+                class="text-xs font-semibold text-indigo-700 bg-indigo-50 rounded px-2 py-0.5 inline-block"
+              >
+                <span class="sr-only">Etapa del proceso: </span>{{ tarjeta.etiquetaProceso }}
+              </p>
+              <!-- Frase corta derivada por el servidor (AC-37). -->
+              @if (tarjeta.explicacionProceso) {
+                <p class="text-[11px] text-slate-500">{{ tarjeta.explicacionProceso }}</p>
+              }
               <p class="text-xs text-slate-500">{{ tarjeta.solicitante }}</p>
+              <!-- Read model de responsables (AC-40): último actor de cada rol. -->
+              <div class="text-[11px] text-slate-500 space-y-0.5">
+                <p>
+                  <span class="font-semibold">Último Bodeguero:</span>
+                  @if (tarjeta.tieneGestorBodeguero) {
+                    {{ tarjeta.gestorBodeguero }}
+                  } @else {
+                    <span aria-hidden="true">—</span>
+                    <span class="sr-only">{{ tarjeta.gestorBodeguero }}</span>
+                  }
+                </p>
+                <p>
+                  <span class="font-semibold">Último Administrador:</span>
+                  @if (tarjeta.tieneGestorAdministrador) {
+                    {{ tarjeta.gestorAdministrador }}
+                  } @else {
+                    <span aria-hidden="true">—</span>
+                    <span class="sr-only">{{ tarjeta.gestorAdministrador }}</span>
+                  }
+                </p>
+              </div>
               <p class="text-[11px] text-slate-400">
                 Creado: {{ tarjeta.fechaCreacion | date: 'short' }}
               </p>

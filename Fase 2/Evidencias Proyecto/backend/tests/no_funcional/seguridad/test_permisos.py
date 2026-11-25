@@ -177,6 +177,15 @@ MATRIZ_018_ADITIVA: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/inventario/ambito"): _AMBITO_INVENTARIO,
 }
 
+#: Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.10, AC-49): la
+#: transcripcion historica conserva la fila del `PATCH /estado`, pero su rol se
+#: **restringe** a solo Administrador. Es una restriccion documentada de una
+#: entrada existente, no una relajacion: el Bodeguero pierde el permiso y
+#: conserva sus operaciones propias (despacho, rechazo y recepcion de compras).
+RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+}
+
 _ROLES = ("Superadmin", "Administrador", "Bodeguero", "Solicitante")
 
 
@@ -275,7 +284,7 @@ def test_matriz_conserva_las_operaciones_de_d3_y_solo_agrega():
         clave: set(roles) for clave, roles in permisos.MATRIZ_PERMISOS.items()
     }
     for clave, roles in MATRIZ_ESPERADA.items():
-        assert vigente.get(clave) == roles, clave
+        assert vigente.get(clave) == RESTRINGIDAS_013.get(clave, roles), clave
     assert set(vigente) >= set(MATRIZ_ESPERADA)
 
 
@@ -303,7 +312,9 @@ def test_permisos_018_solo_agrega_la_operacion_de_ambito():
 def test_permiso_por_rol_respeta_la_matriz():
     """Cada rol concede/deniega segun la matriz; desconocido/ausente nunca concede."""
     for metodo, ruta in MATRIZ_ESPERADA:
-        permitidos = MATRIZ_ESPERADA[(metodo, ruta)]
+        permitidos = RESTRINGIDAS_013.get(
+            (metodo, ruta), MATRIZ_ESPERADA[(metodo, ruta)]
+        )
         roles_matriz = permisos.roles_de_operacion(metodo, ruta)
         for rol in _ROLES:
             assert permisos.rol_autorizado(rol, roles_matriz) is (rol in permitidos), (
@@ -361,7 +372,8 @@ CASOS_HTTP = [
     ("GET", "/api/v1/inventario/movimientos", "Solicitante", 403),
     ("POST", "/api/v1/tickets/", "Solicitante", 200),
     ("GET", "/api/v1/tickets/", "Bodeguero", 200),
-    ("PATCH", "/api/v1/tickets/{ticket_id}/estado", "Bodeguero", 200),
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado", "Administrador", 200),
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado", "Bodeguero", 403),
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado", "Solicitante", 403),
     ("POST", "/api/v1/tickets/{ticket_id}/despacho", "Administrador", 200),
     ("POST", "/api/v1/tickets/{ticket_id}/despacho", "Solicitante", 403),

@@ -2,6 +2,7 @@ import {
   ROLES_ADMINISTRATIVOS,
   ROLES_ANULACION_TICKETS,
   ROLES_ASIGNABLES_ADMINISTRADOR,
+  ROLES_CREACION_TICKETS,
   ROLES_DASHBOARD,
   ROLES_EDICION_TICKETS,
   ROLES_GESTION_CATALOGO,
@@ -13,10 +14,13 @@ import {
   ROLES_TODOS,
   puedeAdministrar,
   puedeAnularTicket,
+  puedeAprobarTicket,
   puedeAsignarRol,
+  puedeConfirmarEntrega,
+  puedeCrearTicket,
+  puedeDespacharTicket,
   puedeEditarTicket,
   puedeGestionarCatalogo,
-  puedeOperarTickets,
   puedeRechazarTicket,
   puedeVerDashboard,
   puedeVerFiltrosInventario,
@@ -71,19 +75,6 @@ describe('roles', () => {
       'Bodeguero',
     ]);
     expect(ROLES_OPERATIVOS_TICKETS as readonly string[]).not.toContain('Solicitante');
-  });
-
-  it('puedeOperarTickets concede solo a los roles operativos', () => {
-    expect(puedeOperarTickets('Bodeguero')).toBe(true);
-    expect(puedeOperarTickets('Administrador')).toBe(true);
-    expect(puedeOperarTickets('Superadmin')).toBe(true);
-    expect(puedeOperarTickets('Solicitante')).toBe(false);
-  });
-
-  it('puedeOperarTickets no concede a un rol inexistente, alias o ausente', () => {
-    expect(puedeOperarTickets('Admin')).toBe(false);
-    expect(puedeOperarTickets('Desconocido')).toBe(false);
-    expect(puedeOperarTickets(null)).toBe(false);
   });
 
   it('los roles con acceso a /tickets excluyen solo al Superadmin (Feature 012, AC-3)', () => {
@@ -189,6 +180,45 @@ describe('roles', () => {
     expect(puedeEditarTicket('Superadmin')).toBe(false);
     expect(puedeEditarTicket('Admin')).toBe(false);
     expect(puedeEditarTicket(null)).toBe(false);
+  });
+
+  // --- Alta de pedidos por rol (cambio de demo 25/Nov/2026) ---
+
+  it('el alta de pedidos se limita al Solicitante en la UI (demo 25/Nov/2026)', () => {
+    expect(ROLES_CREACION_TICKETS).toEqual(['Solicitante']);
+    expect(puedeCrearTicket('Solicitante')).toBe(true);
+    for (const rol of ['Administrador', 'Bodeguero', 'Superadmin', 'Admin', null]) {
+      expect(puedeCrearTicket(rol)).withContext(String(rol)).toBe(false);
+    }
+  });
+
+  // --- Ampliación 25/Nov/2026: aprobación, despacho y confirmación ---
+
+  it('puedeAprobarTicket concede solo al Administrador (AC-32/AC-45)', () => {
+    expect(puedeAprobarTicket('Administrador')).toBe(true);
+    expect(puedeAprobarTicket('Bodeguero')).toBe(false);
+    expect(puedeAprobarTicket('Solicitante')).toBe(false);
+    expect(puedeAprobarTicket('Superadmin')).toBe(false);
+    expect(puedeAprobarTicket('Admin')).toBe(false);
+    expect(puedeAprobarTicket(null)).toBe(false);
+  });
+
+  it('puedeDespacharTicket concede a Administrador y Bodeguero (AC-32/AC-33)', () => {
+    expect(puedeDespacharTicket('Administrador')).toBe(true);
+    expect(puedeDespacharTicket('Bodeguero')).toBe(true);
+    expect(puedeDespacharTicket('Solicitante')).toBe(false);
+    expect(puedeDespacharTicket('Superadmin')).toBe(false);
+    expect(puedeDespacharTicket('Admin')).toBe(false);
+    expect(puedeDespacharTicket(null)).toBe(false);
+  });
+
+  it('puedeConfirmarEntrega concede solo al Solicitante (AC-32/AC-42)', () => {
+    expect(puedeConfirmarEntrega('Solicitante')).toBe(true);
+    expect(puedeConfirmarEntrega('Administrador')).toBe(false);
+    expect(puedeConfirmarEntrega('Bodeguero')).toBe(false);
+    expect(puedeConfirmarEntrega('Superadmin')).toBe(false);
+    expect(puedeConfirmarEntrega('Admin')).toBe(false);
+    expect(puedeConfirmarEntrega(null)).toBe(false);
   });
 
   // --- Ciclo de vida del catálogo (Feature 014, AC-11/AC-15) ---

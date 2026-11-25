@@ -397,3 +397,16 @@ filtros en esta entrega.
   y rebajas correspondientes.
 - En la verificación de la parte frontend se exige recorrido funcional en 4200 y humo en
   8080 después de reconstruir y recrear la imagen; 8080 no refleja cambios automáticamente.
+
+---
+
+> **Nota de enmienda (25/Nov/2026, Feature 013 — §9).** El contrato de esta feature no cambia.
+> El detalle del pedido incorpora la acción «Confirmar stock local y despachar» para un pedido
+> `EnCurso` cuyo `stock_disponible` es `true`, que invoca
+> `POST /api/v1/tickets/{ticket_id}/despacho` con el `usuario_id` de la sesión. La exclusión de
+> frontend de §3 («El frontend incluido se limita a ocultar la transición manual de cierre»)
+> queda superada por esa acción; el endpoint, sus códigos, la transacción ACID, el bloqueo y la
+> prohibición del cierre manual por `PATCH /estado` se conservan intactos. Después del despacho,
+> el Solicitante dueño puede confirmar la entrega con una **operación nueva** de la 013 §9.9
+> (`POST /tickets/{id}/confirmacion-entrega`): es un evento posterior, no cambia el estado
+> `Cerrado`, no toca stock y no altera nada de esta feature.

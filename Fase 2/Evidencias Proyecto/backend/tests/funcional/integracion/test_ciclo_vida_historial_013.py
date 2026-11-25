@@ -17,6 +17,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
+from app.models import Ticket
+
 from tests.funcional.integracion._soporte_ciclo_vida_013 import (
     CAMPOS_HISTORIAL,
     abrir_ticket,
@@ -27,6 +29,7 @@ from tests.funcional.integracion._soporte_ciclo_vida_013 import (
     sembrar_ticket,
     exigir_ruta,
 )
+from tests.funcional.integracion._soporte_sede_011 import sesion
 
 RUTA_HISTORIAL = "/api/v1/tickets/{ticket_id}/historial"
 
@@ -245,9 +248,16 @@ def test_si_la_fila_no_puede_registrarse_el_estado_no_cambia_ac_11(
     assert respuesta.status_code == 500, (
         f"sin la tabla del historial la operacion debe fallar completa: {respuesta.text}"
     )
-    assert abrir_ticket(cliente_sin_excepcion, ticket_id)["estado_id"] == (
-        datos_013["estados"]["Pendiente"]
-    ), "si la fila no pudo registrarse, el estado no puede quedar cambiado"
+    # El listado ya no sirve como canal de observacion en este escenario: desde
+    # la ampliacion de la 013 (T20) el read model de proceso consulta
+    # `historial_transicion_ticket` (confirmaciones y gestores) y aqui la tabla
+    # esta dropeada a proposito. Se observa la fila del ticket directamente,
+    # que es exactamente lo que AC-11 exige: el estado no puede quedar cambiado.
+    with sesion(motor) as db:
+        estado_persistido = db.get(Ticket, ticket_id).estado_id
+    assert estado_persistido == datos_013["estados"]["Pendiente"], (
+        "si la fila no pudo registrarse, el estado no puede quedar cambiado"
+    )
 
 
 # ---------------------------------------------------------------------------

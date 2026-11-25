@@ -68,6 +68,13 @@ _ESCRITURA_TICKETS: frozenset[str] = frozenset(
     {_ADMINISTRADOR, _BODEGUERO, _SOLICITANTE}
 )
 
+# --- Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.3/§9.10, AC-45/AC-49) --
+# La aprobacion del pedido es una decision de flujo del Administrador
+# Institucional y el `PATCH /estado` queda como contrato de legado **solo** para
+# el. El Bodeguero conserva sus operaciones propias (despacho, rechazo y la
+# recepcion de compras) y deja de recibir el PATCH.
+_ESCRITURA_TICKETS_ADMIN: frozenset[str] = frozenset({_ADMINISTRADOR})
+
 # --- Ajuste puntual de la Feature 011 (spec D-4/D-5, AC-5) ------------------
 # Las asignaciones organizacionales (sede de departamento, sede de Bodeguero y
 # gestion de encargados) son administracion institucional: solo el Administrador.
@@ -147,7 +154,10 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
     ("POST", "/api/v1/tickets/"): _ESCRITURA_TICKETS,
     # 008 D-3: despacho y cambio de estado sin Superadmin.
     ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
-    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _ESCRITURA_STOCK,
+    # Ampliacion 25/Nov/2026 (spec §9.10, AC-49): el `PATCH /estado` de legado
+    # deja de concederse al Bodeguero y queda **solo** para el Administrador;
+    # conserva su entrada (no cambia el numero de operaciones).
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _ESCRITURA_TICKETS_ADMIN,
     # Feature 009 (D-3/AC-13/AC-14) y Feature 017 (D-9/AC-15): el dashboard
     # consolidado es lectura de los roles institucionales; Superadmin lo pierde.
     # La actividad de movimientos dentro de su respuesta se gobierna en el
@@ -230,6 +240,16 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
     ),
     ("POST", "/api/v1/tickets/{ticket_id}/rechazo"): frozenset(
         {_ADMINISTRADOR, _BODEGUERO}
+    ),
+    # Ampliacion 25/Nov/2026 (spec §9.3/§9.4, AC-45): la aprobacion del pedido
+    # es una decision de flujo del Administrador Institucional. Es una
+    # operacion **nueva y aditiva** (matriz 73 -> 74).
+    ("POST", "/api/v1/tickets/{ticket_id}/aprobacion"): _ESCRITURA_TICKETS_ADMIN,
+    # Ampliacion 25/Nov/2026 (spec §9.9, D-26, AC-43/AC-44): la confirmacion de
+    # entrega la concede **solo** el Solicitante; el servicio exige ademas que
+    # sea el dueño del pedido. Operacion nueva y aditiva (matriz 74 -> 75).
+    ("POST", "/api/v1/tickets/{ticket_id}/confirmacion-entrega"): frozenset(
+        {_SOLICITANTE}
     ),
     ("PUT", "/api/v1/tickets/{ticket_id}"): frozenset(
         {_ADMINISTRADOR, _SOLICITANTE}

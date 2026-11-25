@@ -2,9 +2,9 @@
 
 Seam bajo prueba: la **interfaz HTTP del `app` real** (`TestClient`), no una app
 sonda. T1 verifico la dependencia y la matriz aisladas; aqui se comprueba que
-esas operaciones (hoy **22**: las 20 de 007/008 mas el `GET` consolidado del
-dashboard de la Feature 009 y el `POST` de aprovisionamiento de la Feature 010)
-estan efectivamente cableadas en los endpoints.
+esas operaciones (entonces **22**: las 20 de 007/008 mas el `GET` consolidado
+del dashboard de la Feature 009 y el `POST` de aprovisionamiento de la Feature
+010) estan efectivamente cableadas en los endpoints.
 
 Estrategia anti-tautologica: la matriz de referencia se escribe a mano (no se lee
 de `permisos.MATRIZ_PERMISOS`) y se contrasta contra las rutas que publica el
@@ -47,11 +47,12 @@ from app.models import (
 from app.services.auth_service import IdentidadAutenticada
 
 # ---------------------------------------------------------------------------
-# Fuente de verdad independiente: la matriz D-3 transcrita a mano (49 filas:
-# las 20 de 007/008 mas el GET consolidado del dashboard que exige AC-13/AC-14
-# de la 009, el alta de institucion de la 010, las seis asignaciones
-# organizacionales de la 011, las siete operaciones de control SaaS de la 012
-# y las cinco del ciclo de vida de la 013)
+# Fuente de verdad independiente: la matriz D-3 transcrita a mano (57 filas:
+# la transcripcion de la 007 y sus ampliaciones 008/009/010/011/012/013/017,
+# mas la aprobacion y la confirmacion de entrega de la ampliacion 25/Nov/2026
+# de la 013). Las operaciones de 014/018/019/020/021 se transcriben en sus
+# propios modulos; la igualdad viva rutas↔`MATRIZ_PERMISOS` se contrasta abajo
+# con las 75 operaciones vigentes.
 # ---------------------------------------------------------------------------
 
 _TODOS = {"Superadmin", "Administrador", "Bodeguero", "Solicitante"}
@@ -75,6 +76,10 @@ _ORGANIZACION = {"Administrador"}
 #: Administrador. Superadmin queda fuera de toda escritura (D-8).
 _CICLO_VIDA_DUENO = {"Administrador", "Solicitante"}
 _CICLO_VIDA_BODEGA = {"Administrador", "Bodeguero"}
+#: Ampliacion 25/Nov/2026 (spec §9.3/§9.10, AC-45/AC-49): la aprobacion del
+#: pedido y el `PATCH /estado` de legado son exclusivos del Administrador; el
+#: Bodeguero conserva despacho, rechazo y recepcion de compras.
+_SOLO_ADMINISTRADOR = {"Administrador"}
 
 MATRIZ_D3: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/auth/me"): _TODOS,
@@ -96,7 +101,9 @@ MATRIZ_D3: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/tickets/"): _LECTURA_NEGOCIO,
     ("POST", "/api/v1/tickets/"): _ESCRITURA_TICKETS,
     ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
-    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _ESCRITURA_STOCK,
+    # Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH` de legado queda solo
+    # para el Administrador; el Bodeguero recibe 403 por matriz.
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _SOLO_ADMINISTRADOR,
     # Feature 009 (D-3/AC-13/AC-14): el dashboard consolidado es lectura para los
     # cuatro roles. No altera la entrada de `GET /inventario/movimientos`, que
     # sigue reservada a `_INVENTARIO_Y_TICKETS` (Solicitante excluido).
@@ -158,6 +165,13 @@ MATRIZ_D3: dict[tuple[str, str], set[str]] = {
     ("PUT", "/api/v1/tickets/{ticket_id}"): _CICLO_VIDA_DUENO,
     ("GET", "/api/v1/tickets/{ticket_id}"): _LECTURA_NEGOCIO,
     ("GET", "/api/v1/tickets/{ticket_id}/historial"): _LECTURA_NEGOCIO,
+    # Ampliacion 25/Nov/2026 (spec §9.3/§9.4, AC-45): una operacion nueva y
+    # aditiva, exclusiva del Administrador (matriz 73 -> 74).
+    ("POST", "/api/v1/tickets/{ticket_id}/aprobacion"): _SOLO_ADMINISTRADOR,
+    # Ampliacion 25/Nov/2026 (spec §9.9, D-26, AC-43/AC-44): la confirmacion de
+    # entrega es del Solicitante, y el servicio exige ademas que sea el dueño
+    # (matriz 74 -> 75).
+    ("POST", "/api/v1/tickets/{ticket_id}/confirmacion-entrega"): {"Solicitante"},
     # Feature 017 (D-10): cinco operaciones exclusivas de Superadmin.
     (
         "GET",
@@ -325,8 +339,15 @@ def _ruta_concreta(metodo: str, ruta: str, datos: dict) -> str:
         "/api/v1/tickets/{ticket_id}/anulacion",
         "/api/v1/tickets/{ticket_id}/rechazo",
         "/api/v1/tickets/{ticket_id}/historial",
+        # Ampliacion 25/Nov/2026: el ticket en `Pendiente` tambien es un origen
+        # elegible para la aprobacion (200).
+        "/api/v1/tickets/{ticket_id}/aprobacion",
     ):
         return ruta.replace("{ticket_id}", str(datos["ticket_ciclo_id"]))
+    # Ampliacion 25/Nov/2026 (T22): la confirmacion de entrega se mide sobre un
+    # pedido `Cerrado` propio del usuario de la sesion (200 para el Solicitante).
+    if ruta == "/api/v1/tickets/{ticket_id}/confirmacion-entrega":
+        return ruta.replace("{ticket_id}", str(datos["ticket_confirmacion_id"]))
     if ruta == "/api/v1/inventario/productos/{producto_id}":
         return ruta.replace("{producto_id}", str(datos["producto_id"]))
     if ruta == "/api/v1/inventario/categorias/{categoria_id}":
@@ -437,6 +458,17 @@ def _cuerpo(metodo: str, ruta: str, datos: dict):
         return {"usuario_id": datos["usuario_id"]}
     if (metodo, ruta) == ("PATCH", "/api/v1/tickets/{ticket_id}/estado"):
         return {"estado_id": datos["estado_en_curso_id"]}
+    # Ampliacion 25/Nov/2026 (§9.4): la aprobacion no tiene payload; un cuerpo
+    # ausente es valido y no hay 422 por cuerpo.
+    if (metodo, ruta) == ("POST", "/api/v1/tickets/{ticket_id}/aprobacion"):
+        return None
+    # Ampliacion 25/Nov/2026 (§9.9): la confirmacion de entrega tampoco tiene
+    # payload; el cuerpo ausente es valido.
+    if (metodo, ruta) == (
+        "POST",
+        "/api/v1/tickets/{ticket_id}/confirmacion-entrega",
+    ):
+        return None
     # Feature 013 (T9): payloads del ciclo de vida.
     if (metodo, ruta) in (
         ("POST", "/api/v1/tickets/{ticket_id}/anulacion"),
@@ -638,6 +670,11 @@ def datos_autorizacion(motor, datos_base):
         # Feature 013 (T9): ticket propio en `Pendiente` para anulacion,
         # rechazo y edicion (todas admiten 200 desde ese estado).
         ticket_ciclo = _ticket(ids["Pendiente"], "Ciclo de vida autorizado")
+        # Ampliacion 25/Nov/2026 (T22): ticket propio ya `Cerrado` para medir la
+        # confirmacion de entrega (200 para el Solicitante dueño sin confirmar).
+        ticket_confirmacion = _ticket(
+            ids["Cerrado"], "Confirmacion de entrega autorizada"
+        )
 
         # Feature 011 (T7): recursos para medir la autorizacion organizacional.
         # Una sede de INST01 (200 en las asignaciones), un Bodeguero (destino
@@ -723,6 +760,7 @@ def datos_autorizacion(motor, datos_base):
             "ticket_estado_id": ticket_estado.ticket_id,
             "ticket_despacho_id": ticket_despacho.ticket_id,
             "ticket_ciclo_id": ticket_ciclo.ticket_id,
+            "ticket_confirmacion_id": ticket_confirmacion.ticket_id,
             "rol_bodeguero_id": rol_bodeguero.rol_id,
             "rol_solicitante_id": rol_solicitante.rol_id,
             "sede_id": sede.sede_id,
@@ -974,6 +1012,14 @@ REFERENCIAS_ESPERADAS = {
     ("PUT", "/api/v1/tickets/{ticket_id}"): "TicketRespuesta",
     ("GET", "/api/v1/tickets/{ticket_id}"): "TicketDetalleRespuesta",
     ("GET", "/api/v1/tickets/{ticket_id}/historial"): "HistorialTransicionRespuesta",
+    # Ampliacion 25/Nov/2026 (spec §9.4): la aprobacion promete la etiqueta.
+    ("POST", "/api/v1/tickets/{ticket_id}/aprobacion"): "TicketRespuesta",
+    # Ampliacion 25/Nov/2026 (spec §9.9): la confirmacion devuelve el ticket con
+    # `entrega_confirmada = true`.
+    (
+        "POST",
+        "/api/v1/tickets/{ticket_id}/confirmacion-entrega",
+    ): "TicketRespuesta",
     # Feature 017 (D-10): DTOs del gobierno de Administradores.
     (
         "GET",

@@ -18,7 +18,9 @@ import { TicketDetalleComponent } from './ticket-detalle.component';
 const RUTA_DETALLE = `${URL_API}/tickets/7`;
 const RUTA_HISTORIAL = `${URL_API}/tickets/7/historial`;
 const RUTA_CATALOGOS = `${URL_API}/tickets/catalogos`;
-const RUTA_ESTADO = `${URL_API}/tickets/7/estado`;
+const RUTA_APROBACION = `${URL_API}/tickets/7/aprobacion`;
+const RUTA_DESPACHO = `${URL_API}/tickets/7/despacho`;
+const RUTA_CONFIRMACION_ENTREGA = `${URL_API}/tickets/7/confirmacion-entrega`;
 const RUTA_ANULACION = `${URL_API}/tickets/7/anulacion`;
 const RUTA_RECHAZO = `${URL_API}/tickets/7/rechazo`;
 
@@ -236,9 +238,34 @@ describe('TicketDetalleComponent', () => {
     return (raiz.textContent ?? '').replace(/\s+/g, ' ');
   }
 
+  /** Texto de la página sin el contenido (oculto) de los diálogos. */
+  function textoPagina(): string {
+    const clon = raiz.cloneNode(true) as HTMLElement;
+    clon.querySelectorAll('dialog').forEach((dialogo) => dialogo.remove());
+    return (clon.textContent ?? '').replace(/\s+/g, ' ');
+  }
+
+  function dialogos(): HTMLDialogElement[] {
+    return Array.from(raiz.querySelectorAll<HTMLDialogElement>('dialog'));
+  }
+
+  function dialogoConfirmacion(): HTMLDialogElement {
+    return dialogos()[0];
+  }
+
+  function dialogoEdicion(): HTMLDialogElement {
+    return dialogos()[1];
+  }
+
   function alertas(): string[] {
     return Array.from(raiz.querySelectorAll('[role="alert"]')).map((n) =>
       (n.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    );
+  }
+
+  function avisoExito(texto: string): boolean {
+    return Array.from(raiz.querySelectorAll('[role="status"]')).some((n) =>
+      (n.textContent ?? '').replace(/\s+/g, ' ').includes(texto),
     );
   }
 
@@ -457,134 +484,519 @@ describe('TicketDetalleComponent', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Barra de acciones por estado y rol (AC-24)
+  // Read model de la ampliación (AC-37…AC-40, AC-42)
+  // ---------------------------------------------------------------------------
+
+  describe('read model de proceso', () => {
+    it('muestra el estado canónico y, junto a él, la etiqueta de proceso con su frase', () => {
+      const detalle = crearDetalle(1);
+      detalle.etiqueta_proceso = 'En aprobación';
+      detalle.explicacion_proceso =
+        'En aprobación: pendiente de revisión por Bodega o Administración.';
+      responderCarga(detalle);
+
+      const visible = textoPagina();
+      // Estado canónico con su badge actual y la etiqueta derivada, juntos.
+      expect(visible).toContain('Pendiente');
+      expect(componente.etiquetaEstado()).toBe('Pendiente');
+      expect(visible).toContain('En aprobación');
+      expect(visible).toContain(
+        'En aprobación: pendiente de revisión por Bodega o Administración.',
+      );
+    });
+
+    it('respeta las palabras de la etiqueta de proceso sin aplicarles el helper de estados', () => {
+      const detalle = crearDetalle(3);
+      detalle.stock_disponible = true;
+      detalle.etiqueta_proceso = 'En confirmación de stock local';
+      detalle.explicacion_proceso =
+        'En confirmación de stock local: el stock local está disponible; falta que el Bodeguero lo confirme y despache.';
+      responderCarga(detalle);
+
+      expect(componente.etiquetaEstado()).toBe('En Curso');
+      expect(componente.etiquetaProceso()).toBe('En confirmación de stock local');
+      expect(textoPagina()).toContain('En confirmación de stock local');
+    });
+
+    it('muestra el último Bodeguero y el último Administrador con nombre y apellido', () => {
+      const detalle = crearDetalle(1);
+      detalle.gestionado_por_bodeguero = {
+        usuario_id: 9,
+        nombre: 'Bruno',
+        apellido: 'Soto',
+      };
+      detalle.gestionado_por_administrador = {
+        usuario_id: 2,
+        nombre: 'Camila',
+        apellido: 'Fernandez',
+      };
+      responderCarga(detalle);
+
+      const visible = textoPagina();
+      expect(visible).toContain('Último Bodeguero');
+      expect(visible).toContain('Soto, Bruno');
+      expect(visible).toContain('Último Administrador');
+      expect(visible).toContain('Fernandez, Camila');
+      expect(visible).not.toContain('Sin gestión registrada');
+    });
+
+    it('sin gestores registrados muestra «Sin gestión registrada»', () => {
+      responderCarga(crearDetalle(1));
+
+      const visible = textoPagina();
+      expect(componente.gestorBodeguero()).toBe('Sin gestión registrada');
+      expect(componente.gestorAdministrador()).toBe('Sin gestión registrada');
+      expect(visible).toContain('Último Bodeguero');
+      expect(visible).toContain('Último Administrador');
+      expect(visible).toContain('Sin gestión registrada');
+    });
+
+    it('muestra «Entregado el … por …» cuando el Solicitante confirmó la entrega', () => {
+      const detalle = crearDetalle(4);
+      detalle.entrega_confirmada = true;
+      detalle.entrega_confirmada_en = '2026-11-25T12:00:00';
+      detalle.entrega_confirmada_por_nombre = 'Isabel';
+      detalle.entrega_confirmada_por_apellido = 'Contreras';
+      responderCarga(detalle);
+
+      const visible = textoPagina();
+      expect(visible).toContain('Entregado el');
+      expect(visible).toContain('Contreras, Isabel');
+    });
+
+    it('sin confirmación no muestra la línea de entrega', () => {
+      responderCarga(crearDetalle(4));
+
+      expect(textoPagina()).not.toContain('Entregado el');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Acciones semánticas por estado y rol (AC-32)
   // ---------------------------------------------------------------------------
 
   describe('acciones por estado y rol', () => {
-    it('Administrador en Pendiente ve avanzar, editar, anular y rechazar (sin retroceder)', () => {
+    it('Pendiente · Administrador: Aprobar, Editar, Rechazar y Anular', () => {
       responderCarga(crearDetalle(1));
 
-      expect(botonesAccion()).toEqual([
-        'Avanzar →',
-        'Editar',
-        'Rechazar',
-        'Anular',
-      ]);
+      expect(botonesAccion()).toEqual(['Aprobar', 'Editar', 'Rechazar', 'Anular']);
     });
 
-    it('Bodeguero en EnRevision ve avanzar, retroceder y rechazar; nunca anular ni editar', () => {
+    it('Pendiente · Bodeguero: solo Rechazar (no aprueba, edita ni anula)', () => {
       identidad.set(crearIdentidad('Bodeguero'));
-      responderCarga(crearDetalle(2));
+      responderCarga(crearDetalle(1));
 
-      expect(botonesAccion()).toEqual(['← Retroceder', 'Avanzar →', 'Rechazar']);
+      expect(botonesAccion()).toEqual(['Rechazar']);
     });
 
-    it('Solicitante dueño en Pendiente solo ve anular y editar', () => {
+    it('Pendiente · Solicitante dueño: Editar y Anular', () => {
       identidad.set(crearIdentidad('Solicitante', 5));
       responderCarga(crearDetalle(1));
 
       expect(botonesAccion()).toEqual(['Editar', 'Anular']);
     });
 
-    it('Solicitante no dueño no ve anulación ni edición, y lo explica', () => {
+    it('Pendiente · Solicitante no dueño: ninguna acción y la nota explica el rol', () => {
       identidad.set(crearIdentidad('Solicitante', 99));
       responderCarga(crearDetalle(1));
 
       expect(botonesAccion()).toEqual([]);
-      expect(textoRaiz()).toContain('Tu rol no puede operar el ciclo de vida');
+      expect(textoPagina()).toContain('Tu rol no puede operar el ciclo de vida');
     });
 
-    it('EnCurso no ofrece avance (reservado al despacho) pero sí retroceso', () => {
-      responderCarga(crearDetalle(3));
+    it('EnRevision (heredado) · Administrador: Aprobar, Rechazar y Anular; sin Editar', () => {
+      responderCarga(crearDetalle(2));
 
-      expect(botonesAccion()).toEqual(['← Retroceder']);
+      expect(botonesAccion()).toEqual(['Aprobar', 'Rechazar', 'Anular']);
     });
 
-    it('Cerrado no ofrece ninguna acción y lo dice como estado terminal', () => {
-      responderCarga(crearDetalle(4));
-
-      expect(botonesAccion()).toEqual([]);
-      expect(textoRaiz()).toContain('estado terminal');
-    });
-
-    it('Anulado no ofrece ninguna acción y lo dice como estado terminal', () => {
-      responderCarga(crearDetalle(5));
-
-      expect(botonesAccion()).toEqual([]);
-      expect(textoRaiz()).toContain('estado terminal');
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Transiciones del flujo lineal (PATCH /estado)
-  // ---------------------------------------------------------------------------
-
-  describe('transiciones del flujo lineal', () => {
-    it('avanza con PATCH /estado al estado destino y reconsulta detalle e historial', () => {
-      responderCarga(crearDetalle(1));
-
-      boton('Avanzar →')!.click();
-
-      const cambio = httpMock.expectOne(RUTA_ESTADO);
-      expect(cambio.request.method).toBe('PATCH');
-      expect(cambio.request.body).toEqual({ estado_id: 2 });
-      cambio.flush(crearDetalle(2));
-      responderReconsulta();
-
-      expect(alertas()).toEqual([]);
-      expect(textoRaiz()).toContain('Estado del pedido actualizado.');
-      expect(componente.enOperacion()).toBe(false);
-    });
-
-    it('retrocede con PATCH /estado al estado anterior', () => {
+    it('EnRevision · Bodeguero: solo Rechazar', () => {
       identidad.set(crearIdentidad('Bodeguero'));
       responderCarga(crearDetalle(2));
 
-      boton('← Retroceder')!.click();
-
-      const cambio = httpMock.expectOne(RUTA_ESTADO);
-      expect(cambio.request.body).toEqual({ estado_id: 1 });
-      cambio.flush(crearDetalle(1));
-      responderReconsulta(crearDetalle(1));
+      expect(botonesAccion()).toEqual(['Rechazar']);
     });
 
-    it('muestra el 409 del servidor en un role="alert" y reconsulta la verdad del backend', () => {
-      responderCarga(crearDetalle(1));
+    it('EnRevision · Solicitante dueño: solo Anular', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      responderCarga(crearDetalle(2));
 
-      boton('Avanzar →')!.click();
-
-      httpMock
-        .expectOne(RUTA_ESTADO)
-        .flush(
-          { detail: 'El cambio de estado hacia Anulado no esta permitido' },
-          { status: 409, statusText: 'Conflict' },
-        );
-      responderReconsulta();
-
-      expect(alertas().length).toBeGreaterThan(0);
-      expect(alertas()[0]).toContain('El cambio de estado hacia Anulado no esta permitido');
+      expect(botonesAccion()).toEqual(['Anular']);
     });
 
-    it('no permite doble envío mientras el cambio de estado está en vuelo', () => {
+    it('EnCurso · Administrador con stock: Confirmar stock local y despachar', () => {
+      const detalle = crearDetalle(3);
+      detalle.stock_disponible = true;
+      responderCarga(detalle);
+
+      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
+    });
+
+    it('EnCurso · Bodeguero con stock: Confirmar stock local y despachar', () => {
+      identidad.set(crearIdentidad('Bodeguero'));
+      const detalle = crearDetalle(3);
+      detalle.stock_disponible = true;
+      responderCarga(detalle);
+
+      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
+    });
+
+    it('EnCurso · sin stock_disponible: el despacho no se ofrece', () => {
+      responderCarga(crearDetalle(3));
+
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('stock local aún no está disponible');
+    });
+
+    it('EnCurso · Solicitante dueño: no puede despachar', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      const detalle = crearDetalle(3);
+      detalle.stock_disponible = true;
+      responderCarga(detalle);
+
+      expect(botonesAccion()).toEqual([]);
+    });
+
+    it('Cerrado · Solicitante dueño sin confirmar: solo Confirmar entrega', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      const detalle = crearDetalle(4);
+      detalle.entrega_confirmada = false;
+      responderCarga(detalle);
+
+      expect(botonesAccion()).toEqual(['Confirmar entrega']);
+    });
+
+    it('Cerrado · Solicitante no dueño: sin acciones y la nota pide la confirmación del dueño', () => {
+      identidad.set(crearIdentidad('Solicitante', 99));
+      responderCarga(crearDetalle(4));
+
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('pendiente de confirmación de entrega');
+    });
+
+    it('Cerrado · Administrador: sin acciones; la entrega la confirma el Solicitante', () => {
+      responderCarga(crearDetalle(4));
+
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('pendiente de confirmación de entrega');
+    });
+
+    it('Cerrado entregado · Solicitante dueño: el botón desaparece y la nota lo explica', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      const detalle = crearDetalle(4);
+      detalle.entrega_confirmada = true;
+      detalle.entrega_confirmada_en = '2026-11-25T12:00:00';
+      detalle.entrega_confirmada_por_nombre = 'Isabel';
+      detalle.entrega_confirmada_por_apellido = 'Contreras';
+      responderCarga(detalle);
+
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('entrega ya fue confirmada');
+    });
+
+    it('Anulado · ningún rol ofrece acciones y la nota explica el terminal', () => {
+      responderCarga(crearDetalle(5));
+
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('está Anulado');
+      expect(textoPagina()).toContain('no admite más acciones');
+    });
+
+    it('Superadmin: ninguna acción y la nota explica que solo puede consultar', () => {
+      identidad.set(crearIdentidad('Superadmin'));
       responderCarga(crearDetalle(1));
 
-      boton('Avanzar →')!.click();
-      fixture.detectChanges();
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('solo puedes consultarlo');
+    });
 
-      // El control queda deshabilitado y un segundo intento se descarta.
-      expect(boton('Avanzar →')!.disabled).toBe(true);
-      componente.avanzar();
+    it('cada acción visible expone su propio aria-label', () => {
+      responderCarga(crearDetalle(1));
 
-      // Solo un PATCH: si el segundo intento hubiera pasado, habría dos.
-      const cambio = httpMock.expectOne(RUTA_ESTADO);
-      cambio.flush(crearDetalle(2));
-      responderReconsulta();
-      httpMock.expectNone(RUTA_ESTADO);
+      const botones = Array.from(raiz.querySelectorAll<HTMLButtonElement>('button')).filter(
+        (b) => b.closest('dialog') === null,
+      );
+      expect(botones.length).toBeGreaterThan(0);
+      for (const accion of botones) {
+        expect((accion.getAttribute('aria-label') ?? '').length)
+          .withContext((accion.textContent ?? '').trim())
+          .toBeGreaterThan(0);
+      }
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Anulación y rechazo con motivo obligatorio (D-6, AC-24)
+  // Aprobación del Administrador (AC-32, AC-48): un clic, sin motivo
+  // ---------------------------------------------------------------------------
+
+  describe('aprobación', () => {
+    it('un clic aprueba sin diálogo ni motivo y reconsulta con EnCurso', () => {
+      responderCarga(crearDetalle(1));
+
+      boton('Aprobar')!.click();
+
+      expect(componente.confirmando()).toBeNull();
+      const peticion = httpMock.expectOne(RUTA_APROBACION);
+      expect(peticion.request.method).toBe('POST');
+      expect(peticion.request.body).toBeNull();
+      peticion.flush(crearDetalle(3));
+
+      const aprobado = crearDetalle(3);
+      aprobado.stock_disponible = true;
+      aprobado.etiqueta_proceso = 'En confirmación de stock local';
+      aprobado.explicacion_proceso =
+        'En confirmación de stock local: el stock local está disponible; falta que el Bodeguero lo confirme y despache.';
+      responderReconsulta(aprobado);
+
+      expect(avisoExito('Pedido aprobado.')).toBe(true);
+      expect(alertas()).toEqual([]);
+      expect(componente.enOperacion()).toBe(false);
+      expect(componente.nombreEstado()).toBe('EnCurso');
+      expect(textoPagina()).toContain('En Curso');
+      expect(textoPagina()).toContain('En confirmación de stock local');
+      // El pedido aprobado ya se puede despachar.
+      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
+    });
+
+    it('un 409 se anuncia en role="alert" y reconsulta la verdad del backend', () => {
+      responderCarga(crearDetalle(1));
+
+      boton('Aprobar')!.click();
+      httpMock
+        .expectOne(RUTA_APROBACION)
+        .flush(
+          { detail: 'El pedido ya esta EnCurso' },
+          { status: 409, statusText: 'Conflict' },
+        );
+      responderReconsulta(crearDetalle(1));
+
+      expect(alertas().length).toBeGreaterThan(0);
+      expect(alertas()[0]).toContain('El pedido ya esta EnCurso');
+      expect(componente.enOperacion()).toBe(false);
+      expect(componente.nombreEstado()).toBe('Pendiente');
+    });
+
+    it('un 403 se anuncia en role="alert" y reconsulta', () => {
+      responderCarga(crearDetalle(1));
+
+      boton('Aprobar')!.click();
+      httpMock
+        .expectOne(RUTA_APROBACION)
+        .flush(
+          { detail: 'Tu rol no tiene permiso para aprobar' },
+          { status: 403, statusText: 'Forbidden' },
+        );
+      responderReconsulta(crearDetalle(1));
+
+      expect(alertas()[0]).toContain('Tu rol no tiene permiso para aprobar');
+    });
+
+    it('no permite doble envío mientras la aprobación está en vuelo', () => {
+      responderCarga(crearDetalle(1));
+
+      boton('Aprobar')!.click();
+      fixture.detectChanges();
+
+      expect(boton('Aprobar')!.disabled).toBe(true);
+      componente.aprobar();
+
+      const peticion = httpMock.expectOne(RUTA_APROBACION);
+      peticion.flush(crearDetalle(3));
+      responderReconsulta(crearDetalle(3));
+      httpMock.expectNone(RUTA_APROBACION);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Despacho desde el detalle (AC-33, AC-34): diálogo sin motivo
+  // ---------------------------------------------------------------------------
+
+  describe('despacho', () => {
+    function detalleEnCurso(): TicketDetalle {
+      const detalle = crearDetalle(3);
+      detalle.stock_disponible = true;
+      return detalle;
+    }
+
+    it('abre un diálogo sin motivo y envía el despacho con el usuario_id de la sesión', () => {
+      responderCarga(detalleEnCurso());
+
+      boton('Confirmar stock local y despachar')!.click();
+      fixture.detectChanges();
+
+      expect(componente.confirmando()).toBe('despacho');
+      const dialogo = dialogoConfirmacion();
+      expect(dialogo.open).toBe(true);
+      expect(dialogo.querySelector('textarea')).toBeNull();
+      expect((dialogo.textContent ?? '').replace(/\s+/g, ' ')).toContain('descontará');
+      expect((dialogo.textContent ?? '').replace(/\s+/g, ' ')).toContain('Cerrado');
+
+      dialogo.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+
+      const peticion = httpMock.expectOne(RUTA_DESPACHO);
+      expect(peticion.request.method).toBe('POST');
+      expect(peticion.request.body).toEqual({ usuario_id: 9 });
+      peticion.flush(crearDetalle(4));
+
+      const despachado = crearDetalle(4);
+      despachado.fecha_cierre = '2026-11-25T10:00:00';
+      despachado.etiqueta_proceso = 'Despachado';
+      despachado.explicacion_proceso = 'Despachado: pendiente de confirmación de entrega.';
+      responderReconsulta(despachado);
+
+      expect(componente.confirmando()).toBeNull();
+      expect(avisoExito('Pedido despachado.')).toBe(true);
+      expect(alertas()).toEqual([]);
+      expect(componente.nombreEstado()).toBe('Cerrado');
+      expect(textoPagina()).toContain('Despachado');
+      // El badge de stock y la acción desaparecen; queda la nota del terminal.
+      expect(textoPagina()).not.toContain('Stock disponible');
+      expect(botonesAccion()).toEqual([]);
+    });
+
+    it('un 409 de stock se anuncia en role="alert" y retira la acción tras la reconsulta', () => {
+      responderCarga(detalleEnCurso());
+
+      boton('Confirmar stock local y despachar')!.click();
+      fixture.detectChanges();
+      dialogoConfirmacion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+
+      httpMock
+        .expectOne(RUTA_DESPACHO)
+        .flush(
+          { detail: 'Stock insuficiente para el producto Cuaderno rayado' },
+          { status: 409, statusText: 'Conflict' },
+        );
+
+      const sinStock = crearDetalle(3);
+      sinStock.stock_disponible = false;
+      sinStock.etiqueta_proceso = 'Por comprar';
+      sinStock.explicacion_proceso = 'Por comprar: no hay stock suficiente ni compra vigente.';
+      responderReconsulta(sinStock);
+
+      expect(alertas()[0]).toContain('Stock insuficiente para el producto Cuaderno rayado');
+      expect(componente.confirmando()).toBeNull();
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('Por comprar');
+    });
+
+    it('no permite doble envío mientras el despacho está en vuelo', () => {
+      responderCarga(detalleEnCurso());
+
+      boton('Confirmar stock local y despachar')!.click();
+      fixture.detectChanges();
+      const submit = dialogoConfirmacion().querySelector<HTMLButtonElement>(
+        'button[type="submit"]',
+      )!;
+      submit.click();
+      fixture.detectChanges();
+
+      expect(submit.disabled).toBe(true);
+      componente.confirmar();
+
+      const peticion = httpMock.expectOne(RUTA_DESPACHO);
+      peticion.flush(crearDetalle(4));
+      responderReconsulta(crearDetalle(4));
+      httpMock.expectNone(RUTA_DESPACHO);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Confirmación de entrega del Solicitante dueño (AC-42, AC-43)
+  // ---------------------------------------------------------------------------
+
+  describe('confirmación de entrega', () => {
+    function detalleCerrado(): TicketDetalle {
+      const detalle = crearDetalle(4);
+      detalle.entrega_confirmada = false;
+      return detalle;
+    }
+
+    it('abre un diálogo sin motivo, envía POST sin cuerpo y retira el botón al 200', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      responderCarga(detalleCerrado());
+
+      boton('Confirmar entrega')!.click();
+      fixture.detectChanges();
+
+      expect(componente.confirmando()).toBe('entrega');
+      const dialogo = dialogoConfirmacion();
+      expect(dialogo.querySelector('textarea')).toBeNull();
+      expect((dialogo.textContent ?? '').replace(/\s+/g, ' ')).toContain('Entregado');
+
+      dialogo.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+
+      const peticion = httpMock.expectOne(RUTA_CONFIRMACION_ENTREGA);
+      expect(peticion.request.method).toBe('POST');
+      expect(peticion.request.body).toBeNull();
+      peticion.flush(crearDetalle(4));
+
+      const entregado = crearDetalle(4);
+      entregado.entrega_confirmada = true;
+      entregado.entrega_confirmada_en = '2026-11-25T12:00:00';
+      entregado.entrega_confirmada_por_nombre = 'Isabel';
+      entregado.entrega_confirmada_por_apellido = 'Contreras';
+      entregado.etiqueta_proceso = 'Entregado';
+      entregado.explicacion_proceso = 'Entregado: confirmado por el solicitante.';
+      responderReconsulta(entregado);
+
+      expect(componente.confirmando()).toBeNull();
+      expect(avisoExito('Entrega confirmada.')).toBe(true);
+      expect(componente.nombreEstado()).toBe('Cerrado');
+      expect(textoPagina()).toContain('Entregado el');
+      expect(textoPagina()).toContain('Contreras, Isabel');
+      expect(botonesAccion()).toEqual([]);
+    });
+
+    it('un 409 (ya confirmado) se anuncia en role="alert" y reconsulta', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      responderCarga(detalleCerrado());
+
+      boton('Confirmar entrega')!.click();
+      fixture.detectChanges();
+      dialogoConfirmacion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+
+      httpMock
+        .expectOne(RUTA_CONFIRMACION_ENTREGA)
+        .flush(
+          { detail: 'La entrega de este pedido ya fue confirmada' },
+          { status: 409, statusText: 'Conflict' },
+        );
+
+      const confirmado = detalleCerrado();
+      confirmado.entrega_confirmada = true;
+      confirmado.entrega_confirmada_en = '2026-11-25T12:00:00';
+      responderReconsulta(confirmado);
+
+      expect(alertas()[0]).toContain('La entrega de este pedido ya fue confirmada');
+      expect(componente.confirmando()).toBeNull();
+      expect(botonesAccion()).toEqual([]);
+    });
+
+    it('no permite doble envío mientras la confirmación está en vuelo', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      responderCarga(detalleCerrado());
+
+      boton('Confirmar entrega')!.click();
+      fixture.detectChanges();
+      const submit = dialogoConfirmacion().querySelector<HTMLButtonElement>(
+        'button[type="submit"]',
+      )!;
+      submit.click();
+      fixture.detectChanges();
+
+      expect(submit.disabled).toBe(true);
+      componente.confirmar();
+
+      const peticion = httpMock.expectOne(RUTA_CONFIRMACION_ENTREGA);
+      peticion.flush(crearDetalle(4));
+      responderReconsulta(crearDetalle(4));
+      httpMock.expectNone(RUTA_CONFIRMACION_ENTREGA);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Anulación y rechazo con motivo obligatorio (D-6, AC-32)
   // ---------------------------------------------------------------------------
 
   describe('anulación y rechazo', () => {
@@ -595,7 +1007,8 @@ describe('TicketDetalleComponent', () => {
       fixture.detectChanges();
       expect(componente.confirmando()).toBe('anular');
 
-      const dialogo = raiz.querySelectorAll('dialog')[0];
+      const dialogo = dialogoConfirmacion();
+      expect(dialogo.querySelector('textarea')).not.toBeNull();
       dialogo.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
       fixture.detectChanges();
 
@@ -615,10 +1028,7 @@ describe('TicketDetalleComponent', () => {
       boton('Anular')!.click();
       fixture.detectChanges();
       componente.motivoForm.controls.motivo.setValue('Ya no hace falta');
-      raiz
-        .querySelectorAll('dialog')[0]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoConfirmacion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       const peticion = httpMock.expectOne(RUTA_ANULACION);
       expect(peticion.request.method).toBe('POST');
@@ -636,14 +1046,14 @@ describe('TicketDetalleComponent', () => {
       boton('Anular')!.click();
       fixture.detectChanges();
       componente.motivoForm.controls.motivo.setValue('Motivo');
-      raiz
-        .querySelectorAll('dialog')[0]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoConfirmacion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       httpMock
         .expectOne(RUTA_ANULACION)
-        .flush({ detail: 'El motivo excede la longitud maxima' }, { status: 422, statusText: 'Unprocessable' });
+        .flush(
+          { detail: 'El motivo excede la longitud maxima' },
+          { status: 422, statusText: 'Unprocessable' },
+        );
       responderReconsulta();
 
       expect(componente.confirmando()).toBe('anular');
@@ -658,10 +1068,7 @@ describe('TicketDetalleComponent', () => {
       boton('Rechazar')!.click();
       fixture.detectChanges();
       componente.motivoForm.controls.motivo.setValue('Sin stock en la sede');
-      raiz
-        .querySelectorAll('dialog')[0]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoConfirmacion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       const peticion = httpMock.expectOne(RUTA_RECHAZO);
       expect(peticion.request.method).toBe('POST');
@@ -679,10 +1086,7 @@ describe('TicketDetalleComponent', () => {
       boton('Rechazar')!.click();
       fixture.detectChanges();
       componente.motivoForm.controls.motivo.setValue('Motivo válido');
-      raiz
-        .querySelectorAll('dialog')[0]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoConfirmacion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       httpMock
         .expectOne(RUTA_RECHAZO)
@@ -713,8 +1117,7 @@ describe('TicketDetalleComponent', () => {
       expect(componente.editando()).toBe(true);
 
       componente.formularioEdicion.controls.asunto.setValue('Falta de papel y cartulina');
-      const dialogo = raiz.querySelectorAll('dialog')[1];
-      dialogo.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+      dialogoEdicion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       const peticion = httpMock.expectOne(RUTA_DETALLE);
       expect(peticion.request.method).toBe('PUT');
@@ -738,10 +1141,7 @@ describe('TicketDetalleComponent', () => {
 
       boton('Editar')!.click();
       fixture.detectChanges();
-      raiz
-        .querySelectorAll('dialog')[1]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoEdicion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       httpMock
         .expectOne(RUTA_DETALLE)
@@ -779,7 +1179,7 @@ describe('TicketDetalleComponent', () => {
         componente.formularioEdicion.controls.descripcion.hasError('maxlength'),
       ).toBe(true);
 
-      const textarea = raiz.querySelectorAll('dialog')[1].querySelector(
+      const textarea = dialogoEdicion().querySelector(
         'textarea[formcontrolname="descripcion"]',
       ) as HTMLTextAreaElement;
       expect(textarea.getAttribute('maxlength')).toBe('500');
@@ -790,10 +1190,7 @@ describe('TicketDetalleComponent', () => {
 
       boton('Editar')!.click();
       fixture.detectChanges();
-      raiz
-        .querySelectorAll('dialog')[1]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoEdicion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       httpMock
         .expectOne(RUTA_DETALLE)
@@ -839,17 +1236,14 @@ describe('TicketDetalleComponent', () => {
       expect(conservada?.etiqueta).toContain('inactivo');
       expect(componente.esProductoInactivoEdicion(0)).toBe(true);
 
-      const select = raiz.querySelectorAll('dialog')[1].querySelectorAll('select')[1];
+      const select = dialogoEdicion().querySelectorAll('select')[1];
       const textos = Array.from(select.querySelectorAll('option')).map((opcion) =>
         (opcion.textContent ?? '').trim(),
       );
       expect(textos).toContain('Cuaderno rayado — inactivo (solo se conserva)');
 
       componente.detallesEdicion.at(0).controls.cantidad_solicitada.setValue(5);
-      raiz
-        .querySelectorAll('dialog')[1]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoEdicion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       const peticion = httpMock.expectOne(RUTA_DETALLE);
       expect(peticion.request.method).toBe('PUT');
@@ -882,9 +1276,7 @@ describe('TicketDetalleComponent', () => {
       expect(opcionesNuevas.map((opcion) => opcion.producto_id)).toEqual([2]);
       expect(opcionesNuevas.some((opcion) => opcion.inactivo)).toBe(false);
 
-      const segundoSelect = raiz
-        .querySelectorAll('dialog')[1]
-        .querySelectorAll('select')[2];
+      const segundoSelect = dialogoEdicion().querySelectorAll('select')[2];
       const textos = Array.from(segundoSelect.querySelectorAll('option')).map((opcion) =>
         (opcion.textContent ?? '').trim(),
       );
@@ -901,10 +1293,7 @@ describe('TicketDetalleComponent', () => {
       componente.detallesEdicion.at(1).controls.producto_id.setValue(2);
       fixture.detectChanges();
 
-      raiz
-        .querySelectorAll('dialog')[1]
-        .querySelector<HTMLButtonElement>('button[type="submit"]')!
-        .click();
+      dialogoEdicion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       httpMock
         .expectOne(RUTA_DETALLE)
@@ -919,6 +1308,37 @@ describe('TicketDetalleComponent', () => {
       // El modal sigue abierto para corregir la línea o cancelar.
       expect(componente.editando()).toBe(true);
       expect(componente.enOperacion()).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Sin transiciones genéricas ni PATCH /estado (AC-48)
+  // ---------------------------------------------------------------------------
+
+  describe('sin transiciones genéricas', () => {
+    it('no ofrece «Avanzar» ni «Retroceder» y no conserva métodos de transición', () => {
+      responderCarga(crearDetalle(1));
+
+      const visible = textoPagina();
+      expect(visible).not.toContain('Avanzar');
+      expect(visible).not.toContain('Retroceder');
+
+      const api = componente as unknown as Record<string, unknown>;
+      expect(api['avanzar']).toBeUndefined();
+      expect(api['retroceder']).toBeUndefined();
+      expect(api['transicion']).toBeUndefined();
+      expect(api['idEstadoSiguiente']).toBeUndefined();
+      expect(api['idEstadoAnterior']).toBeUndefined();
+    });
+
+    it('las acciones del detalle no invocan PATCH /estado', () => {
+      const detalle = crearDetalle(3);
+      detalle.stock_disponible = true;
+      responderCarga(detalle);
+
+      // Cualquier mutación visible usa su propia ruta; `afterEach` falla si
+      // apareciera una petición inesperada (el PATCH de legado no se usa).
+      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
     });
   });
 });

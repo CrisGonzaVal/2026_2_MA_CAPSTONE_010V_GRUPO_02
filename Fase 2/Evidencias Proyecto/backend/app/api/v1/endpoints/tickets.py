@@ -102,6 +102,10 @@ def listar_tickets(
         "Crea el ticket y sus lineas de detalle **en una sola transaccion**: si "
         "alguna falla, no queda ticket sin detalle. La escritura no valida stock "
         "ni descuenta inventario (es la peticion, no la entrega).\n\n"
+        "El `201` devuelve el **read model de proceso** ya poblado "
+        "(`etiqueta_proceso`, `explicacion_proceso`, `stock_disponible`, "
+        "`entrega_confirmada` y los dos gestores), igual que el listado y el "
+        "detalle: el tablero inserta esta respuesta sin reconsultar.\n\n"
         "Un `prioridad_id`, `estado_id` o `producto_id` que no exista devuelve "
         "**404** nombrando la referencia, no 500. Los errores de forma del payload "
         "(asunto de menos de 3 caracteres, `detalles` vacio, cantidad no positiva) "
@@ -188,17 +192,128 @@ def despachar_ticket(
     return ticket_service.despachar_ticket(db, ticket_id, datos, identidad)
 
 
+@router.post(
+    "/{ticket_id}/aprobacion",
+    response_model=TicketRespuesta,
+    status_code=status.HTTP_200_OK,
+    summary="Aprobar un pedido y dejarlo en EnCurso",
+    description=(
+        "Aprueba el pedido y lo deja **siempre** en `EnCurso`, con stock o sin "
+        "el (Feature 013, ampliacion 25/Nov/2026, spec D-15/D-17): la aprobacion "
+        "es una operacion semantica propia del Administrador Institucional y "
+        "**no** evalua stock, no reserva, no incluye el pedido en ninguna "
+        "simulacion y no toca `fecha_cierre`, el inventario ni Compras. El stock "
+        "solo decide la etiqueta de proceso posterior (`En confirmación de stock "
+        "local` o `Por comprar`); el despacho de la 005 sigue siendo la "
+        "validacion real y el unico camino a `Cerrado`.\n\n"
+        "Origen: `Pendiente` o `EnRevision` (estado **heredado**; el flujo "
+        "nuevo no lo produce). Cualquier otro estado —`EnCurso`, `Cerrado`, "
+        "`Anulado` o uno fuera del catalogo— responde **409** sin escribir, "
+        "igual que un catalogo sin `EnCurso` (fail-closed).\n\n"
+        "Registra **exactamente una** fila de historial con el origen real, "
+        "destino `EnCurso`, el actor de la sesion, el motivo literal "
+        "`Aprobación del pedido` y `orden_compra_id` nulo, en la misma "
+        "transaccion que el cambio de estado (si la fila falla, el pedido "
+        "conserva su estado).\n\n"
+        "Actores: solo el Administrador Institucional (matriz y capacidad "
+        "`kanban`). El Bodeguero, el Solicitante y el Superadmin reciben **403**; "
+        "sin sesion, **401**. La precedencia es 401 -> 403 -> 404 -> 409. Un "
+        "pedido inexistente o de otra institucion responde **404** identico "
+        "(ocultamiento). No hay payload obligatorio ni 422 por cuerpo."
+    ),
+    responses={
+        **dependencies.respuestas_de_autorizacion(),
+        **dependencies.respuesta_recurso_oculto(),
+        **dependencies.respuesta_conflicto(),
+    },
+    dependencies=[
+        Depends(
+            dependencies.requiere_capacidad(
+                "POST", "/api/v1/tickets/{ticket_id}/aprobacion"
+            )
+        )
+    ],
+)
+def aprobar_ticket(
+    ticket_id: int,
+    identidad: IdentidadAutenticada = Depends(
+        dependencies.requiere_operacion(
+            "POST", "/api/v1/tickets/{ticket_id}/aprobacion"
+        )
+    ),
+    db: Session = Depends(dependencies.get_db_negocio),
+):
+    return ticket_service.aprobar_ticket(db, ticket_id, identidad)
+
+
+@router.post(
+    "/{ticket_id}/confirmacion-entrega",
+    response_model=TicketRespuesta,
+    status_code=status.HTTP_200_OK,
+    summary="Confirmar la entrega de un pedido despachado",
+    description=(
+        "Registra que el **Solicitante dueño** recibio los insumos de un pedido "
+        "ya despachado (Feature 013, ampliacion 25/Nov/2026, spec §9.9, "
+        "D-25/D-26). Es un **evento** del ciclo de vida, no una transicion de "
+        "estado: el pedido sigue en `Cerrado` y no se reabre.\n\n"
+        "Escribe **exactamente una** fila de historial con origen y destino "
+        "`Cerrado`, el actor de la sesion, `fecha_transicion` del servidor, el "
+        "motivo literal `Entrega confirmada por el solicitante` y "
+        "`orden_compra_id` nulo; la etiqueta de proceso pasa a «Entregado». "
+        "**No** toca `fecha_cierre`, el stock, los movimientos ni Compras, y no "
+        "crea columnas ni tablas (reutiliza el precedente `EnCurso -> EnCurso` "
+        "de la 021).\n\n"
+        "Actores: solo el Solicitante de la matriz, y ademas debe ser el dueño "
+        "del pedido. El Administrador, el Bodeguero y el Superadmin reciben "
+        "**403** por matriz; sin sesion, **401**. La precedencia es "
+        "401 -> 403 -> 404 -> 409. Un pedido inexistente o de otro Solicitante "
+        "responde **404** identico (ocultamiento), uno que no esta `Cerrado` "
+        "responde **409** sin escribir y una segunda confirmacion responde "
+        "**409** sin duplicar la fila. Un pedido creado por un Administrador o "
+        "un Bodeguero no tiene dueño `Solicitante`: permanece «Despachado». No "
+        "hay payload obligatorio ni 422 por cuerpo."
+    ),
+    responses={
+        **dependencies.respuestas_de_autorizacion(),
+        **dependencies.respuesta_recurso_oculto(),
+        **dependencies.respuesta_conflicto(),
+    },
+    dependencies=[
+        Depends(
+            dependencies.requiere_capacidad(
+                "POST", "/api/v1/tickets/{ticket_id}/confirmacion-entrega"
+            )
+        )
+    ],
+)
+def confirmar_entrega_ticket(
+    ticket_id: int,
+    identidad: IdentidadAutenticada = Depends(
+        dependencies.requiere_operacion(
+            "POST", "/api/v1/tickets/{ticket_id}/confirmacion-entrega"
+        )
+    ),
+    db: Session = Depends(dependencies.get_db_negocio),
+):
+    return ticket_service.confirmar_entrega_ticket(db, ticket_id, identidad)
+
+
 @router.patch(
     "/{ticket_id}/estado",
     response_model=TicketRespuesta,
     status_code=status.HTTP_200_OK,
     summary="Actualizar el estado de un ticket",
     description=(
-        "Cambia el estado del ticket dentro del flujo lineal del catálogo: "
-        "solo se acepta **avanzar o retroceder un paso** entre estados "
-        "contiguos (el orden del catálogo es el orden del flujo). Saltar "
-        "estados o pedir el estado que el ticket ya tiene se rechazan con "
-        "**409** y no modifican el ticket.\n\n"
+        "**Contrato de legado** (Feature 013, ampliacion 25/Nov/2026): cambia "
+        "el estado del ticket dentro del flujo lineal del catálogo y solo se "
+        "concede al **Administrador Institucional**; los demás roles reciben "
+        "**403** por matriz. La interfaz ya no lo invoca: las acciones "
+        "semanticas del detalle son Aprobar, Rechazar, Anular, Editar, "
+        "Despachar y Confirmar entrega. El destino es **siempre el "
+        "solicitado**: solo se acepta **avanzar o retroceder un paso** entre "
+        "estados contiguos (el orden del catálogo es el orden del flujo). "
+        "Saltar estados o pedir el estado que el ticket ya tiene se rechazan "
+        "con **409** y no modifican el ticket.\n\n"
         "`Cerrado` y `Anulado` son los dos estados terminales, resueltos por "
         "su **nombre canónico** y nunca por su posición en el catálogo "
         "(Feature 013, enmienda D-4/AC-26): una petición cuyo origen sea "

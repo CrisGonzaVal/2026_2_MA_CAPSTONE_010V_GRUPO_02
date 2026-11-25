@@ -173,11 +173,22 @@ RETIRADAS_017: frozenset[tuple[str, str]] = frozenset(
 )
 
 
+#: Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.10, AC-49): el
+#: `PATCH /estado` de la transcripcion historica queda **solo** para el
+#: Administrador. Es una restriccion documentada de la entrada (que no se
+#: retira), no una relajacion; el Bodeguero conserva despacho y rechazo.
+RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+}
+
+
 def test_matriz_conserva_las_44_operaciones_previas_intactas_ac_17():
     """AC-17: la 013 no retira ni relaja ninguna de las 44 filas vigentes.
 
     Feature 017: las 11 lecturas de D-9 ajustan solo el rol Superadmin; los
     roles institucionales conservan exactamente el conjunto de la 012.
+    Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH /estado` se restringe a
+    solo Administrador.
     """
     assert len(MATRIZ_012) == 44
     for clave, roles in MATRIZ_012.items():
@@ -185,6 +196,8 @@ def test_matriz_conserva_las_44_operaciones_previas_intactas_ac_17():
         assert actual is not None, f"la operacion {clave} desaparecio de la matriz"
         if clave in RETIRADAS_017:
             assert set(actual) == set(roles) - {"Superadmin"}, clave
+        elif clave in RESTRINGIDAS_013:
+            assert set(actual) == RESTRINGIDAS_013[clave], clave
         else:
             assert set(actual) == roles, clave
 
@@ -216,7 +229,7 @@ def test_superadmin_no_obtiene_ninguna_escritura_nueva_ac_17():
 
 
 # ---------------------------------------------------------------------------
-# AC-17: contrato OpenAPI (49 operaciones y respuestas documentadas)
+# AC-17: contrato OpenAPI (operaciones de la 013 y respuestas documentadas)
 # ---------------------------------------------------------------------------
 
 

@@ -266,11 +266,23 @@ RETIRADAS_017: frozenset[tuple[str, str]] = frozenset(
 )
 
 
+#: Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.10, AC-49): el
+#: `PATCH /estado` de la transcripcion historica queda **solo** para el
+#: Administrador. La entrada no se retira (y el numero de operaciones solo
+#: crece con la aprobacion); el Bodeguero conserva despacho, rechazo y
+#: recepcion de compras.
+RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+}
+
+
 def test_matriz_central_conserva_la_esperada_para_010():
     """La 010 conserva sus filas; las features posteriores pueden agregar mas.
 
     Feature 017 (D-9/AC-15): solo cambia el rol Superadmin en las 11 lecturas
-    retiradas; los roles institucionales conservan su matriz.
+    retiradas; los roles institucionales conservan su matriz. Ampliacion
+    25/Nov/2026 (§9.10, AC-49): el `PATCH /estado` se restringe a solo
+    Administrador.
     """
     vigente = {
         clave: set(roles) for clave, roles in permisos.MATRIZ_PERMISOS.items()
@@ -278,6 +290,8 @@ def test_matriz_central_conserva_la_esperada_para_010():
     for clave, roles in MATRIZ_010.items():
         if clave in RETIRADAS_017:
             assert vigente.get(clave) == roles - {"Superadmin"}, clave
+        elif clave in RESTRINGIDAS_013:
+            assert vigente.get(clave) == RESTRINGIDAS_013[clave], clave
         else:
             assert vigente.get(clave) == roles, clave
 

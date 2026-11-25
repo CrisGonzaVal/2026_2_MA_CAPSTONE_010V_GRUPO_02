@@ -288,12 +288,16 @@ def test_patch_estado_no_sale_de_anulado_ac_4(motor, datos_013):
 
 
 def test_en_curso_a_cerrado_sigue_reservado_al_despacho_ac_5(motor, datos_013):
-    """AC-5/AC-15-005: el 409 y su detalle literal quedan intactos (regresion)."""
+    """AC-5/AC-15-005: el 409 y su detalle literal quedan intactos (regresion).
+
+    Ampliacion 25/Nov/2026 (AC-49): el `PATCH /estado` de legado se ejerce con
+    el Administrador, que es el unico rol al que se concede.
+    """
     ticket_id = sembrar_ticket(
         motor, datos_013, estado_id=datos_013["estados"]["EnCurso"]
     )
 
-    with _cliente_bodeguero(motor, datos_013) as cliente:
+    with _cliente_administrador(motor, datos_013) as cliente:
         respuesta = cliente.patch(
             f"/api/v1/tickets/{ticket_id}/estado",
             json={"estado_id": datos_013["estados"]["Cerrado"]},
@@ -627,6 +631,9 @@ def test_ticket_despachado_no_vuelve_a_un_estado_despachable_ac_26(
         )
         movimientos_tras_despacho = contar_en(motor, "MovimientoInventario")
 
+    # Ampliacion 25/Nov/2026 (AC-49): el `PATCH /estado` de legado es solo del
+    # Administrador; el Bodeguero conserva el despacho de arriba.
+    with _cliente_administrador(motor, datos_013) as cliente:
         # Un ticket despachado no vuelve a ningun estado despachable.
         for destino in ("EnCurso", "EnRevision", "Pendiente"):
             respuesta = cliente.patch(

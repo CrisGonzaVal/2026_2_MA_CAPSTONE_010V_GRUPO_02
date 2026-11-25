@@ -143,3 +143,247 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
     Media, alta real si aplica) y humo 8080 reconstruido; evidencia bajo AC-27 y `MEMORY.md`.
   - **AC:** AC-25, AC-27.
     - *Hecho (05/Nov/2026):* `evidencia/README.md` §9 registra las cuatro verificaciones: suites **1459/83/0** (SQLite) y **1542/0/0** (gated PG16), `ng test` **524** y `ng build` limpio (`main-BX5UQPQ3.js`); recorrido 4200 con alta real **#11** en la columna `Pendiente` y reset del modal a `Media`/`Pendiente`; humo 8080 con la imagen reconstruida sirviendo el mismo bundle, estado fijo sin selector y `Media` habilitada. `MEMORY.md`, `stack.md` y `roadmap.md` actualizados; grep de coherencia sin afirmaciones obsoletas sobre `estados[0]`.
+
+## Ampliación 25/Nov/2026 — flujo de aprobación, etiqueta de proceso y confirmación de entrega
+
+> Tareas de la §9 aprobada (AC-28…AC-49). Ejecutar en orden, una por llamada de @implementer, con
+> pruebas primero. Sin DDL, sin `stack.md`, sin tocar `roadmap.md`; `MEMORY.md` lo actualiza el
+> coordinador al cierre. Marcas: **[SQLite]**, **[PostgreSQL gated]**, **[ng test]**, **[build]**.
+
+- [x] **T19 — Backend: DTOs del read model y derivación pura de la etiqueta.**
+  - Archivos: `backend/app/schemas/ticket_schema.py`, `backend/app/services/ticket_proceso.py`
+    (nuevo), `backend/tests/funcional/unitarios/test_ticket_proceso_013.py` (nuevo).
+  - Prueba primero: etiquetas de los cinco estados, `Cerrado` con/sin confirmación, `EnCurso` con
+    OC `Recibida`/`Facturada`/`Emitida`, `stock_disponible`, «Por comprar», estado desconocido;
+    frases cortas; rango de OC; campos de `TicketRespuesta`/`TicketDetalleRespuesta`/
+    `GestorProcesoRespuesta`.
+  - Implementación: `GestorProcesoRespuesta` y campos aditivos; `ticket_proceso.py` con constantes,
+    `rango_estado_orden` y `derivar_etiqueta`; sin tocar `compra_service`.
+  - **AC:** AC-37, AC-38, AC-39 (esquema).
+  - **Depende de:** —
+  - **Hecho cuando:** los unitarios pasan y el contrato de los DTO declara exactamente los campos
+    de §9.8 sin DDL. **[SQLite]**
+
+- [x] **T20 — Backend: read model por lote en listado y detalle.**
+  - Archivos: `backend/app/services/ticket_service.py`,
+    `backend/tests/funcional/integracion/test_ticket_proceso_013.py` (nuevo),
+    `backend/tests/funcional/integracion/test_tablero_kanban.py` (conteo de consultas).
+  - Prueba primero: listado y detalle con etiqueta/frase, `estado_orden_cobertura`,
+    `stock_disponible`, `entrega_confirmada`, gestores; etiqueta coherente entre listado y detalle;
+    conteo de consultas fijo con 1 vs N tickets (patrón `before_cursor_execute`).
+  - Implementación: `_cargar_proceso_tickets` con una simulación por sede, una consulta de OC, una
+    de confirmaciones y una de gestores; `listar_tickets` devuelve `List[TicketRespuesta]`;
+    `obtener_ticket_detalle` completa la base y la fecha/actor de la confirmación.
+  - **AC:** AC-37, AC-38, AC-39, AC-40, AC-41 (datos).
+  - **Depende de:** T19.
+  - **Hecho cuando:** los tests de campos y el no-N+1 pasan; el detalle conserva
+    `asignaciones`/`cadena_productos`. **[SQLite]**
+    - *Hecho (25/Nov/2026):* `ticket_service` gana `_ProcesoTicket` (read model inmutable),
+      `_cargar_proceso_tickets` (una simulación de la 020 por `sede_id` distinta, una consulta de
+      `orden_compra_ticket ⋈ orden_compra` con `cantidad_asignada > 0` y rango `Recibida > Facturada
+      > Emitida`, una de confirmaciones `Cerrado → Cerrado` con el motivo canónico —`Cerrado`
+      resuelto por nombre, menor id— y una de gestores `historial ⋈ usuario ⋈ rol`, último por
+      `fecha_transicion DESC, historial_transicion_id DESC` con el rol vigente), `_aplicar_proceso` y
+      `_respuesta_ticket_con_proceso` (listo para el 200 de T21/T22). `listar_tickets` devuelve
+      `List[TicketRespuesta]` (estado eager para la etiqueta; alcance y filtro intactos) y
+      `obtener_ticket_detalle` deriva `estado_orden_cobertura` de sus `asignaciones` ya cargadas
+      (sin consulta extra), completa la confirmación y conserva `stock_disponible`/`asignaciones`/
+      `cadena_productos`. Nuevo `test_ticket_proceso_013.py`: **22/22** (AC-37…AC-40, stock por
+      sede, sin sede, coherencia listado↔detalle y no-N+1 con **15** consultas constantes con 1 y 3
+      pedidos `EnCurso`). `test_tablero_kanban.py` sube el tope del no-N+1 de **7 a 12** (cinco
+      consultas fijas del read model; la igualdad 1 vs 3 se conserva). Reconciliación mínima fuera
+      del listado previsto: `test_ciclo_vida_historial_013.py::test_si_la_fila_no_puede_registrarse_
+      el_estado_no_cambia_ac_11` dropea `historial_transicion_ticket` a propósito y ya no puede usar
+      `GET /tickets/` como canal de observación (el read model consulta esa tabla); pasa a leer el
+      `estado_id` por ORM, conservando la intención AC-11. `test_ciclo_vida_operativas_servicio_014`
+      **no** requirió cambios: `TicketRespuesta.detalles[].producto.categoria` conserva el acceso que
+      usaba. Suite completa SQLite **1908 passed / 109 skipped** (baseline T19 1886 + 22 nuevos).
+      Sin cambios de endpoint (`response_model` ya era `List[TicketRespuesta]`), permisos, capacidades,
+      DDL ni frontend; `ng test` no se ejecuta.
+
+- [x] **T21 — Backend: aprobación Admin-only, historial y rol del PATCH.**
+  - Archivos: `backend/app/services/ticket_service.py`, `backend/app/core/permisos.py`,
+    `backend/app/core/capacidades.py`, `backend/app/api/v1/endpoints/tickets.py`,
+    `backend/tests/funcional/integracion/test_ciclo_vida_aprobacion_013.py` (nuevo).
+  - Prueba primero: 200 desde `Pendiente`/`EnRevision` siempre a `EnCurso`; una fila
+    `origen → EnCurso` con `motivo` `Aprobación del pedido`, actor y `orden_compra_id` nulo;
+    atomicidad; 409 ya/terminal/catálogo; 404; 403 rol/capacidad; `PATCH` con Bodeguero 403 y con
+    Administrador 200/409 de legado.
+  - Implementación: `aprobar_ticket` con `FOR UPDATE`; matriz `POST /aprobacion` `{Administrador}`
+    y `PATCH /estado` `{Administrador}`; capacidad `kanban`; endpoint y descripciones OpenAPI;
+    `_respuesta_ticket_con_proceso` para el 200.
+  - **AC:** AC-28, AC-29, AC-30, AC-31, AC-32 (Aprobar), AC-36, AC-45, AC-46, AC-49.
+  - **Depende de:** T19, T20.
+  - **Hecho cuando:** la aprobación y el `PATCH` se verifican por HTTP con sus roles, códigos y una
+    sola fila; la matriz queda en 74 (75 al cerrar T22). **[SQLite]**
+
+- [x] **T22 — Backend: confirmación de entrega.**
+  - Archivos: `backend/app/services/ticket_service.py`, `backend/app/core/permisos.py`,
+    `backend/app/core/capacidades.py`, `backend/app/api/v1/endpoints/tickets.py`,
+    `backend/tests/funcional/integracion/test_ciclo_vida_confirmacion_013.py` (nuevo).
+  - Prueba primero: 200 dueño; fila `Cerrado → Cerrado` con motivo, actor y `orden_compra_id`
+    nulo; `entrega_confirmada`/etiqueta `Entregado`; sin estado/stock/`fecha_cierre`; 404 ajeno;
+    403 Administrador/Bodeguero/Superadmin; 409 no `Cerrado` y ya confirmado; alta administrativa
+    sin confirmación (403 del dueño sin rol Solicitante); capacidad `tickets`.
+  - Implementación: `confirmar_entrega` con `FOR UPDATE` y detección por motivo; matriz
+    `POST /confirmacion-entrega` `{Solicitante}`; capacidad `tickets`; endpoint y OpenAPI;
+    `_respuesta_ticket_con_proceso` con `entrega_confirmada = true`.
+  - **AC:** AC-42, AC-43, AC-44 (segunda operación).
+  - **Depende de:** T21.
+  - **Hecho cuando:** la confirmación se verifica por HTTP, la matriz queda en 75 y la fila
+    persiste sin DDL. **[SQLite]**
+
+- [x] **T23 — Backend gated PostgreSQL: concurrencia y filas de historial.**
+  - Archivos:
+    `backend/tests/funcional/sistema/test_ciclo_vida_aprobacion_confirmacion_postgres_013.py`
+    (nuevo).
+  - Prueba primero (gated, `skip` sin `POSTGRES_TEST_URL`): dos sesiones sobre la misma fila →
+    aprobación `(200, 409)` con una fila; confirmación `(200, 409)` con una fila; lectura
+    persistida del actor, fecha, motivo y `orden_compra_id NULL`; `fecha_cierre`/stock intactos;
+    sin DDL.
+  - Implementación: solo si la concurrencia revela un defecto en T21/T22; no se añaden bloqueos
+    fuera del patrón de la 005.
+  - **AC:** AC-30, AC-42, AC-43 (concurrencia).
+  - **Depende de:** T21, T22.
+  - **Hecho cuando:** el módulo gated pasa contra PostgreSQL 16 sobre base desechable y no toca
+    `apt_erp`. **[PostgreSQL gated]**
+
+- [x] **T24 — Backend: contrato/OpenAPI y recuentos 75/77.**
+  - Archivos: `backend/tests/funcional/integracion/test_permisos_endpoints.py`,
+    `test_cobertura_021.py`, `test_ciclo_vida_autorizacion_013.py`,
+    `test_ciclo_vida_flujo_013.py`, `test_despacho_transaccional.py`, los tests de
+    matriz/capacidades de la 012 (grep) y `backend/app/api/v1/endpoints/tickets.py`
+    (descripciones), según el grep.
+  - Prueba primero: matriz 75; `/openapi.json` 75 v1/77 entradas; `PATCH` solo Administrador;
+    aprobación/confirmación con 401/403/404/409; las 73 previas con roles salvo el `PATCH`; los
+    actores Bodeguero del `PATCH` pasan a Administrador o 403.
+  - Implementación: reconciliación de aserciones absolutas y descripciones; sin cambios de
+    comportamiento fuera de T21/T22.
+  - **AC:** AC-44, AC-45, AC-49.
+  - **Depende de:** T21, T22.
+  - **Hecho cuando:** el inventario rutas↔matriz y el OpenAPI pasan con 75/77 y el `PATCH` con
+    `{Administrador}`. **[SQLite]**
+
+- [x] **T25 — Frontend: interfaces, servicio y helpers de roles.**
+  - Archivos: `frontend/src/app/shared/interfaces/index.ts`,
+    `frontend/src/app/features/tickets/services/ticket.service.ts`,
+    `frontend/src/app/features/tickets/ticket.service.spec.ts` (nuevo),
+    `frontend/src/app/core/auth/roles.ts`, `frontend/src/app/core/auth/roles.spec.ts`.
+  - Prueba primero: URL/verbo/payload de `aprobarTicket` (POST sin cuerpo), `despacharTicket`
+    (POST `{usuario_id}`) y `confirmarEntrega` (POST sin cuerpo); ausencia de `actualizarEstado`;
+    helpers `puedeAprobarTicket` (Administrador), `puedeDespacharTicket`
+    (Administrador/Bodeguero) y `puedeConfirmarEntrega` (Solicitante).
+  - Implementación: tipos `GestorProceso` y campos aditivos opcionales en `Ticket`/`TicketDetalle`;
+    métodos del servicio; helpers; retirar `puedeOperarTickets` si queda sin consumidor.
+  - **AC:** AC-32, AC-39, AC-42, AC-43, AC-45, AC-49.
+  - **Depende de:** T19, T21, T22.
+  - **Hecho cuando:** `ticket.service.spec.ts` y `roles.spec.ts` pasan; el proyecto compila.
+    **[ng test]**
+
+- [x] **T26 — Frontend: detalle con acciones semánticas y read model.**
+  - Archivos: `frontend/src/app/features/tickets/ticket-detalle.component.ts` (+ `.html`,
+    `.spec.ts`).
+  - Prueba primero: acciones por estado/rol (Aprobar solo Administrador; Rechazar/Anular/Editar
+    según estado y dueño; Despachar solo `EnCurso` con `stock_disponible`; Confirmar entrega solo
+    dueño y `Cerrado` sin confirmar); no Avanzar/Retroceder; no `PATCH`; diálogo discriminado con
+    motivo solo para anular/rechazo; 409 en `role="alert"`; sin doble envío; reconsulta;
+    etiqueta/frase/responsables/línea de entrega.
+  - Implementación: `acciones` y métodos `aprobar`/`solicitarDespacho`/`confirmarEntrega`; unión
+    de `confirmando`; retirar `idEstadoSiguiente`/`idEstadoAnterior`/`transicion`; mostrar
+    `etiqueta_proceso`, `explicacion_proceso`, `gestionado_por_*` y
+    `entrega_confirmada_en`/`_por_*`; conservar el badge de stock y los diálogos de anular/rechazo.
+  - **AC:** AC-32, AC-33, AC-34, AC-37…AC-40, AC-42, AC-43, AC-48.
+  - **Depende de:** T25.
+  - **Hecho cuando:** los specs del detalle pasan y `ng build` compila el componente. **[ng test]**
+
+- [x] **T27 — Frontend: tablero con «Terminados», etiqueta y responsables.**
+  - Archivos: `frontend/src/app/features/tickets/tickets.component.ts` (+ `.html`, `.spec.ts`).
+  - Prueba primero: 4 columnas (`Pendiente`, `EnRevision` heredado, `EnCurso`, «Terminados»);
+    `Cerrado`+`Anulado` en «Terminados» con contador sumado; sin columna `Anulado`; tarjeta con
+    etiqueta, frase accesible y dos responsables (o «—»/«Sin gestión registrada»); tarjeta-enlace;
+    `aria-label` con estado canónico; sin controles; no-N+1 (2 peticiones).
+  - Implementación: `columnas` agrupa por `estado_ids`; `TarjetaKanban` con
+    `etiquetaProceso`/`explicacionProceso`/`gestores`/`estadoCanonico`; grid de 4;
+    `resolverTarjeta` resuelve el estado canónico del catálogo; `estadosAlta` sigue excluyendo
+    `Anulado`.
+  - **AC:** AC-37, AC-38, AC-40, AC-41, AC-47.
+  - **Depende de:** T25.
+  - **Hecho cuando:** los specs del tablero pasan y `ng build` compila. **[ng test]**
+
+- [x] **T28 — Backend: e2e del flujo y regresión de suites.**
+  - Archivos: `backend/tests/funcional/e2e/test_flujo_aprobacion_entrega_013.py` (nuevo) y los
+    módulos reconciliados de T24/T21.
+  - Prueba primero: alta → aprobar (etiqueta) → Compras/021 si hay necesidad → despachar →
+    confirmar; 403/404/409; `PATCH` de legado 403 para Bodeguero y 200/409 para Administrador;
+    ticket de Admin/Bodeguero sin confirmación; caso #10.
+  - Implementación: solo correcciones si el e2e revela un defecto conforme a T19–T24; no se amplía
+    la spec.
+  - **AC:** AC-28…AC-49 (integración).
+  - **Depende de:** T21, T22, T24.
+  - **Hecho cuando:** el e2e y la suite SQLite completa pasan sin regresiones. **[SQLite]**
+
+- [x] **T29 — Frontend: suite completa y build.**
+  - Archivos: specs de `tickets`, `ticket-detalle`, `roles` y `ticket.service`; correcciones solo
+    si el recorrido revela un defecto conforme a T25–T27.
+  - `npx ng test --watch=false --browsers=ChromeHeadless` con `$env:CHROME_BIN` a Edge; `ng build`
+    de producción.
+  - **AC:** AC-32…AC-43, AC-48.
+  - **Depende de:** T26, T27.
+  - **Hecho cuando:** `ng test` y `ng build` quedan limpios y ningún spec previo queda rojo.
+    **[ng test + build]**
+
+- [x] **T30 — Cierre: suites, contrato, 4200/8080, evidencia y grep.**
+  - Archivos: `spec.md` (evidencia bajo AC-28…AC-49), `evidencia/` (capturas/consultas);
+    `MEMORY.md` lo actualiza el coordinador; `AGENTS.md`/skills solo si el grep de coherencia lo
+    exige (coordinador). `roadmap.md` no se toca.
+  - Ejecutar `pytest` SQLite completo, gated PG (`POSTGRES_TEST_URL`), `ng test`, `ng build`,
+    inspeccionar `/openapi.json` (75 v1/77), recorrer 4200 con escritura real (aprobar, despachar,
+    confirmar, tablero, detalle, caso #10) y 8080 tras `docker compose build frontend` +
+    `up -d frontend`; grep de coherencia sobre `AGENTS.md`, `MEMORY.md` y `.agents/skills/`
+    (PATCH/roles/etiquetas/columnas/recuentos).
+  - **AC:** AC-28…AC-49 y «Cierre de la enmienda».
+  - **Depende de:** T23, T28, T29.
+  - **Hecho cuando:** todas las suites y el build están en verde, 4200/8080 verificados, cada AC
+    - *Hecho (25/Nov/2026):* cierre verificado. **Suites:** SQLite **1973 passed / 112 skipped / 0 failed** (438,65 s); gated PostgreSQL 16 **2082 passed / 3 skipped / 0 failed** (1080,12 s) con el módulo de concurrencia de T23 **3/3**; `ng test` **634 SUCCESS**; `ng build` limpio (`main-JE7KG3Z2.js`, initial 339,74 kB). **OpenAPI:** **77** operaciones (75 v1 + `/` y `/health`) con aprobación `Administrador`/`kanban`, confirmación `Solicitante`/`tickets`, `PATCH` solo `Administrador` y despacho/rechazo `Administrador, Bodeguero`. **4200 con escritura real y los dos caminos:** #11 con stock (Solicitante crea → Administrador aprueba «En confirmación de stock local» → Bodeguero despacha → Solicitante confirma) y #12 sin stock (aprueba «Por comprar» → aparece en Compras con necesidad → OC-2026-000002 emitida y facturada → recepción del Bodeguero → «En confirmación de stock local» → despacho → confirmación del Solicitante); tablero de 4 columnas con «Terminados», caso #10 fuera de Compras, `PATCH` 403 Bodeguero y 200/409 Administrador, 17 capturas. **SQL:** stock 64→61 y 0→23→20, `SALIDA` ids 6 y 8, `ENTRADA` id 7, historial exacto `Pendiente → EnCurso → Cerrado → Cerrado` con motivos canónicos (ids 7-15). **8080:** imagen reconstruida, `main-JE7KG3Z2.js` servido, tablero y detalle nuevos, API por proxy 200/401; captura. **Grep §8.7:** sin referencias a PATCH/Avanzar/Retroceder/Anulado/«En espera de despacho»/«En ordenar compra» ni recuentos 75/77 obsoletos en `AGENTS.md`, `MEMORY.md` ni `.agents/skills/`; corregido el JSDoc de `ROLES_OPERATIVOS_TICKETS` que hablaba de avanzar/retroceder. Evidencia en `evidencia/README.md` §10 y AC-28…AC-49 con su evidencia en `spec.md`. **Hallazgo menor para el coordinador (resuelto en T31):** la tarjeta del pedido recién creado muestra el nombre canónico como etiqueta hasta la siguiente recarga (el tablero inserta el `201`, que no trae el read model).
+    con evidencia y el grep sin afirmaciones obsoletas; `MEMORY.md` actualizado por el coordinador.
+    **[SQLite + PostgreSQL gated + ng test + build + puertos]**
+
+- [x] **T31 — Corrección post-cierre: read model en el `201` del alta.**
+  - Archivos: `backend/app/services/ticket_service.py` (`crear_ticket`),
+    `backend/app/api/v1/endpoints/tickets.py` (solo descripción OpenAPI),
+    `backend/tests/funcional/integracion/test_ticket_proceso_013.py`,
+    `frontend/src/app/features/tickets/tickets.component.spec.ts`; `spec.md`,
+    `evidencia/README.md`, `MEMORY.md` y `roadmap.md` (cierre).
+  - Prueba primero: `POST /tickets/` → 201 con `etiqueta_proceso` «En aprobación»,
+    explicación no vacía, `stock_disponible=false`, `entrega_confirmada=false`,
+    `estado_orden_cobertura=None`, gestores coherentes con la fila de creación y
+    el estado persistido en `Pendiente`; spec del tablero que, tras el alta,
+    muestra «En aprobación» y no el nombre canónico con el `201` corregido.
+  - Implementación: `crear_ticket` devuelve `TicketRespuesta` construido con
+    `_respuesta_ticket_con_proceso` (sin duplicar la derivación de la etiqueta).
+    Sin DDL, sin permisos, sin cambios en el alta (`Pendiente`, AC-27), en el
+    modal ni en las mutaciones.
+  - **AC:** AC-39, AC-41.
+  - **Hecho cuando:** el test de integración y el spec pasan, las suites siguen
+    verdes, `ng build` queda limpio y `/openapi.json` conserva 75 v1/77.
+    **[SQLite + ng test + build]**
+    - *Hecho (25/Nov/2026):* `crear_ticket` devuelve `TicketRespuesta` con el
+      read model ya poblado (`etiqueta_proceso`, `explicacion_proceso`,
+      `estado_orden_cobertura`, `stock_disponible`, `entrega_confirmada` y los
+      dos gestores), calculado con `_respuesta_ticket_con_proceso`; el alta
+      sigue naciendo en `Pendiente` (AC-27) y no cambian el modal ni las
+      mutaciones. `test_ac_39_el_201_del_alta_publica_el_read_model` y
+      `test_ac_39_el_201_del_alta_de_un_solicitante_no_registra_gestores`
+      (nuevos, **24/24** en el módulo) verifican el 201 completo, la fila de
+      creación única, el estado persistido, los gestores según el rol del creador
+      y la coincidencia con el listado; el spec del
+      tablero `la tarjeta del pedido recién creado muestra «En aprobación»
+      (T31)` cubre el 201 con read model. **Frontend de producción sin
+      cambios:** `resolverTarjeta` ya usa `etiqueta_proceso` y solo cae al
+      nombre canónico si viene vacía. Suites: SQLite **1975 passed / 112
+      skipped / 0 failed**; `ng test` **639 SUCCESS** (el spec nuevo suma 1; el
+      árbol ya contaba 638, por specs posteriores al recuento 634 de T30);
+      `ng build` limpio (`main-GULMVWMA.js`); `/openapi.json` vivo **75 v1/77**
+      con la descripción del `POST` mencionando el read model. Base QA
+      reseteada después del cierre (`down -v` + `up -d`), verificada en §10.9
+      de la evidencia.

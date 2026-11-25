@@ -129,13 +129,15 @@ CAPACIDADES_019: dict[tuple[str, str], str] = {
 }
 
 #: Cardinalidad de la matriz tras las ampliaciones documentadas de la 019
-#: (61 -> 62), de la 020 (62 -> 72, diez rutas de compras) y de la 021
-#: (72 -> 73, preview de cobertura).
-TOTAL_OPERACIONES_019 = 73
+#: (61 -> 62), de la 020 (62 -> 72, diez rutas de compras), de la 021
+#: (72 -> 73, preview de cobertura) y de la ampliacion 25/Nov/2026 de la 013
+#: (73 -> 75: aprobacion del pedido en T21 y confirmacion de entrega en T22).
+TOTAL_OPERACIONES_019 = 75
 #: Las operaciones vigentes antes de la 019: baseline de las Features 014 y 018,
-#: ampliado por las diez rutas de compras de la 020 y el preview de la 021
-#: (61 -> 72).
-TOTAL_PREVIO_019 = 72
+#: ampliado por las diez rutas de compras de la 020, el preview de la 021 y la
+#: aprobacion y la confirmacion de entrega de la ampliacion de la 013; el
+#: conjunto previo a la propia 019 pasa de 61 a 74.
+TOTAL_PREVIO_019 = 74
 
 #: Respuestas que el contrato debe documentar para la lectura nueva (spec §8).
 RESPUESTAS_DETALLE = frozenset({"200", "401", "403", "404", "409", "422"})

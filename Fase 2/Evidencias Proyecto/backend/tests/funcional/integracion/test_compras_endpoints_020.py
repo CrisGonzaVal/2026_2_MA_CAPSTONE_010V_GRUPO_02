@@ -2,9 +2,10 @@
 
 Seam bajo prueba: la **interfaz HTTP** (`TestClient`) con los 10 endpoints de
 `/api/v1/compras/*`. Las expectativas de autorizacion (matriz 62 -> 72 en la
-020 y 72 -> 73 con el preview de la 021) y de capacidad (`compras`) se
-transcriben de la spec/plan, nunca se leen de `MATRIZ_PERMISOS` ni de
-`MAPA_OPERACION_CAPACIDAD`.
+020, 72 -> 73 con el preview de la 021 y 73 -> 75 con la aprobacion y la
+confirmacion de entrega de la ampliacion 25/Nov/2026 de la 013) y de capacidad
+(`compras`) se transcriben de la spec/plan, nunca se leen de `MATRIZ_PERMISOS` ni
+de `MAPA_OPERACION_CAPACIDAD`.
 
 Los escenarios de servicio (creacion de OC, emision y factura) se preparan
 llamando al servicio ya probado en T4/T5; lo que se verifica aqui es el
@@ -59,7 +60,7 @@ OPERACIONES_020: dict[tuple[str, str], set[str]] = {
 
 CAPACIDADES_020 = {clave: "compras" for clave in OPERACIONES_020}
 
-TOTAL_OPERACIONES_020 = 73
+TOTAL_OPERACIONES_020 = 75
 
 _RESPUESTAS_COMUNES = {"200", "401", "403", "404", "409", "422"}
 
@@ -182,8 +183,10 @@ def test_matriz_declara_las_diez_operaciones_con_sus_roles():
         )
 
 
-def test_matriz_tiene_exactamente_73_operaciones_tras_021():
-    """Plan §4/DT-13: la 020 deja 72 filas y la 021 suma el preview (73)."""
+def test_matriz_tiene_exactamente_75_operaciones_tras_021():
+    """Plan §4/DT-13: la 020 deja 72 filas, la 021 suma el preview (73) y la
+    ampliacion 25/Nov/2026 de la 013 la aprobacion y la confirmacion de entrega
+    (73 -> 75)."""
     total = len(permisos.MATRIZ_PERMISOS)
     assert total == TOTAL_OPERACIONES_020, (
         f"la matriz debe tener {TOTAL_OPERACIONES_020} operaciones tras la 021; "
@@ -198,8 +201,8 @@ def test_capacidad_compras_asociada_a_las_diez_operaciones():
         assert obtenida == esperada, (clave, obtenida, esperada)
 
 
-def test_openapi_publica_las_diez_rutas_y_73_operaciones(cliente):
-    """Plan §4: las 10 rutas existen con response_model y respuestas documentadas."""
+def test_openapi_publica_las_diez_rutas_y_75_operaciones(cliente):
+    """Plan §4: las 10 rutas existen; el total vive en `TOTAL_OPERACIONES_020`."""
     contrato = cliente.get("/openapi.json").json()
     for metodo, ruta in OPERACIONES_020:
         operacion = contrato["paths"].get(ruta, {}).get(metodo.lower())

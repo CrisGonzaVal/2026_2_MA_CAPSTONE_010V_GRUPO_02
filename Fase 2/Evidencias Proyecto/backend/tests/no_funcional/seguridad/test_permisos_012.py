@@ -166,17 +166,30 @@ RETIRADAS_017: frozenset[tuple[str, str]] = frozenset(
 )
 
 
+#: Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.10, AC-49): el
+#: `PATCH /estado` de la transcripcion historica queda **solo** para el
+#: Administrador. La entrada no se retira y el resto de la 012 no cambia roles;
+#: el Bodeguero conserva despacho, rechazo y recepcion de compras.
+RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
+    ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+}
+
+
 def test_matriz_central_conserva_las_28_operaciones():
     """AC-13: la 012 no retira ni relaja ninguna de las 28 entradas vigentes.
 
     Feature 017 (D-9/AC-15): en las 11 lecturas retiradas solo se ajusta el rol
-    Superadmin; los roles institucionales conservan sus permisos.
+    Superadmin; los roles institucionales conservan sus permisos. Ampliacion
+    25/Nov/2026 (§9.10, AC-49): el `PATCH /estado` se restringe a solo
+    Administrador (misma entrada, un rol menos).
     """
     for clave, roles in MATRIZ_010.items():
         actual = permisos.MATRIZ_PERMISOS.get(clave)
         assert actual is not None, f"la operacion {clave} desaparecio de la matriz"
         if clave in RETIRADAS_017:
             assert set(actual) == roles - {"Superadmin"}, clave
+        elif clave in RESTRINGIDAS_013:
+            assert set(actual) == RESTRINGIDAS_013[clave], clave
         else:
             assert set(actual) == roles, clave
 
@@ -185,9 +198,10 @@ def test_matriz_central_es_la_esperada_para_012():
     """La matriz vigente conserva las 44 filas de la 012 idénticas.
 
     Tras la 013 (matriz 44 -> 49, aditiva) la igualdad exacta contra el
-    contrato vivo la asume el modulo de la 013
-    (`test_ciclo_vida_autorizacion_013.py`, que exige 49 operaciones); aqui se
-    verifica que ninguna fila de la 012 se retira ni se relaja.
+    contrato vivo la asumen los modulos de la 013 y de la consolidacion
+    (`test_ciclo_vida_autorizacion_013.py` y `test_contrato_024.py`); aqui se
+    verifica que ninguna fila de la 012 se retira ni se relaja. La ampliacion
+    25/Nov/2026 (§9.10, AC-49) solo restringe el rol del `PATCH /estado`.
     """
     _exigir_nuevas()
     vigente = {
@@ -196,6 +210,8 @@ def test_matriz_central_es_la_esperada_para_012():
     for clave, roles in MATRIZ_012.items():
         if clave in RETIRADAS_017:
             assert vigente.get(clave) == roles - {"Superadmin"}, clave
+        elif clave in RESTRINGIDAS_013:
+            assert vigente.get(clave) == RESTRINGIDAS_013[clave], clave
         else:
             assert vigente.get(clave) == roles, clave
 

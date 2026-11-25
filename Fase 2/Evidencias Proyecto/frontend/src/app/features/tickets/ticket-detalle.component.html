@@ -28,18 +28,32 @@
           <p class="text-xs text-slate-400">Pedido #{{ ticket.ticket_id }}</p>
           <h2 class="text-2xl font-bold text-slate-800">{{ ticket.asunto }}</h2>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <span class="text-xs font-semibold px-2 py-0.5 rounded" [class]="clasePrioridad()">
             {{ etiquetaPrioridad() }}
           </span>
+          <!-- Estado canónico con su badge actual; la etiqueta de proceso va junto
+               a él y no lo sustituye (AC-39). -->
           <span class="text-xs font-semibold px-2 py-0.5 rounded" [class]="claseEstado()">
             {{ etiquetaEstado() }}
           </span>
+          @if (etiquetaProceso(); as etiqueta) {
+            <span class="text-xs font-semibold px-2 py-0.5 rounded text-indigo-700 bg-indigo-50">
+              <span class="sr-only">Etapa del proceso: </span>{{ etiqueta }}
+            </span>
+          }
         </div>
       </div>
 
       @if (ticket.descripcion) {
         <p class="text-sm text-slate-600">{{ ticket.descripcion }}</p>
+      }
+
+      <!-- Frase corta derivada por el servidor (AC-37): qué falta o qué sigue. -->
+      @if (explicacionProceso(); as explicacion) {
+        <p class="text-xs text-slate-600 bg-indigo-50/60 border border-indigo-100 rounded-lg px-4 py-3">
+          {{ explicacion }}
+        </p>
       }
 
       <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
@@ -59,6 +73,15 @@
         <div>
           <dt class="text-xs font-semibold text-slate-500">Sede</dt>
           <dd class="text-slate-800">{{ etiquetaSede() }}</dd>
+        </div>
+        <!-- Read model de responsables (AC-40): último actor de cada rol en el historial. -->
+        <div>
+          <dt class="text-xs font-semibold text-slate-500">Último Bodeguero</dt>
+          <dd class="text-slate-800">{{ gestorBodeguero() }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold text-slate-500">Último Administrador</dt>
+          <dd class="text-slate-800">{{ gestorAdministrador() }}</dd>
         </div>
         <div>
           <dt class="text-xs font-semibold text-slate-500">Creado</dt>
@@ -85,6 +108,21 @@
       </p>
     }
 
+    <!-- Línea de entrega (AC-42): solo si el Solicitante dueño ya confirmó. -->
+    @if (ticket.entrega_confirmada_en; as fechaEntrega) {
+      <p
+        class="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-3 rounded-lg"
+      >
+        <span aria-hidden="true">📦</span>
+        <span>
+          Entregado el {{ fechaEntrega | date: 'medium' }}
+          @if (entregaConfirmadaPor(); as por) {
+            <span>por {{ por }}</span>
+          }
+        </span>
+      </p>
+    }
+
     <!-- Avisos de operación: éxito (status) y error accesible (alert) -->
     @if (mensajeExito(); as exito) {
       <p
@@ -103,31 +141,43 @@
       </p>
     }
 
-    <!-- Barra de acciones por estado y rol (AC-24); sin doble envío mientras hay una en vuelo -->
+    <!-- Barra de acciones semánticas por estado y rol (AC-32); sin doble envío
+         mientras hay una en vuelo. No hay «Avanzar»/«Retroceder» ni PATCH. -->
     @if (hayAcciones()) {
       <div
         class="bg-white border border-slate-200 rounded-xl px-6 py-4 flex flex-wrap items-center gap-3"
       >
-        @if (acciones().retroceder) {
+        @if (acciones().aprobar) {
           <button
             type="button"
-            (click)="retroceder()"
+            (click)="aprobar()"
             [disabled]="enOperacion()"
-            aria-label="Retroceder un paso en el flujo"
-            class="text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-slate-100 px-3 py-2 rounded-lg transition"
-          >
-            &larr; Retroceder
-          </button>
-        }
-        @if (acciones().avanzar) {
-          <button
-            type="button"
-            (click)="avanzar()"
-            [disabled]="enOperacion()"
-            aria-label="Avanzar un paso en el flujo"
+            aria-label="Aprobar el pedido y dejarlo en curso"
             class="text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 px-3 py-2 rounded-lg transition"
           >
-            Avanzar &rarr;
+            Aprobar
+          </button>
+        }
+        @if (acciones().despachar) {
+          <button
+            type="button"
+            (click)="solicitarDespacho()"
+            [disabled]="enOperacion()"
+            aria-label="Confirmar stock local y despachar el pedido"
+            class="text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 px-3 py-2 rounded-lg transition"
+          >
+            Confirmar stock local y despachar
+          </button>
+        }
+        @if (acciones().confirmarEntrega) {
+          <button
+            type="button"
+            (click)="solicitarConfirmacionEntrega()"
+            [disabled]="enOperacion()"
+            aria-label="Confirmar la entrega del pedido"
+            class="text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 px-3 py-2 rounded-lg transition"
+          >
+            Confirmar entrega
           </button>
         }
 
@@ -138,6 +188,7 @@
             type="button"
             (click)="iniciarEdicion()"
             [disabled]="enOperacion()"
+            aria-label="Editar el pedido"
             class="text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-slate-100 px-3 py-2 rounded-lg transition"
           >
             Editar
@@ -148,6 +199,7 @@
             type="button"
             (click)="solicitarRechazo()"
             [disabled]="enOperacion()"
+            aria-label="Rechazar el pedido"
             class="text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 disabled:hover:bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg transition"
           >
             Rechazar
@@ -158,6 +210,7 @@
             type="button"
             (click)="solicitarAnulacion()"
             [disabled]="enOperacion()"
+            aria-label="Anular el pedido"
             class="text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 disabled:hover:bg-rose-50 border border-rose-200 px-3 py-2 rounded-lg transition"
           >
             Anular
@@ -372,7 +425,8 @@
     }
   }
 
-  <!-- Confirmación de anulación/rechazo: motivo obligatorio antes de enviar (D-6, AC-24) -->
+  <!-- Confirmación única del detalle: motivo solo para anular/rechazo; el
+       despacho y la entrega reutilizan el mismo diálogo nativo sin textarea. -->
   <dialog
     #dialogoConfirmacion
     (close)="cancelarConfirmacion()"
@@ -380,31 +434,28 @@
   >
     <div class="bg-white rounded-xl shadow-xl border border-slate-200">
       <div class="border-b border-slate-200 px-6 py-4">
-        <h3 class="text-lg font-bold text-slate-800">
-          {{ confirmando() === 'rechazo' ? 'Rechazar pedido' : 'Anular pedido' }}
-        </h3>
-        <p class="text-xs text-slate-500 mt-1">
-          El pedido pasará al estado «Anulado», que es terminal. El motivo queda
-          registrado en el historial para trazabilidad.
-        </p>
+        <h3 class="text-lg font-bold text-slate-800">{{ tituloConfirmacion() }}</h3>
+        <p class="text-xs text-slate-500 mt-1">{{ textoConfirmacion() }}</p>
       </div>
 
       <form [formGroup]="motivoForm" (ngSubmit)="confirmar()" class="px-6 py-5 space-y-4">
-        <label class="block space-y-1">
-          <span class="text-xs font-semibold text-slate-700">Motivo (obligatorio)</span>
-          <textarea
-            formControlName="motivo"
-            rows="3"
-            maxlength="500"
-            placeholder="Explica por qué se anula o rechaza este pedido"
-            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-y"
-          ></textarea>
-          @if (motivoForm.controls.motivo.touched && motivoForm.controls.motivo.invalid) {
-            <span class="text-xs text-rose-600 block">
-              El motivo es obligatorio (máximo 500 caracteres).
-            </span>
-          }
-        </label>
+        @if (exigeMotivo()) {
+          <label class="block space-y-1">
+            <span class="text-xs font-semibold text-slate-700">Motivo (obligatorio)</span>
+            <textarea
+              formControlName="motivo"
+              rows="3"
+              maxlength="500"
+              placeholder="Explica por qué se anula o rechaza este pedido"
+              class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-y"
+            ></textarea>
+            @if (motivoForm.controls.motivo.touched && motivoForm.controls.motivo.invalid) {
+              <span class="text-xs text-rose-600 block">
+                El motivo es obligatorio (máximo 500 caracteres).
+              </span>
+            }
+          </label>
+        }
 
         @if (errorAccion(); as mensajeAccion) {
           <p
@@ -428,13 +479,7 @@
             [disabled]="enOperacion()"
             class="px-4 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:hover:bg-rose-600 rounded-lg"
           >
-            {{
-              enOperacion()
-                ? 'Procesando…'
-                : confirmando() === 'rechazo'
-                  ? 'Confirmar rechazo'
-                  : 'Confirmar anulación'
-            }}
+            {{ textoBotonConfirmar() }}
           </button>
         </div>
       </form>

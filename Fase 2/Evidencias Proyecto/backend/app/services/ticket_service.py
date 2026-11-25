@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 
@@ -12,9 +13,11 @@ from app.models import (
     EstadoTicket,
     HistorialTransicionTicket,
     MovimientoInventario,
+    OrdenCompra,
     OrdenCompraTicket,
     Prioridad,
     Producto,
+    Rol,
     StockSede,
     Ticket,
     Usuario,
@@ -25,6 +28,7 @@ from app.schemas.ticket_schema import (
     CadenaProductoTicketRespuesta,
     CatalogosTicketRespuesta,
     EstadoTicketRespuesta,
+    GestorProcesoRespuesta,
     HistorialTransicionRespuesta,
     PrioridadRespuesta,
     ProductoCatalogoRespuesta,
@@ -33,10 +37,17 @@ from app.schemas.ticket_schema import (
     TicketDetalleRespuesta,
     TicketDespacho,
     TicketEditar,
+    TicketRespuesta,
 )
 from app.services import ambito_service, compra_service
 from app.services.auth_service import IdentidadAutenticada
 from app.services.inventario_service import TIPO_SALIDA, es_stock_critico
+from app.services.ticket_proceso import (
+    MOTIVO_APROBACION,
+    MOTIVO_CONFIRMACION_ENTREGA,
+    derivar_etiqueta,
+    rango_estado_orden,
+)
 
 #: Nombres canonicos de los estados que gobiernan el despacho y el ciclo de
 #: vida. Se buscan por nombre (case-insensitive) y nunca por id fijo (D-1,
@@ -47,6 +58,10 @@ NOMBRE_ESTADO_EN_CURSO = "encurso"
 NOMBRE_ESTADO_CERRADO = "cerrado"
 NOMBRE_ESTADO_ANULADO = "anulado"
 NOMBRE_ESTADO_PENDIENTE = "pendiente"
+#: `EnRevision` es un estado **heredado** de la ampliacion del 25/Nov/2026: el
+#: flujo nuevo no lo produce, pero la aprobacion debe aceptar los pedidos que ya
+#: estan en el (spec §9.1/§9.3, AC-29/AC-47).
+NOMBRE_ESTADO_EN_REVISION = "enrevision"
 
 #: Longitud maxima del motivo de anulacion/rechazo (D-6): la escala del
 #: `VARCHAR(500)` del historial y de `ticket.descripcion`. Se valida en el
@@ -73,6 +88,20 @@ _ESTADOS_TERMINALES = {"Cerrado", "Anulado"}
 _ESTADOS_ORDEN_COMPRADO = {"Emitida", "Facturada", "Recibida"}
 #: Estado de OC cuyas unidades ya llegaron fisicamente (`recibido`).
 _ESTADO_ORDEN_RECIBIDA = "Recibida"
+
+#: Feature 013 (ampliacion §9.8): roles cuyo ultimo actor se expone en el read
+#: model de proceso (D-23). Se comparan en minusculas porque el rol vigente se
+#: resuelve por nombre y el catalogo no impone capitalizacion.
+_ROL_GESTOR_BODEGUERO = "Bodeguero"
+_ROL_GESTOR_ADMINISTRADOR = "Administrador"
+_ROLES_GESTORES = {
+    _ROL_GESTOR_BODEGUERO.casefold(),
+    _ROL_GESTOR_ADMINISTRADOR.casefold(),
+}
+
+#: Nombre canonico de la OC activa segun su rango de avance (AC-38). La salida
+#: no depende del casing del catalogo de OC ni del orden de las filas.
+_NOMBRE_ESTADO_ORDEN_POR_RANGO = {1: "Emitida", 2: "Facturada", 3: "Recibida"}
 
 
 def _es_solicitante(identidad: IdentidadAutenticada | None) -> bool:
@@ -325,12 +354,305 @@ def obtener_catalogos(
     )
 
 
+@dataclass(frozen=True)
+class _ProcesoTicket:
+    """Read model derivado del proceso de un pedido (spec §9.8, D-21/D-23).
+
+    Lo calcula `_cargar_proceso_tickets` una sola vez por lectura y lo consumen
+    el listado (en lote) y el detalle. No es un estado canonico ni se persiste.
+    """
+
+    etiqueta_proceso: str
+    explicacion_proceso: str
+    estado_orden_cobertura: Optional[str]
+    stock_disponible: bool
+    entrega_confirmada: bool
+    gestionado_por_bodeguero: Optional[GestorProcesoRespuesta]
+    gestionado_por_administrador: Optional[GestorProcesoRespuesta]
+    #: Fila `Cerrado -> Cerrado` de la confirmacion (solo la expone el detalle).
+    entrega_confirmada_en: Optional[datetime] = None
+    entrega_confirmada_por_nombre: Optional[str] = None
+    entrega_confirmada_por_apellido: Optional[str] = None
+
+
+def _nombre_estado_de_ticket(ticket: Ticket) -> Optional[str]:
+    """Nombre canonico del estado del ticket, o `None` si no se resuelve."""
+    estado = getattr(ticket, "estado", None)
+    return estado.nombre if estado is not None else None
+
+
+def _ticket_participa_en_simulacion(ticket: Ticket) -> bool:
+    """Solo los `EnCurso` con sede entran en la simulacion de la 020 (D-17)."""
+    if ticket.sede_id is None:
+        return False
+    nombre = _nombre_estado_de_ticket(ticket)
+    return (nombre or "").strip().casefold() == NOMBRE_ESTADO_EN_CURSO
+
+
+def _cargar_stock_disponible_por_ticket(
+    db: Session, tickets: List[Ticket]
+) -> dict[int, bool]:
+    """`stock_disponible` con **una** simulacion por sede distinta (D-17).
+
+    `compra_service.calcular_cobertura_tickets` ya devuelve `{ticket_id: bool}`
+    para todos los `EnCurso` de una sede; se invoca una sola vez por sede y el
+    resto de pedidos queda en `False` sin consultar.
+    """
+    stock = {ticket.ticket_id: False for ticket in tickets}
+    por_sede: dict[int, List[Ticket]] = {}
+    for ticket in tickets:
+        if _ticket_participa_en_simulacion(ticket):
+            por_sede.setdefault(ticket.sede_id, []).append(ticket)
+    for sede_id, tickets_sede in por_sede.items():
+        cobertura = compra_service.calcular_cobertura_tickets(db, sede_id)
+        for ticket in tickets_sede:
+            stock[ticket.ticket_id] = cobertura.get(ticket.ticket_id, False)
+    return stock
+
+
+def _cargar_estado_orden_cobertura_por_ticket(
+    db: Session, ticket_ids: List[int]
+) -> dict[int, str]:
+    """OC activa mas avanzada que cubre cada pedido, en **una** consulta (AC-38).
+
+    `Cancelada` y `Borrador` no cuentan y un plan sin `cantidad_asignada > 0`
+    tampoco; el resultado se normaliza al nombre canonico del rango para que no
+    dependa del casing del catalogo ni del orden de las filas.
+    """
+    if not ticket_ids:
+        return {}
+    filas = db.execute(
+        select(OrdenCompraTicket.ticket_id, OrdenCompra.estado)
+        .join(
+            OrdenCompra,
+            OrdenCompra.orden_compra_id == OrdenCompraTicket.orden_compra_id,
+        )
+        .where(OrdenCompraTicket.ticket_id.in_(ticket_ids))
+        .where(OrdenCompraTicket.cantidad_asignada > 0)
+    ).all()
+    rangos: dict[int, int] = {}
+    for ticket_id, estado in filas:
+        rango = rango_estado_orden(estado)
+        if rango > rangos.get(ticket_id, 0):
+            rangos[ticket_id] = rango
+    return {
+        ticket_id: _NOMBRE_ESTADO_ORDEN_POR_RANGO[rango]
+        for ticket_id, rango in rangos.items()
+        if rango > 0
+    }
+
+
+def _estado_orden_cobertura_de_asignaciones(asignaciones) -> Optional[str]:
+    """OC activa mas avanzada entre las asignaciones ya cargadas (AC-38).
+
+    El detalle ya carga todas las OC del pedido (`asignaciones_db`, incluidas
+    las canceladas), de modo que deriva la cobertura sin una consulta extra.
+    """
+    rango = 0
+    for fila in asignaciones:
+        if fila.orden is None or fila.cantidad_asignada <= 0:
+            continue
+        rango = max(rango, rango_estado_orden(fila.orden.estado))
+    return _NOMBRE_ESTADO_ORDEN_POR_RANGO.get(rango)
+
+
+def _cargar_confirmaciones_por_ticket(
+    db: Session, ticket_ids: List[int]
+) -> dict[int, dict]:
+    """Fila `Cerrado -> Cerrado` con el motivo canonico, por pedido (D-25).
+
+    `Cerrado` se resuelve una vez por nombre (menor id ante duplicados) y la
+    consulta junta al actor para exponer la linea «Entregado el … por …».
+    """
+    if not ticket_ids:
+        return {}
+    estados = db.execute(
+        select(EstadoTicket).order_by(EstadoTicket.estado_id)
+    ).scalars().all()
+    cerrado = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_CERRADO)
+    if cerrado is None:
+        return {}
+    filas = db.execute(
+        select(
+            HistorialTransicionTicket.ticket_id,
+            HistorialTransicionTicket.fecha_transicion,
+            Usuario.nombre,
+            Usuario.apellido,
+        )
+        .join(
+            Usuario,
+            Usuario.usuario_id == HistorialTransicionTicket.usuario_id,
+        )
+        .where(HistorialTransicionTicket.ticket_id.in_(ticket_ids))
+        .where(HistorialTransicionTicket.estado_origen_id == cerrado.estado_id)
+        .where(HistorialTransicionTicket.estado_destino_id == cerrado.estado_id)
+        .where(HistorialTransicionTicket.motivo == MOTIVO_CONFIRMACION_ENTREGA)
+        .order_by(
+            HistorialTransicionTicket.fecha_transicion.desc(),
+            HistorialTransicionTicket.historial_transicion_id.desc(),
+        )
+    ).all()
+    confirmaciones: dict[int, dict] = {}
+    for ticket_id, fecha, nombre, apellido in filas:
+        confirmaciones.setdefault(
+            ticket_id,
+            {"fecha": fecha, "nombre": nombre, "apellido": apellido},
+        )
+    return confirmaciones
+
+
+def _cargar_gestores_por_ticket(
+    db: Session, ticket_ids: List[int]
+) -> dict[int, dict]:
+    """Ultimo Bodeguero y ultimo Administrador del historial, por pedido (D-23).
+
+    **Una** consulta para todo el conjunto, con el rol **vigente** de `usuario`
+    (el historial no persiste el rol del momento). El orden es el del historial
+    (`fecha_transicion DESC`, `historial_transicion_id DESC`) y la primera fila
+    de cada rol gana; la fila de creacion participa si su actor tiene el rol.
+    """
+    if not ticket_ids:
+        return {}
+    filas = db.execute(
+        select(
+            HistorialTransicionTicket.ticket_id,
+            Rol.nombre_rol,
+            Usuario.usuario_id,
+            Usuario.nombre,
+            Usuario.apellido,
+        )
+        .join(
+            Usuario,
+            Usuario.usuario_id == HistorialTransicionTicket.usuario_id,
+        )
+        .join(Rol, Rol.rol_id == Usuario.rol_id)
+        .where(HistorialTransicionTicket.ticket_id.in_(ticket_ids))
+        .where(
+            func.lower(Rol.nombre_rol).in_(
+                (
+                    _ROL_GESTOR_BODEGUERO.casefold(),
+                    _ROL_GESTOR_ADMINISTRADOR.casefold(),
+                )
+            )
+        )
+        .order_by(
+            HistorialTransicionTicket.fecha_transicion.desc(),
+            HistorialTransicionTicket.historial_transicion_id.desc(),
+        )
+    ).all()
+    gestores: dict[int, dict] = {}
+    for ticket_id, nombre_rol, usuario_id, nombre, apellido in filas:
+        rol = (nombre_rol or "").strip().casefold()
+        if rol not in _ROLES_GESTORES:
+            continue
+        por_rol = gestores.setdefault(ticket_id, {})
+        if rol not in por_rol:
+            por_rol[rol] = GestorProcesoRespuesta(
+                usuario_id=usuario_id, nombre=nombre, apellido=apellido
+            )
+    return gestores
+
+
+def _cargar_proceso_tickets(
+    db: Session,
+    tickets: List[Ticket],
+    *,
+    coberturas_orden: Optional[dict[int, Optional[str]]] = None,
+) -> dict[int, _ProcesoTicket]:
+    """Read model de proceso de todo el conjunto, en bloques fijos (plan §9.2).
+
+    Calcula en lote `stock_disponible`, la cobertura de OC, las confirmaciones y
+    los gestores; nada se consulta dentro de un bucle por ticket, de modo que el
+    numero de consultas no depende de cuantos pedidos haya en la lectura.
+
+    `coberturas_orden` permite al detalle reutilizar sus `asignaciones` ya
+    cargadas y evitar la consulta de OC (plan §9.2).
+    """
+    if not tickets:
+        return {}
+    ticket_ids = [ticket.ticket_id for ticket in tickets]
+    stock = _cargar_stock_disponible_por_ticket(db, tickets)
+    coberturas = (
+        _cargar_estado_orden_cobertura_por_ticket(db, ticket_ids)
+        if coberturas_orden is None
+        else coberturas_orden
+    )
+    confirmaciones = _cargar_confirmaciones_por_ticket(db, ticket_ids)
+    gestores = _cargar_gestores_por_ticket(db, ticket_ids)
+
+    proceso: dict[int, _ProcesoTicket] = {}
+    for ticket in tickets:
+        confirmacion = confirmaciones.get(ticket.ticket_id)
+        entrega_confirmada = confirmacion is not None
+        etiqueta, explicacion = derivar_etiqueta(
+            _nombre_estado_de_ticket(ticket),
+            stock_disponible=stock.get(ticket.ticket_id, False),
+            estado_orden_cobertura=coberturas.get(ticket.ticket_id),
+            entrega_confirmada=entrega_confirmada,
+        )
+        por_rol = gestores.get(ticket.ticket_id, {})
+        proceso[ticket.ticket_id] = _ProcesoTicket(
+            etiqueta_proceso=etiqueta,
+            explicacion_proceso=explicacion,
+            estado_orden_cobertura=coberturas.get(ticket.ticket_id),
+            stock_disponible=stock.get(ticket.ticket_id, False),
+            entrega_confirmada=entrega_confirmada,
+            gestionado_por_bodeguero=por_rol.get(
+                _ROL_GESTOR_BODEGUERO.casefold()
+            ),
+            gestionado_por_administrador=por_rol.get(
+                _ROL_GESTOR_ADMINISTRADOR.casefold()
+            ),
+            entrega_confirmada_en=confirmacion["fecha"] if confirmacion else None,
+            entrega_confirmada_por_nombre=(
+                confirmacion["nombre"] if confirmacion else None
+            ),
+            entrega_confirmada_por_apellido=(
+                confirmacion["apellido"] if confirmacion else None
+            ),
+        )
+    return proceso
+
+
+def _aplicar_proceso(respuesta, proceso: _ProcesoTicket):
+    """Copia los campos derivados del read model en el DTO de respuesta."""
+    respuesta.etiqueta_proceso = proceso.etiqueta_proceso
+    respuesta.explicacion_proceso = proceso.explicacion_proceso
+    respuesta.estado_orden_cobertura = proceso.estado_orden_cobertura
+    respuesta.stock_disponible = proceso.stock_disponible
+    respuesta.entrega_confirmada = proceso.entrega_confirmada
+    respuesta.gestionado_por_bodeguero = proceso.gestionado_por_bodeguero
+    respuesta.gestionado_por_administrador = proceso.gestionado_por_administrador
+    return respuesta
+
+
+def _respuesta_ticket_con_proceso(
+    db: Session,
+    ticket: Ticket,
+    *,
+    coberturas_orden: Optional[dict[int, Optional[str]]] = None,
+) -> TicketRespuesta:
+    """`TicketRespuesta` de un pedido con su read model de proceso (D-21).
+
+    Lo usan las mutaciones que prometen la etiqueta en el 200 (aprobacion y
+    confirmacion de entrega, spec §9.4/§9.9) y cualquier lectura de un pedido
+    unico que necesite el mismo read model. El DTO se construye dentro de la
+    sesion vigente para no depender de relaciones ya desasociadas.
+    """
+    proceso = _cargar_proceso_tickets(
+        db, [ticket], coberturas_orden=coberturas_orden
+    )
+    return _aplicar_proceso(
+        TicketRespuesta.model_validate(ticket), proceso[ticket.ticket_id]
+    )
+
+
 def listar_tickets(
     db: Session,
     estado_id: Optional[int] = None,
     identidad: IdentidadAutenticada | None = None,
-) -> List[Ticket]:
-    """Lista los tickets con su coleccion cargada eager y un orden estable.
+) -> List[TicketRespuesta]:
+    """Lista los tickets con el read model de proceso ya poblado.
 
     El orden es explicito y no el que devuelva la base: `fecha_creacion`
     descendente con desempate por `ticket_id` descendente. En SQLite
@@ -346,27 +668,39 @@ def listar_tickets(
     `lazy="select"` de `Producto.categoria` revienta con `DetachedInstanceError`
     sobre el objeto ya desasociado (500 en `GET /tickets/`). Se descarta
     `joinedload` en la coleccion porque multiplicaria las filas del ticket por
-    cada detalle.
+    cada detalle. `estado` tambien se precarga porque la etiqueta de proceso se
+    deriva de su nombre canonico.
 
     El filtro por `estado_id` se comprueba con `is not None`: un `0` o un id
     valido nunca deben confundirse con "sin filtro".
 
     Feature 007 (D-3/AC-6/AC-8): la lectura se acota por rol; el Solicitante ve
     solo sus tickets y Administrador/Bodeguero, los de su institucion.
+
+    Ampliacion 25/Nov/2026 (§9.8, AC-39): deja de devolver ORM y devuelve
+    `TicketRespuesta` con `etiqueta_proceso`, `explicacion_proceso`,
+    `estado_orden_cobertura`, `stock_disponible`, `entrega_confirmada` y los dos
+    gestores, calculados por lote en `_cargar_proceso_tickets`.
     """
     consulta = (
         select(Ticket)
         .options(
             selectinload(Ticket.detalles)
             .selectinload(DetalleTicket.producto)
-            .selectinload(Producto.categoria)
+            .selectinload(Producto.categoria),
+            selectinload(Ticket.estado),
         )
         .order_by(Ticket.fecha_creacion.desc(), Ticket.ticket_id.desc())
     )
     consulta = _acotar_consulta_tickets(db, consulta, identidad)
     if estado_id is not None:
         consulta = consulta.where(Ticket.estado_id == estado_id)
-    return db.execute(consulta).scalars().all()
+    tickets = db.execute(consulta).scalars().all()
+    proceso = _cargar_proceso_tickets(db, tickets)
+    return [
+        _aplicar_proceso(TicketRespuesta.model_validate(ticket), proceso[ticket.ticket_id])
+        for ticket in tickets
+    ]
 
 
 def _verificar_referencia(db: Session, modelo, valor: int, etiqueta: str) -> None:
@@ -503,7 +837,7 @@ def _registrar_transicion(
 
 def crear_ticket(
     db: Session, datos: TicketCrear, identidad: IdentidadAutenticada | None = None
-) -> Ticket:
+) -> TicketRespuesta:
     """Persiste el ticket y sus detalles en una sola transaccion ACID.
 
     Antes este flujo hacia dos `commit()`: el ticket quedaba persistido aunque
@@ -565,6 +899,13 @@ def crear_ticket(
     (origen nulo, destino = estado inicial, actor = identidad o
     `ticket.usuario_id`; decision 9) en la misma transaccion del ticket (AC-9,
     AC-11).
+
+    Correccion post-cierre T31 (AC-39/AC-41): devuelve `TicketRespuesta` con el
+    read model de proceso ya poblado, no el ORM. El tablero inserta el `201` sin
+    reconsultar el listado, de modo que la tarjeta del pedido nuevo necesita la
+    misma `etiqueta_proceso` que el listado (antes llegaba vacia y el tablero
+    caia al nombre canonico «Pendiente» hasta la siguiente recarga). El alta
+    sigue naciendo en `Pendiente` (AC-27); lo unico que cambia es la respuesta.
     """
     # Enmienda D-33/D-7: autoatribucion **incondicional y primera**. La autoria es
     # siempre la identidad autenticada, cualquiera sea el rol y el valor enviado
@@ -660,7 +1001,10 @@ def crear_ticket(
         db.rollback()
         raise
 
-    return nuevo_ticket
+    # T31: el `201` publica el mismo read model que el listado. La sesion sigue
+    # abierta (el `commit` no la cierra), asi que la etiqueta, el stock, la
+    # cobertura y los gestores se derivan sin objetos desasociados.
+    return _respuesta_ticket_con_proceso(db, nuevo_ticket)
 
 
 def actualizar_estado_ticket(
@@ -1102,6 +1446,229 @@ def despachar_ticket(
     return ticket
 
 
+def aprobar_ticket(
+    db: Session,
+    ticket_id: int,
+    identidad: IdentidadAutenticada | None = None,
+) -> TicketRespuesta:
+    """Aprueba un pedido y lo deja **siempre** en `EnCurso` (spec D-15/D-16).
+
+    Ampliacion del 25/Nov/2026 (§9.3, AC-29/AC-30/AC-46). Es una operacion
+    semantica propia del Administrador Institucional: el origen es `Pendiente`
+    o `EnRevision` (heredado) y el destino es el `EnCurso` canonico resuelto por
+    **nombre** (casefold, menor `estado_id` ante duplicados), con stock o sin el.
+
+    El orden de validacion es el vigente para las mutaciones de ticket:
+
+    1. El pedido existe y esta en el alcance del rol -> **404** identico para
+       inexistente y ajeno (D-8). La fila se bloquea con `with_for_update()`
+       (patron de la 005): dos aprobaciones concurrentes producen una sola
+       transicion y la segunda responde 409. SQLite ignora el bloqueo.
+    2. El catalogo contiene `EnCurso`; sin el, **409** fail-closed.
+    3. El estado actual es `Pendiente` o `EnRevision`; cualquier otro (incluido
+       `EnCurso`, `Cerrado`, `Anulado` o un estado fuera del catalogo) responde
+       **409** sin escribir.
+
+    La aprobacion **no evalua stock, no reserva y no incluye el pedido en
+    ninguna simulacion** (D-17); el stock solo decide la etiqueta de proceso
+    posterior. Tampoco toca `fecha_cierre`, el inventario, los movimientos ni
+    Compras: el despacho de la 005 sigue siendo la validacion real y el unico
+    camino a `Cerrado` (D-18).
+
+    Escribe **exactamente una** fila de historial con el origen real, destino
+    `EnCurso`, actor = identidad de sesion, `motivo` literal
+    `MOTIVO_APROBACION` y `orden_compra_id` nulo (D-16), en la MISMA
+    transaccion que el cambio de estado: si la fila falla, el `rollback`
+    conserva el estado previo (AC-11 vigente).
+
+    Devuelve `TicketRespuesta` con el read model de proceso ya poblado (§9.8):
+    el 200 promete la etiqueta derivada del stock y de las OC.
+    """
+    ticket = db.execute(
+        select(Ticket).where(Ticket.ticket_id == ticket_id).with_for_update()
+    ).scalar_one_or_none()
+    if ticket is None:
+        raise _ticket_no_encontrado()
+
+    _verificar_alcance_de_ticket(db, ticket, identidad)
+
+    estados = db.execute(
+        select(EstadoTicket).order_by(EstadoTicket.estado_id)
+    ).scalars().all()
+    estado_en_curso = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_EN_CURSO)
+    if estado_en_curso is None:
+        # Fail-closed: sin el destino canonico la operacion no puede resolver
+        # su estado; 409 y no 500 (mismo criterio que despacho y anulacion).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "El catalogo de estados no contiene 'EnCurso': la aprobacion "
+                "no puede resolver su estado destino"
+            ),
+        )
+
+    estado_pendiente = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_PENDIENTE)
+    estado_en_revision = _resolver_estado_por_nombre(
+        estados, NOMBRE_ESTADO_EN_REVISION
+    )
+    origenes_elegibles = {
+        estado.estado_id
+        for estado in (estado_pendiente, estado_en_revision)
+        if estado is not None
+    }
+    if ticket.estado_id not in origenes_elegibles:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "La aprobacion solo se aplica a tickets en 'Pendiente' o "
+                "'EnRevision' (estado heredado); el pedido ya esta aprobado o "
+                "es terminal"
+            ),
+        )
+
+    try:
+        estado_origen_id = ticket.estado_id
+        ticket.estado_id = estado_en_curso.estado_id
+        # D-15: el destino no depende del stock. D-16: una sola fila con el
+        # motivo literal y el actor de la sesion, en la misma transaccion.
+        _registrar_transicion(
+            db,
+            ticket,
+            estado_origen_id=estado_origen_id,
+            estado_destino_id=estado_en_curso.estado_id,
+            identidad=identidad,
+            motivo=MOTIVO_APROBACION,
+        )
+
+        db.commit()
+        db.refresh(ticket)
+    except Exception:
+        db.rollback()
+        raise
+
+    return _respuesta_ticket_con_proceso(db, ticket)
+
+
+def confirmar_entrega_ticket(
+    db: Session,
+    ticket_id: int,
+    identidad: IdentidadAutenticada | None = None,
+) -> TicketRespuesta:
+    """Confirma la entrega de un pedido despachado (spec §9.9, AC-42/AC-43).
+
+    Ampliacion del 25/Nov/2026. Es un **evento** posterior al despacho, no una
+    transicion de estado: el pedido sigue en `Cerrado` (terminal) y solo gana la
+    evidencia de que el Solicitante dueño recibio los insumos. La operacion
+    reutiliza `HistorialTransicionTicket` (precedente de la 021 con las filas
+    `EnCurso -> EnCurso`), de modo que **no hay DDL** ni una segunda fuente de
+    verdad para la fecha de entrega (D-25).
+
+    El orden de validacion es el contractual:
+
+    1. El pedido existe y esta en el alcance del rol -> **404** identico para
+       inexistente y ajeno (D-8). Ademas, y como defensa adicional a la matriz,
+       el `usuario_id` del pedido debe ser el de la sesion: la entrega la
+       atestigua quien la recibe y no se delega (D-26). La fila se bloquea con
+       `with_for_update()` (patron de la 005) para que dos confirmaciones
+       concurrentes produzcan una sola fila y la segunda responda 409; SQLite
+       ignora el bloqueo.
+    2. El catalogo contiene `Cerrado` (resuelto por nombre, menor `estado_id`
+       ante duplicados) y el pedido esta en ese estado; si no, **409** sin
+       escribir (un pedido no despachado no puede confirmarse).
+    3. No existe ya una fila `Cerrado -> Cerrado` con el motivo canonico: la
+       confirmacion existe si y solo si esa fila existe, y una segunda peticion
+       responde **409** sin duplicarla.
+
+    Escribe **exactamente una** fila con origen y destino `Cerrado`, actor =
+    identidad de sesion, `fecha_transicion` del servidor, `motivo` literal
+    `MOTIVO_CONFIRMACION_ENTREGA` y `orden_compra_id` nulo. **No** toca
+    `ticket.estado_id`, `fecha_cierre`, stock, movimientos ni Compras, y no
+    reabre el pedido.
+
+    Devuelve `TicketRespuesta` con `entrega_confirmada = True` y la etiqueta
+    «Entregado» (el read model se relee despues del `commit`, por lo que ve la
+    fila recien insertada).
+    """
+    ticket = db.execute(
+        select(Ticket).where(Ticket.ticket_id == ticket_id).with_for_update()
+    ).scalar_one_or_none()
+    if ticket is None:
+        raise _ticket_no_encontrado()
+
+    _verificar_alcance_de_ticket(db, ticket, identidad)
+    if (
+        identidad is not None
+        and ticket.usuario_id != identidad.usuario.usuario_id
+    ):
+        # D-26: la matriz ya concede la operacion solo al Solicitante, pero la
+        # propiedad del pedido se comprueba aqui; un dueño de otra institucion
+        # responde el mismo 404 de ocultamiento que uno inexistente.
+        raise _ticket_no_encontrado()
+
+    estados = db.execute(
+        select(EstadoTicket).order_by(EstadoTicket.estado_id)
+    ).scalars().all()
+    estado_cerrado = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_CERRADO)
+    if estado_cerrado is None:
+        # Fail-closed: sin el estado canonico la operacion no puede resolver su
+        # evento; 409 y no 500 (mismo criterio que aprobacion y despacho).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "El catalogo de estados no contiene 'Cerrado': la confirmacion "
+                "de entrega no puede resolver su estado"
+            ),
+        )
+
+    if ticket.estado_id != estado_cerrado.estado_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Solo un pedido 'Cerrado' (despachado) admite la confirmacion "
+                "de entrega"
+            ),
+        )
+
+    confirmacion_previa = db.execute(
+        select(HistorialTransicionTicket.historial_transicion_id)
+        .where(HistorialTransicionTicket.ticket_id == ticket_id)
+        .where(
+            HistorialTransicionTicket.estado_origen_id == estado_cerrado.estado_id
+        )
+        .where(
+            HistorialTransicionTicket.estado_destino_id
+            == estado_cerrado.estado_id
+        )
+        .where(HistorialTransicionTicket.motivo == MOTIVO_CONFIRMACION_ENTREGA)
+        .limit(1)
+    ).first()
+    if confirmacion_previa is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La entrega de este pedido ya fue confirmada por el solicitante",
+        )
+
+    try:
+        # D-25: una sola fila de evento, con origen = destino = `Cerrado`; no se
+        # modifica el estado del pedido ni `fecha_cierre`.
+        _registrar_transicion(
+            db,
+            ticket,
+            estado_origen_id=estado_cerrado.estado_id,
+            estado_destino_id=estado_cerrado.estado_id,
+            identidad=identidad,
+            motivo=MOTIVO_CONFIRMACION_ENTREGA,
+        )
+
+        db.commit()
+        db.refresh(ticket)
+    except Exception:
+        db.rollback()
+        raise
+
+    return _respuesta_ticket_con_proceso(db, ticket)
+
+
 def _cambiar_a_anulado(
     db: Session,
     ticket_id: int,
@@ -1411,6 +1978,13 @@ def obtener_ticket_detalle(
     (`compra_service.calcular_cobertura_tickets`). Es una propiedad derivada:
     no reserva stock, no cambia el estado del ticket y un ticket sin sede
     instantanea queda en `False`.
+
+    Ampliacion 25/Nov/2026 (§9.8, AC-39): completa la base con el read model de
+    proceso por el mismo helper del listado (`_cargar_proceso_tickets`) y agrega
+    la linea de entrega (`entrega_confirmada_en` y `_por_*`) desde la fila
+    `Cerrado -> Cerrado`. `estado_orden_cobertura` se deriva de las
+    `asignaciones` ya cargadas (incluyen las OC canceladas) para no duplicar la
+    consulta del listado; `asignaciones` y `cadena_productos` no cambian.
     """
     ticket = _cargar_ticket_para_detalle(db, ticket_id)
     _verificar_alcance_de_ticket(db, ticket, identidad)
@@ -1432,11 +2006,6 @@ def obtener_ticket_detalle(
         departamento.nombre_dep if departamento else None
     )
     respuesta.sede_nombre = ticket.sede.nombre if ticket.sede else None
-    if ticket.sede_id is not None:
-        cobertura = compra_service.calcular_cobertura_tickets(
-            db, ticket.sede_id
-        )
-        respuesta.stock_disponible = cobertura.get(ticket.ticket_id, False)
 
     # Feature 021 (AC-5, D-7, DT-6): asignaciones y cadena por producto. La
     # lectura no cambia el alcance de la 013/017 ni `stock_disponible`.
@@ -1468,6 +2037,27 @@ def obtener_ticket_detalle(
         for fila in asignaciones_db
         if fila.orden is not None
     ]
+
+    # Ampliacion §9.8: el detalle reutiliza sus asignaciones para la cobertura
+    # de OC (sin consulta extra) y el resto del read model se calcula igual que
+    # en el listado, de modo que ambas vistas no puedan divergir (AC-39).
+    proceso = _cargar_proceso_tickets(
+        db,
+        [ticket],
+        coberturas_orden={
+            ticket.ticket_id: _estado_orden_cobertura_de_asignaciones(
+                asignaciones_db
+            )
+        },
+    )[ticket.ticket_id]
+    _aplicar_proceso(respuesta, proceso)
+    respuesta.entrega_confirmada_en = proceso.entrega_confirmada_en
+    respuesta.entrega_confirmada_por_nombre = (
+        proceso.entrega_confirmada_por_nombre
+    )
+    respuesta.entrega_confirmada_por_apellido = (
+        proceso.entrega_confirmada_por_apellido
+    )
 
     comprado: dict[int, int] = {}
     recibido: dict[int, int] = {}

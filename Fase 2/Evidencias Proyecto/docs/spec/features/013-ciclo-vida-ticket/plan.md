@@ -178,3 +178,301 @@ cargar catálogos y tras cada alta exitosa. La prioridad conserva su `<select>` 
 **Riesgo principal:** el renombrado de `datos_base` (`INGRESADO`→`Pendiente`). Se acota a un
 fixture y a las aserciones de orden de `test_modal_ticket.py`; ninguna otra suite fija el nombre
 del primer estado (grep `INGRESADO` en `backend/tests`).
+
+## 9. Ampliación 25/Nov/2026 — flujo de aprobación, etiqueta de proceso y confirmación de entrega
+
+**Alcance.** Implementa la §9 de la spec (AC-28…AC-49): aprobación Admin-only a `EnCurso`,
+`PATCH /estado` solo para `Administrador` y como legado, etiqueta de proceso derivada con
+responsables, tablero con «Terminados», detalle con acciones semánticas y confirmación de entrega.
+**Sin DDL, sin migración, sin token nuevo, sin `docs/spec/stack.md`, sin cambios en Compras, la
+021, el despacho de la 005 ni el modelo:** el token sigue en `026.0`, 26/23 tablas y 21 entidades.
+La matriz pasa de **73 a 75** operaciones v1 y `/openapi.json` de **75 a 77** entradas; el `PATCH`
+conserva su entrada y solo cambia de rol.
+
+### 9.1 Decisiones técnicas (con alternativa descartada)
+
+1. **Etiqueta derivada en el servidor, en un módulo puro.** `backend/app/services/ticket_proceso.py`
+   (nuevo) concentra constantes (`MOTIVO_APROBACION = "Aprobación del pedido"`,
+   `MOTIVO_CONFIRMACION_ENTREGA = "Entrega confirmada por el solicitante"`), el mapa de
+   etiquetas/frases y `derivar_etiqueta(estado_nombre, estado_orden_cobertura, stock_disponible,
+   entrega_confirmada) -> tuple[str, str]`, sin ORM ni sesión. `ticket_service` lo consume.
+   **Descartado:** derivar en el frontend (tablero y detalle podrían divergir y cada vista
+   replicaría la precedencia) y meter el mapeo en `ticket_service` (ya supera 1.600 líneas; el
+   módulo puro se prueba sin BD).
+2. **Un read model por lote, no por ticket.** `ticket_service._cargar_proceso_tickets(db, tickets)`
+   hace **cuatro bloques** de consulta para toda la lista: (a) `stock_disponible` con
+   `compra_service.calcular_cobertura_tickets` una vez por `sede_id` distinta; (b) cobertura de OC
+   (`OrdenCompraTicket` ⋈ `OrdenCompra`, estados `Emitida`/`Facturada`/`Recibida`,
+   `cantidad_asignada > 0`, reducida a una fila por ticket con el estado de mayor rango); (c)
+   confirmaciones (`Cerrado → Cerrado` con el motivo exacto); (d) gestores
+   (`HistorialTransicionTicket` ⋈ `Usuario` ⋈ `Rol`, roles `Bodeguero`/`Administrador`, orden
+   `fecha_transicion DESC`, `historial_transicion_id DESC`). **Descartado:** resolver la etiqueta
+   con `calcular_cobertura_tickets` por ticket (N+1 y simulaciones inconsistentes) y cargar el
+   historial completo de cada ticket para los gestores (el detalle ya lo hace; el listado no lo
+   necesita).
+3. **`stock_disponible` en el listado con una simulación por sede.** La 020 ya devuelve
+   `{ticket_id: bool}` para todos los `EnCurso` de una sede; el listado agrupa por `sede_id`, la
+   invoca una vez por sede y usa `false` para el resto. **Descartado:** añadir una columna o un
+   cálculo por ticket (DDL y N+1); se conserva el contrato de la 020 (solo `EnCurso`).
+4. **Cobertura de OC en `ticket_service`, no en `compra_service`.** La consulta lee
+   `orden_compra_ticket`/`orden_compra` y reduce el rango en Python; no toca el paquete de la 021.
+   **Descartado:** exportar un helper nuevo de `compra_service` (la 021 no cambia y el paquete
+   queda cerrado) y un `CASE` SQL complejo (la reducción en Python es determinista y portable).
+5. **Confirmación como fila `Cerrado → Cerrado`, sin DDL.** `confirmar_entrega` inserta
+   `HistorialTransicionTicket` con el `Cerrado` canónico, actor, fecha, motivo literal y
+   `orden_compra_id = NULL`; la existencia se detecta por el motivo exacto. **Descartado:**
+   columna/tabla nueva o un `200` idempotente (la spec exige 409 y el modelo no cambia).
+6. **Aprobación con bloqueo de fila.** `select(Ticket).with_for_update()` al inicio, patrón de la
+   005; la validación de estado y la fila de historial ocurren dentro de la transacción.
+   **Descartado:** comprobación optimista (dos aprobaciones concurrentes escribirían dos filas y
+   la segunda no daría 409).
+7. **`TicketRespuesta` base + `TicketDetalleRespuesta` por herencia.** Los campos derivados viven
+   en la base; el detalle añade `entrega_confirmada_en`/`_por_*` y conserva `asignaciones`. El
+   listado y el detalle se construyen con `TicketRespuesta.model_validate(ticket)` +
+   `model_copy(update=proceso)` (el detalle, con su construcción manual actual). **Descartado:**
+   un DTO de listado separado (duplicaría campos y el detalle dejaría de heredar) y poblar los
+   campos en el ORM (atributos transitorios fuera del modelo).
+8. **`PATCH /estado` como legado y rol en la matriz.** La restricción a `Administrador` vive en
+   `permisos.py`; la UI no lo invoca. **Descartado:** ocultarlo solo en la UI (la API seguiría
+   concediendo al Bodeguero) y retirar la operación (rompe clientes y la regla de un paso de la
+   004).
+9. **La aprobación y la confirmación devuelven `TicketRespuesta` construido por el servicio** (la
+   spec promete la etiqueta en el 200). El `PATCH` y el despacho siguen devolviendo el ORM: sus
+   esquemas tienen los campos con su valor por defecto y la UI reconsulta. **Descartado:** cambiar
+   todas las mutaciones a DTO (más superficie y riesgo) y devolver el ORM en la aprobación (la
+   etiqueta prometida faltaría).
+10. **Un solo diálogo discriminado en el detalle.** `confirmando` pasa a
+    `'anular' | 'rechazo' | 'despacho' | 'entrega'`; el motivo solo se muestra para anular/rechazo.
+    **Descartado:** dos `<dialog>` nuevos (duplica foco, `Esc` y estilos).
+11. **El tablero agrupa en el componente.** `columnas` mapea `Pendiente`, `EnRevision` y `EnCurso`
+    y una columna «Terminados» con los `estado_id` de `Cerrado` y `Anulado`. **Descartado:**
+    agrupar en el backend (presentación pura) y eliminar la columna `EnRevision` (los heredados
+    deben seguir visibles).
+12. **Sin cambios en `compra_service`/021.** La etiqueta solo lee; la aprobación no evalúa stock.
+    **Descartado:** recalcular `stock_disponible` con el candidato (la regla de auto-avance ya no
+    existe).
+
+### 9.2 Backend: DTOs y read model
+
+- `TicketRespuesta` gana `etiqueta_proceso: str`, `explicacion_proceso: str`,
+  `estado_orden_cobertura: str | None`, `stock_disponible: bool` (se mueve desde
+  `TicketDetalleRespuesta`), `entrega_confirmada: bool`, `gestionado_por_bodeguero:
+  GestorProcesoRespuesta | None` y `gestionado_por_administrador: GestorProcesoRespuesta | None`.
+- `GestorProcesoRespuesta`: `usuario_id`, `nombre` y `apellido`.
+- `TicketDetalleRespuesta` añade `entrega_confirmada_en`, `entrega_confirmada_por_nombre` y
+  `entrega_confirmada_por_apellido`; conserva `asignaciones`/`cadena_productos`.
+- `ticket_proceso.py`: constantes, `ETIQUETAS`/`EXPLICACIONES`, `rango_estado_orden` y
+  `derivar_etiqueta`. `EnRevision` → «En revisión»; `EnCurso` con OC `Recibida` o
+  `stock_disponible` → «En confirmación de stock local»; sin OC ni stock → «Por comprar».
+- `ticket_service.listar_tickets` deja de devolver ORM y devuelve `List[TicketRespuesta]`
+  construidos en la misma sesión (el wrapper `agregar_lista_global` concatena DTOs; no le importa
+  el tipo). El orden, el filtro `estado_id` y el alcance por rol no cambian.
+- `ticket_service.obtener_ticket_detalle` completa la base con el mismo helper y añade la
+  fecha/actor de la confirmación. El detalle ya carga `asignaciones_db`; deriva
+  `estado_orden_cobertura` de esas filas filtrando `Cancelada` y tomando el mayor rango (sin
+  consulta extra).
+- Los gestores se resuelven con el rol **vigente** (`Usuario.rol`), orden
+  `fecha_transicion DESC, historial_transicion_id DESC`, primera fila por `(ticket, rol)`. Un
+  actor sin usuario/rol resoluble no cuenta.
+- La confirmación se detecta por `estado_origen_id = estado_destino_id = <Cerrado>` y
+  `motivo = MOTIVO_CONFIRMACION_ENTREGA`; el `Cerrado` se resuelve por nombre (menor id ante
+  duplicados) una vez por consulta.
+- La etiqueta degrada para estados fuera del conjunto canónico: nombre visible + «Estado no
+  reconocido por la etiqueta de proceso».
+- La construcción del DTO ocurre dentro de la sesión del tenant (sin `DetachedInstanceError`; el
+  listado global de Superadmin no aplica desde la 017, pero el wrapper sigue siendo seguro).
+
+### 9.3 Backend: aprobación y `PATCH` de legado
+
+- `ticket_service.aprobar_ticket(db, ticket_id, identidad)`:
+  1. `select(Ticket).where(...).with_for_update()`; si no existe o está fuera de alcance, 404
+     (mismo `_verificar_alcance_de_ticket`).
+  2. Resuelve `Pendiente`, `EnRevision` y `EnCurso` por nombre (casefold, menor id). Sin
+     `EnCurso`, **409** fail-closed.
+  3. Si `ticket.estado_id` no es `Pendiente` ni `EnRevision`, **409** sin escribir (incluye
+     `EnCurso`, `Cerrado`, `Anulado` y estados fuera del catálogo).
+  4. `ticket.estado_id = EnCurso.id`; `_registrar_transicion(db, ticket, origen, EnCurso.id,
+     identidad, MOTIVO_APROBACION)`; `commit`; `rollback` ante excepción.
+  5. Devuelve `TicketRespuesta` con el proceso cargado (`_respuesta_ticket_con_proceso`), no el
+     ORM.
+- `permisos.py`: `POST /tickets/{id}/aprobacion` → `{Administrador}`; `PATCH /tickets/{id}/estado`
+  → `{Administrador}` (deja de usar `_ESCRITURA_STOCK`); `POST /tickets/{id}/despacho` conserva
+  `_ESCRITURA_STOCK`. Matriz 73 → 74 en esta sección; la segunda operación (74 → 75) llega en
+  §9.4.
+- `capacidades.py`: aprobación → `kanban`; el `PATCH` sigue `kanban`.
+- `tickets.py`: endpoint `POST /{ticket_id}/aprobacion` sin payload, `response_model=TicketRespuesta`,
+  `status_code=200`, `respuestas_de_autorizacion()`, `respuesta_recurso_oculto()`,
+  `respuesta_conflicto()`, `requiere_operacion` + `requiere_capacidad("POST", ruta)`. Descripción
+  con el 409 de estado/catálogo y el 403 del Bodeguero. El `PATCH` actualiza su descripción: solo
+  Administrador, sin destino efectivo distinto del solicitado.
+- La aprobación es una operación propia; el `PATCH` conserva la regla de un paso, el cierre
+  reservado y la terminalidad. No se toca el servicio de despacho.
+
+### 9.4 Backend: confirmación de entrega
+
+- `ticket_service.confirmar_entrega(db, ticket_id, identidad)`:
+  1. `select(Ticket).where(...).with_for_update()`; 404 si no existe o está fuera de alcance;
+     404 si `ticket.usuario_id != identidad.usuario.usuario_id` (defensa; la matriz ya limita a
+     `Solicitante`).
+  2. Resuelve `Cerrado` por nombre; **409** si el pedido no está `Cerrado`.
+  3. Si ya existe una fila `Cerrado → Cerrado` con `MOTIVO_CONFIRMACION_ENTREGA`, **409** sin
+     escribir.
+  4. Inserta `HistorialTransicionTicket` con origen/destino `Cerrado`, actor, fecha del servidor,
+     motivo y `orden_compra_id = NULL`; `commit`; `rollback` ante excepción. No cambia
+     `estado_id`, `fecha_cierre`, stock ni movimientos.
+  5. Devuelve `TicketRespuesta` con `entrega_confirmada = true` y la etiqueta «Entregado».
+- `permisos.py`: `POST /tickets/{id}/confirmacion-entrega` → `{Solicitante}`; matriz 74 → 75.
+  `capacidades.py`: `tickets`.
+- `tickets.py`: endpoint sin payload, `response_model=TicketRespuesta`, 200, 401/403/404/409,
+  dependencias. Descripción con «solo el Solicitante dueño» y el 409 de ya confirmado.
+- La confirmación es un evento, no una transición: `GET /historial` la devuelve como
+  `Cerrado → Cerrado` con el motivo; AC-9 sigue siendo una fila por mutación de estado.
+
+### 9.5 Backend: archivos y responsabilidades
+
+| Archivo | Responsabilidad | AC |
+|---|---|---|
+| `backend/app/schemas/ticket_schema.py` | `GestorProcesoRespuesta`; campos base y de detalle; `stock_disponible` en la base. | AC-39 |
+| `backend/app/services/ticket_proceso.py` (nuevo) | Constantes, etiquetas/frases, `rango_estado_orden`, `derivar_etiqueta`; funciones puras. | AC-37, AC-38, AC-40 (puro) |
+| `backend/app/services/ticket_service.py` | `_cargar_proceso_tickets`, `_respuesta_ticket_con_proceso`, `listar_tickets` con DTO, detalle, `aprobar_ticket`, `confirmar_entrega`. | AC-29…AC-43 |
+| `backend/app/core/permisos.py` | Aprobación `{Administrador}`; confirmación `{Solicitante}`; `PATCH` `{Administrador}`; 73 → 75. | AC-44, AC-45, AC-49 |
+| `backend/app/core/capacidades.py` | Aprobación → `kanban`; confirmación → `tickets`. | AC-44 |
+| `backend/app/api/v1/endpoints/tickets.py` | Dos rutas nuevas, OpenAPI, descripción del `PATCH`. | AC-29…AC-46 |
+| `backend/tests/…` | §9.7. | AC-28…AC-49 |
+
+### 9.6 Frontend: archivos y responsabilidades
+
+| Archivo | Responsabilidad | AC |
+|---|---|---|
+| `frontend/src/app/shared/interfaces/index.ts` | `GestorProceso`; campos base en `Ticket` y de detalle en `TicketDetalle` (opcionales para no romper fixtures). | AC-39 |
+| `frontend/src/app/features/tickets/services/ticket.service.ts` | Retira `actualizarEstado`; añade `aprobarTicket`, `despacharTicket(id, usuarioId)` y `confirmarEntrega`. | AC-32, AC-42, AC-43 |
+| `frontend/src/app/core/auth/roles.ts` | `puedeAprobarTicket` (Administrador), `puedeDespacharTicket` (Administrador/Bodeguero) y `puedeConfirmarEntrega` (Solicitante); retira `puedeOperarTickets` si queda sin consumidor. | AC-32, AC-45, AC-49 |
+| `frontend/src/app/features/tickets/ticket-detalle.component.{ts,html,spec.ts}` | Acciones semánticas, diálogo discriminado, despacho, confirmación, etiqueta/frase/responsables/línea de entrega; sin Avanzar/Retroceder ni `PATCH`. | AC-32…AC-43, AC-48 |
+| `frontend/src/app/features/tickets/tickets.component.{ts,html,spec.ts}` | Columnas `Pendiente`/`EnRevision`/`EnCurso`/«Terminados»; tarjeta con etiqueta, frase accesible y responsables; enlace al detalle. | AC-37…AC-41, AC-47 |
+| `frontend/src/app/features/tickets/ticket.service.spec.ts` (nuevo) | URL, verbo y payload de las tres operaciones nuevas. | AC-32, AC-42 |
+| `frontend/src/app/core/auth/roles.spec.ts` | Helpers nuevos y retirados. | AC-32, AC-45 |
+
+### 9.7 Estrategia de pruebas
+
+**Backend SQLite (ordinario)**
+
+- Unitarios: `test_ticket_proceso_013.py` (etiquetas, frases, precedencia, estados desconocidos,
+  rango de OC) y contrato de los DTO (campos base/detalle, `GestorProcesoRespuesta`).
+- Integración: `test_ticket_proceso_013.py` (listado y detalle con los campos, etiqueta coherente,
+  responsables, confirmación, y **conteo de consultas** con `before_cursor_execute` para 1 vs N
+  tickets; patrón de `test_tablero_kanban.py`).
+- Aprobación: `test_ciclo_vida_aprobacion_013.py` (200 desde `Pendiente`/`EnRevision`, siempre
+  `EnCurso`, fila de historial exacta, atomicidad, 409 ya/terminal/catálogo, 404, 403
+  rol/capacidad, `PATCH` Bodeguero 403).
+- Confirmación: `test_ciclo_vida_confirmacion_013.py` (200 dueño, fila exacta, etiqueta
+  `Entregado`, sin estado/stock/`fecha_cierre`, 404 ajeno, 403 roles/capacidad, 409 no `Cerrado`,
+  409 ya confirmado, alta administrativa sin confirmación).
+- E2E: `test_flujo_aprobacion_entrega_013.py` (alta → aprobar → etiqueta → Compras/021 →
+  despachar → confirmar; 409/403/404; `PATCH` de legado sin uso en la UI).
+- Regresión: actualizar los recuentos y roles de matriz/OpenAPI, el no-N+1 del listado y los tests
+  que usaban al Bodeguero para el `PATCH` (ver §9.8).
+
+**PostgreSQL gated (`POSTGRES_TEST_URL`, obligatorio para cierre)**
+
+- `test_ciclo_vida_aprobacion_confirmacion_postgres_013.py`: dos sesiones concurrentes sobre la
+  misma fila → aprobación `(200, 409)` con **una** fila; confirmación `(200, 409)` con **una**
+  fila `Cerrado → Cerrado`; lectura persistida del actor, fecha, motivo y `orden_compra_id NULL`;
+  `fecha_cierre`/stock intactos; sin DDL. SQLite no acredita el bloqueo.
+
+**Frontend**
+
+- `ticket.service.spec.ts`: URL/verbo/payload de `aprobarTicket`, `despacharTicket` y
+  `confirmarEntrega`; ausencia de `actualizarEstado`.
+- `roles.spec.ts`: `puedeAprobarTicket`/`puedeDespacharTicket`/`puedeConfirmarEntrega`.
+- `ticket-detalle.component.spec.ts`: acciones por estado/rol, sin Avanzar/Retroceder, Aprobar solo
+  Administrador, Despachar solo `EnCurso` + `stock_disponible`, Confirmar entrega solo dueño +
+  `Cerrado` sin confirmar, diálogos, 409 accesibles, sin doble envío, reconsulta, etiqueta/frase/
+  responsables/línea de entrega.
+- `tickets.component.spec.ts`: 4 columnas, «Terminados» con `Cerrado`+`Anulado`, sin columna
+  `Anulado`, etiqueta/frase accesible/responsables, tarjeta-enlace, no-N+1 (2 peticiones).
+- `npx ng test --watch=false --browsers=ChromeHeadless` con `$env:CHROME_BIN` a Edge; `ng build`
+  limpio.
+
+**Contrato**
+
+- `/openapi.json`: **75** operaciones v1 (**77** entradas con `GET /` y `/health`), las 73 previas
+  con sus roles salvo el `PATCH` (solo `Administrador`), la aprobación con `401/403/404/409` y la
+  confirmación con `401/403/404/409`.
+
+### 9.8 Pruebas existentes que quedan obsoletas o deben reconciliarse
+
+**Backend**
+
+- `test_permisos_endpoints.py` (inventario rutas↔matriz): `MATRIZ_D3` y el recuento a 75; las dos
+  rutas nuevas publicadas.
+- `test_cobertura_021.py` / tests de matriz de la 021: 73 → 75; `test_openapi_publica…73` → 75;
+  la aserción de las 73 previas conserva roles salvo el `PATCH`.
+- `test_ciclo_vida_autorizacion_013.py`: si la aserción de matriz es viva, 49 → 75; el `PATCH` con
+  Bodeguero pasa a 403.
+- `test_ciclo_vida_flujo_013.py`, `test_ciclo_vida_alta_inicial_013.py` y
+  `test_despacho_transaccional.py`: los `PATCH` ejecutados con Bodeguero se cambian a Administrador
+  (o se añade la aserción 403); el 409 de cierre reservado se conserva con Administrador.
+- `test_tablero_kanban.py`: el conteo de consultas del listado sube por el read model; el número
+  esperado se actualiza y se mantiene la aserción de no-N+1.
+- `test_despacho_dtos.py`/tests de contrato de `TicketRespuesta` y `TicketDetalleRespuesta`: el
+  conjunto exacto de campos se amplía; `stock_disponible` deja de estar duplicado en el detalle.
+- `test_permisos_012.py`/`test_capacidades_gating_012.py`: si el `PATCH` se ejercita con
+  Bodeguero, se cambia a Administrador; la aprobación se añade a `kanban` y la confirmación a
+  `tickets`.
+
+**Frontend**
+
+- `tickets.component.spec.ts`: fuera la columna `Anulado` y el grid de 5; dentro «Terminados»,
+  el contador sumado, la etiqueta/frase/responsables y el enlace.
+- `ticket-detalle.component.spec.ts`: fuera los specs de Avanzar/Retroceder y del `PATCH`; dentro
+  Aprobar/Despachar/Confirmar entrega, la etiqueta/responsables/línea de entrega y la ausencia de
+  `PATCH`.
+- `roles.spec.ts`: fuera `puedeOperarTickets` si se retira; dentro los tres helpers nuevos.
+
+### 9.9 Riesgos y mitigaciones
+
+| Riesgo | Mitigación |
+|---|---|
+| El listado pasa a construir DTOs y añade consultas | Read model por lote: una simulación por sede, una consulta de OC, una de confirmaciones y una de gestores; test de conteo fijo con 1 vs N tickets. |
+| Los recuentos absolutos de la matriz/OpenAPI (49 históricos, 73 vivos; 75 y 77 nuevos) rompen suites | Reconciliación explícita en §9.8 y en los tests de contrato; grep de `73`, `49`, `75`, `77` y `openapi` en `backend/tests`. |
+| Pedidos heredados en `EnRevision` | La aprobación los acepta; el tablero conserva la columna; no se produce el estado en el flujo nuevo; tests de aprobación desde ambos orígenes. |
+| Pedidos creados por Admin/Bodeguero sin confirmación posible | La acción no se ofrece; el dueño sin rol `Solicitante` recibe 403; el pedido queda «Despachado»; test explícito. |
+| Carrera stock/despacho | La aprobación no evalúa stock; el despacho sigue validando y devuelve 409; la UI reconsulta y retira la acción. |
+| Campos aditivos rompen contratos exactos o fixtures | Actualizar los tests de campos exactos; tipos TS opcionales; los DTO de mutación existentes conservan defaults y la UI reconsulta. |
+| El `PATCH` restringido rompe clientes/tests con Bodeguero | Cambiar los actores a Administrador o asertar 403; actualizar la descripción OpenAPI; el `MATRIZ` y el inventario de rutas. |
+| La confirmación se duplica por carrera | Bloqueo de fila + detección por motivo; gated PG con dos sesiones y una sola fila. |
+| 8080 sirve la imagen vieja | `docker compose build frontend` + `up -d frontend` antes del humo (AGENTS §5/§8.6). |
+
+### 9.10 Cobertura AC → partes
+
+| AC | Partes |
+|---|---|
+| AC-28, AC-29, AC-30, AC-36 | `aprobar_ticket`, `PATCH` sin auto-avance, `ticket_proceso`, tests de flujo/historial. |
+| AC-31 | Compras/021 sin cambios; aprobación a `EnCurso`; tests de necesidades. |
+| AC-32, AC-33, AC-34 | Detalle: acciones, despacho, 409; frontend. |
+| AC-35 | Invariantes: sin DDL, token `026.0`, 26/23, 21 entidades. |
+| AC-37, AC-38, AC-39 | `ticket_proceso`, DTOs, read model de listado/detalle. |
+| AC-40 | Consulta de gestores por lote; UI de responsables. |
+| AC-41 | Tablero «Terminados», etiqueta/frase/responsables; frontend. |
+| AC-42, AC-43 | `confirmar_entrega`, endpoint, matriz, UI, gated PG. |
+| AC-44, AC-45, AC-46, AC-49 | Matriz 75, OpenAPI 77, aprobación Admin-only, PATCH 403, tests de contrato. |
+| AC-47, AC-48 | `EnRevision` heredado, acciones semánticas y PATCH de legado sin uso en la UI. |
+| Cierre de la enmienda | Suites, build, 4200/8080, evidencia y grep. |
+
+### 9.11 Verificación de cierre
+
+- `pytest` SQLite completo sin regresiones y con los tests nuevos en verde; gated PostgreSQL 16 con
+  `POSTGRES_TEST_URL` (concurrencia y filas de historial), sin skips accidentales.
+- `ng test` con Edge headless y `ng build` de producción limpios.
+- `/openapi.json`: **75** operaciones v1 (**77** entradas), el `PATCH` solo Administrador, la
+  aprobación y la confirmación con sus códigos.
+- 4200 con escritura real: alta → aprobar (etiqueta «En confirmación de stock local» o «Por
+  comprar») → despachar → confirmar entrega; tablero con «Terminados»; detalle sin
+  Avanzar/Retroceder; caso #10 fuera de Compras; un pedido con necesidad aparece tras la
+  aprobación; `PATCH` de legado 403 para Bodeguero y 200 para Administrador.
+- 8080 tras `docker compose -f docker-compose.yml build frontend` + `up -d frontend`; humo de la
+  vista y del flujo básico.
+- Evidencia bajo cada AC-28…AC-49; `MEMORY.md` lo actualiza el coordinador al cierre; grep de
+  coherencia sobre `AGENTS.md`, `MEMORY.md` y `.agents/skills/` (PATCH/roles/etiquetas/columnas).
+- **Sin DDL, sin migración, sin `stack.md`, sin tocar `roadmap.md`**: la fila 013 ya está `[x]` y
+  la enmienda se registra en `spec.md` y `evidencia/`.

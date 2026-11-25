@@ -16,8 +16,10 @@ import { forkJoin, of } from 'rxjs';
 
 import {
   puedeAnularTicket,
+  puedeAprobarTicket,
+  puedeConfirmarEntrega,
+  puedeDespacharTicket,
   puedeEditarTicket,
-  puedeOperarTickets,
   puedeRechazarTicket,
 } from '../../core/auth/roles';
 import { AutenticacionService } from '../../core/services/auth.service';
@@ -26,6 +28,7 @@ import {
   DetalleTicket,
   DetalleTicketCrear,
   EstadoTicket,
+  GestorProceso,
   HistorialTransicion,
   ProductoCatalogo,
   TicketDetalle,
@@ -51,14 +54,22 @@ interface FilaHistorial {
   numeroOc: string | null;
 }
 
-/** Acciones que la barra ofrece según estado y rol (AC-24). */
+/**
+ * Acciones semánticas que la barra ofrece según estado y rol (ampliación
+ * 25/Nov/2026, AC-32). No hay «Avanzar» ni «Retroceder»: cada botón expresa
+ * una decisión del negocio y el `PATCH /estado` de legado no se invoca.
+ */
 interface AccionesDetalle {
-  avanzar: boolean;
-  retroceder: boolean;
+  aprobar: boolean;
+  despachar: boolean;
+  confirmarEntrega: boolean;
   editar: boolean;
   anular: boolean;
   rechazar: boolean;
 }
+
+/** Tipo de confirmación abierta en el `<dialog>` nativo. */
+type TipoConfirmacion = 'anular' | 'rechazo' | 'despacho' | 'entrega';
 
 /**
  * Opción de un selector de producto de la edición (Feature 014, AC-9).
@@ -100,15 +111,16 @@ export function mensajeDeErrorTickets(error: HttpErrorResponse): string {
 }
 
 /**
- * Vista de detalle del ticket (Feature 013, D-13/AC-23/AC-24).
+ * Vista de detalle del ticket (Feature 013, D-13; ampliación 25/Nov/2026).
  *
- * Muestra cabecera (asunto, prioridad, estado, solicitante con departamento,
- * sede y fechas), ítems con cantidades solicitadas y entregadas, y el
- * historial completo. **Toda mutación del ciclo de vida se opera aquí** (D-14):
- * avanzar/retroceder vía `PATCH /estado`, edición en `Pendiente` y
- * anulación/rechazo con confirmación previa que exige motivo. La barra de
- * acciones se deriva del estado y del rol (AC-24); `Cerrado` y `Anulado` no
- * ofrecen ninguna (terminales por nombre, D-4).
+ * Muestra cabecera (asunto, prioridad, estado canónico con la etiqueta de
+ * proceso junto a él, solicitante con departamento, sede, fechas y los dos
+ * responsables del historial), ítems con cantidades solicitadas y entregadas,
+ * la cobertura de compras y el historial completo. **Toda mutación del ciclo
+ * de vida se opera aquí** (D-14) con acciones semánticas: aprobar (un clic),
+ * despachar y confirmar entrega (diálogo sin motivo), además de editar, anular
+ * y rechazar (con motivo obligatorio). No hay «Avanzar»/«Retroceder» y la
+ * vista no invoca `PATCH /estado` (AC-48).
  *
  * Tras cada mutación aceptada —y también tras un rechazo del servidor— se
  * reconsultan detalle e historial para reflejar la verdad del backend. Un
@@ -143,8 +155,8 @@ export class TicketDetalleComponent {
   readonly mensajeExito = signal<string | null>(null);
   /** `true` mientras una mutación está en vuelo: bloquea todos los controles. */
   readonly enOperacion = signal(false);
-  /** `null` sin confirmación abierta; `'anular'` o `'rechazo'` con el modal. */
-  readonly confirmando = signal<'anular' | 'rechazo' | null>(null);
+  /** `null` sin confirmación abierta; el tipo abierto mientras el modal vive. */
+  readonly confirmando = signal<TipoConfirmacion | null>(null);
   readonly editando = signal(false);
 
   // --- Identidad (presentación; la autorización la decide la API, D-2) ---
@@ -190,77 +202,49 @@ export class TicketDetalleComponent {
     this.nombreEstado() === null ? null : normalizar(this.nombreEstado()!),
   );
 
-  /** Terminales por nombre, nunca por posición del catálogo (D-4). */
-  private readonly esTerminal = computed(() => {
-    const estado = this.estadoNormalizado();
-    return estado === 'cerrado' || estado === 'anulado';
-  });
-
-  private readonly esEnCurso = computed(() => this.estadoNormalizado() === 'encurso');
-
-  private readonly admiteAnulacionORechazo = computed(() => {
+  /** `Pendiente` y el `EnRevision` heredado admiten aprobar, anular y rechazar (D-3). */
+  private readonly admiteDecision = computed(() => {
     const estado = this.estadoNormalizado();
     return estado === 'pendiente' || estado === 'enrevision';
   });
 
-  /** Posición del estado del ticket en el orden del catálogo; `-1` si no está. */
-  private readonly indiceEstado = computed(() => {
-    const ticket = this.ticket();
-    if (ticket === null) {
-      return -1;
-    }
-    return this.estados().findIndex((estado) => estado.estado_id === ticket.estado_id);
-  });
-
-  /** Id del estado contiguo siguiente, sin saltos y nunca hacia un terminal. */
-  private readonly idEstadoSiguiente = computed<number | null>(() => {
-    const indice = this.indiceEstado();
-    if (indice < 0 || this.esTerminal() || this.esEnCurso()) {
-      // El avance desde `EnCurso` está reservado al despacho de la 005 (AC-16).
-      return null;
-    }
-    const siguiente = this.estados()[indice + 1] ?? null;
-    if (siguiente === null || esEstadoTerminal(siguiente.nombre)) {
-      return null;
-    }
-    return siguiente.estado_id;
-  });
-
-  /** Id del estado contiguo anterior (nunca desde un terminal). */
-  private readonly idEstadoAnterior = computed<number | null>(() => {
-    const indice = this.indiceEstado();
-    if (indice <= 0 || this.esTerminal()) {
-      return null;
-    }
-    return this.estados()[indice - 1].estado_id;
-  });
-
   /**
-   * Acciones ofrecidas por estado y rol (AC-24).
+   * Acciones semánticas ofrecidas por estado y rol (AC-32, ampliación
+   * 25/Nov/2026).
    *
-   * Transiciones: solo roles operativos (la 004 vigente por matriz). Anulación
-   * y edición: Administrador o el **dueño** Solicitante. Rechazo: Bodeguero o
-   * Administrador. Solo `Pendiente`/`EnRevision` admiten anular/rechazar (D-3)
-   * y solo `Pendiente` admite edición (D-9). En `Cerrado`/`Anulado` no se
-   * ofrece nada.
+   * Aprobar: solo Administrador, desde `Pendiente` o `EnRevision` (heredado).
+   * Despachar: Administrador/Bodeguero, solo `EnCurso` y con `stock_disponible`.
+   * Confirmar entrega: Solicitante **dueño**, solo `Cerrado` sin confirmar.
+   * Editar: solo `Pendiente`, Administrador o dueño. Anular: `Pendiente`/
+   * `EnRevision`, Administrador o dueño. Rechazar: `Pendiente`/`EnRevision`,
+   * Bodeguero/Administrador. `Anulado` no ofrece ninguna.
    */
   readonly acciones = computed<AccionesDetalle>(() => {
     const rol = this.rolActual();
     const estado = this.estadoNormalizado();
+    const ticket = this.ticket();
     const esAdministrador = rol === 'Administrador';
     const esDueno = this.esDueno();
     return {
-      avanzar: puedeOperarTickets(rol) && this.idEstadoSiguiente() !== null,
-      retroceder: puedeOperarTickets(rol) && this.idEstadoAnterior() !== null,
+      aprobar: this.admiteDecision() && puedeAprobarTicket(rol),
+      despachar:
+        estado === 'encurso' &&
+        puedeDespacharTicket(rol) &&
+        ticket?.stock_disponible === true,
+      confirmarEntrega:
+        estado === 'cerrado' &&
+        puedeConfirmarEntrega(rol) &&
+        esDueno &&
+        ticket?.entrega_confirmada !== true,
       editar:
         estado === 'pendiente' &&
         puedeEditarTicket(rol) &&
         (esAdministrador || esDueno),
       anular:
-        this.admiteAnulacionORechazo() &&
+        this.admiteDecision() &&
         puedeAnularTicket(rol) &&
         (esAdministrador || esDueno),
-      rechazar: this.admiteAnulacionORechazo() && puedeRechazarTicket(rol),
+      rechazar: this.admiteDecision() && puedeRechazarTicket(rol),
     };
   });
 
@@ -268,17 +252,66 @@ export class TicketDetalleComponent {
   readonly hayAcciones = computed(() => Object.values(this.acciones()).some(Boolean));
 
   /**
-   * Nota visible cuando no hay ninguna acción: distingue el terminal (estado
-   * del ticket) del permiso (rol), para que el vacío sea informativo (AC-23).
+   * Nota visible cuando no hay ninguna acción: distingue los terminales
+   * (`Cerrado` despachado pendiente de confirmación, `Cerrado` entregado,
+   * `Anulado`), el `EnCurso` sin stock y el rol sin permiso, para que el vacío
+   * sea informativo (AC-23/AC-32).
    */
   readonly notaAcciones = computed<string | null>(() => {
     if (this.hayAcciones() || this.ticket() === null) {
       return null;
     }
-    if (this.esTerminal()) {
-      return 'Este pedido está en un estado terminal (Cerrado o Anulado): no admite acciones del ciclo de vida.';
+    const estado = this.estadoNormalizado();
+    if (estado === 'anulado') {
+      return 'Este pedido está Anulado: el rechazo o la anulación quedaron registrados y no admite más acciones.';
     }
-    return 'Tu rol no puede operar el ciclo de vida de este pedido: solo puede consultarlo.';
+    if (estado === 'cerrado') {
+      if (this.ticket()?.entrega_confirmada === true) {
+        return 'Este pedido está Cerrado y su entrega ya fue confirmada por el Solicitante: no admite más acciones.';
+      }
+      return 'Este pedido está Cerrado y pendiente de confirmación de entrega por el Solicitante dueño: las demás acciones del ciclo de vida no aplican.';
+    }
+    if (estado === 'encurso' && this.ticket()?.stock_disponible !== true) {
+      return 'El pedido está En curso, pero el stock local aún no está disponible: el despacho se habilitará cuando la sede lo cubra.';
+    }
+    return 'Tu rol no puede operar el ciclo de vida de este pedido en su estado actual: solo puedes consultarlo.';
+  });
+
+  // --- Read model de proceso (ampliación 25/Nov/2026, AC-37/AC-39/AC-40) ---
+
+  /**
+   * Etiqueta derivada por el servidor. NO pasa por el helper de etiquetas de
+   * estado: ya viaja con sus espacios («En confirmación de stock local»).
+   */
+  readonly etiquetaProceso = computed<string | null>(
+    () => this.ticket()?.etiqueta_proceso ?? null,
+  );
+
+  readonly explicacionProceso = computed<string | null>(
+    () => this.ticket()?.explicacion_proceso ?? null,
+  );
+
+  /** Último Bodeguero del historial; «Sin gestión registrada» si no hay fila. */
+  readonly gestorBodeguero = computed<string>(() =>
+    this.nombreGestor(this.ticket()?.gestionado_por_bodeguero ?? null),
+  );
+
+  /** Último Administrador del historial; «Sin gestión registrada» si no hay fila. */
+  readonly gestorAdministrador = computed<string>(() =>
+    this.nombreGestor(this.ticket()?.gestionado_por_administrador ?? null),
+  );
+
+  /** Actor de la confirmación de entrega, con la misma forma que el resto. */
+  readonly entregaConfirmadaPor = computed<string | null>(() => {
+    const ticket = this.ticket();
+    if (ticket === null) {
+      return null;
+    }
+    const nombre = this.nombrePersona(
+      ticket.entrega_confirmada_por_nombre,
+      ticket.entrega_confirmada_por_apellido,
+    );
+    return nombre === '' ? null : nombre;
   });
 
   // --- Etiquetas de presentación ---
@@ -407,7 +440,11 @@ export class TicketDetalleComponent {
 
   // --- Formularios ---
 
-  /** Motivo obligatorio de la confirmación de anulación/rechazo (D-6). */
+  /**
+   * Motivo obligatorio de la confirmación de anulación/rechazo (D-6). Las
+   * confirmaciones de despacho y entrega no lo piden: el mismo diálogo lo
+   * muestra solo cuando `exigeMotivo()` es `true`.
+   */
   readonly motivoForm = this.fb.group({
     motivo: ['', [Validators.required, Validators.maxLength(500)]],
   });
@@ -531,6 +568,55 @@ export class TicketDetalleComponent {
     viewChild.required<ElementRef<HTMLDialogElement>>('dialogoConfirmacion');
   readonly dialogoEdicion = viewChild.required<ElementRef<HTMLDialogElement>>('dialogoEdicion');
 
+  /** `true` solo para anulación y rechazo: despacho y entrega no piden motivo. */
+  readonly exigeMotivo = computed(() => {
+    const tipo = this.confirmando();
+    return tipo === 'anular' || tipo === 'rechazo';
+  });
+
+  /** Título del `<dialog>` de confirmación según el tipo abierto. */
+  readonly tituloConfirmacion = computed<string>(() => {
+    switch (this.confirmando()) {
+      case 'rechazo':
+        return 'Rechazar pedido';
+      case 'despacho':
+        return 'Despachar pedido';
+      case 'entrega':
+        return 'Confirmar entrega';
+      default:
+        return 'Anular pedido';
+    }
+  });
+
+  /** Cuerpo del `<dialog>`: qué consecuencia tiene confirmar cada acción. */
+  readonly textoConfirmacion = computed<string>(() => {
+    switch (this.confirmando()) {
+      case 'despacho':
+        return 'Se descontará el stock de la sede y el pedido quedará «Cerrado». Esta operación no se puede deshacer.';
+      case 'entrega':
+        return 'El pedido quedará «Entregado» para el Solicitante. Su estado canónico sigue siendo «Cerrado».';
+      default:
+        return 'El pedido pasará al estado «Anulado», que es terminal. El motivo queda registrado en el historial para trazabilidad.';
+    }
+  });
+
+  /** Texto del botón de envío del diálogo, también deshabilitado en vuelo. */
+  readonly textoBotonConfirmar = computed<string>(() => {
+    if (this.enOperacion()) {
+      return 'Procesando…';
+    }
+    switch (this.confirmando()) {
+      case 'rechazo':
+        return 'Confirmar rechazo';
+      case 'despacho':
+        return 'Confirmar despacho';
+      case 'entrega':
+        return 'Confirmar entrega';
+      default:
+        return 'Confirmar anulación';
+    }
+  });
+
   constructor() {
     // El `<dialog>` nativo da foco atrapado, `Esc` y fondo atenuado sin código de
     // foco propio (mismo patrón que el modal del tablero). Los diálogos viven
@@ -632,28 +718,41 @@ export class TicketDetalleComponent {
     });
   }
 
-  // --- Transiciones del flujo lineal (PATCH /estado) ---
+  // --- Aprobación (AC-32: un clic, sin motivo ni diálogo) ---
 
-  /** Avanza un paso en el flujo lineal. No hace nada sin destino. */
-  avanzar(): void {
-    this.transicion(this.idEstadoSiguiente());
-  }
-
-  /** Retrocede un paso en el flujo lineal. No hace nada sin destino. */
-  retroceder(): void {
-    this.transicion(this.idEstadoAnterior());
-  }
-
-  private transicion(destino: number | null): void {
-    if (destino === null || this.enOperacion() || this.ticketId() === null) {
+  /**
+   * Aprueba el pedido: `POST /tickets/{id}/aprobacion`. No pide motivo ni abre
+   * diálogo y el destino es siempre `EnCurso` (D-15). Al 200 se reconsulta y el
+   * estado y la etiqueta se actualizan; un 409/403/404 se anuncia y reconsulta.
+   */
+  aprobar(): void {
+    if (this.enOperacion() || this.ticketId() === null || !this.acciones().aprobar) {
       return;
     }
     this.limpiarAvisos();
     this.enOperacion.set(true);
-    this.servicioTickets.actualizarEstado(this.ticketId()!, destino).subscribe({
-      next: () => this.terminarOperacion('Estado del pedido actualizado.'),
+    this.servicioTickets.aprobarTicket(this.ticketId()!).subscribe({
+      next: () => this.terminarOperacion('Pedido aprobado.'),
       error: (error: HttpErrorResponse) => this.fallarOperacion(error),
     });
+  }
+
+  // --- Despacho y confirmación de entrega (diálogo sin motivo) ---
+
+  solicitarDespacho(): void {
+    if (this.enOperacion() || !this.acciones().despachar) {
+      return;
+    }
+    this.limpiarAvisos();
+    this.confirmando.set('despacho');
+  }
+
+  solicitarConfirmacionEntrega(): void {
+    if (this.enOperacion() || !this.acciones().confirmarEntrega) {
+      return;
+    }
+    this.limpiarAvisos();
+    this.confirmando.set('entrega');
   }
 
   // --- Anulación y rechazo (confirmación con motivo obligatorio) ---
@@ -683,29 +782,75 @@ export class TicketDetalleComponent {
     this.confirmando.set(null);
   }
 
-  /** Envía la anulación/rechazo. El motivo vacío o en blanco no sale del cliente. */
+  /**
+   * Envía la confirmación abierta. El motivo solo se exige —y solo se envía—
+   * para anulación y rechazo; el despacho lleva el `usuario_id` de la sesión y
+   * la entrega no lleva cuerpo (D-19/D-25).
+   */
   confirmar(): void {
     const tipo = this.confirmando();
     if (tipo === null || this.enOperacion() || this.ticketId() === null) {
       return;
     }
-    const motivo = this.motivoForm.controls.motivo.value.trim();
-    if (motivo === '') {
-      this.motivoForm.controls.motivo.markAsTouched();
+    const ticketId = this.ticketId()!;
+
+    if (tipo === 'anular' || tipo === 'rechazo') {
+      const motivo = this.motivoForm.controls.motivo.value.trim();
+      if (motivo === '') {
+        this.motivoForm.controls.motivo.markAsTouched();
+        return;
+      }
+      this.limpiarAvisos();
+      this.enOperacion.set(true);
+      const peticion =
+        tipo === 'anular'
+          ? this.servicioTickets.anularTicket(ticketId, motivo)
+          : this.servicioTickets.rechazarTicket(ticketId, motivo);
+      peticion.subscribe({
+        next: () => {
+          this.confirmando.set(null);
+          this.terminarOperacion(tipo === 'anular' ? 'Pedido anulado.' : 'Pedido rechazado.');
+        },
+        error: (error: HttpErrorResponse) => this.fallarOperacion(error),
+      });
       return;
     }
+
+    if (tipo === 'despacho') {
+      const identidad = this.autenticacion.identidad();
+      if (identidad === null) {
+        this.confirmando.set(null);
+        this.errorAccion.set('Tu sesión no está disponible. Vuelve a iniciar sesión.');
+        return;
+      }
+      this.limpiarAvisos();
+      this.enOperacion.set(true);
+      this.servicioTickets.despacharTicket(ticketId, identidad.usuario_id).subscribe({
+        next: () => {
+          this.confirmando.set(null);
+          this.terminarOperacion('Pedido despachado.');
+        },
+        error: (error: HttpErrorResponse) => {
+          // Sin motivo que corregir: el aviso queda en la página y el refresco
+          // retira la acción si ya no aplica (AC-34).
+          this.confirmando.set(null);
+          this.fallarOperacion(error);
+        },
+      });
+      return;
+    }
+
     this.limpiarAvisos();
     this.enOperacion.set(true);
-    const peticion =
-      tipo === 'anular'
-        ? this.servicioTickets.anularTicket(this.ticketId()!, motivo)
-        : this.servicioTickets.rechazarTicket(this.ticketId()!, motivo);
-    peticion.subscribe({
+    this.servicioTickets.confirmarEntrega(ticketId).subscribe({
       next: () => {
         this.confirmando.set(null);
-        this.terminarOperacion(tipo === 'anular' ? 'Pedido anulado.' : 'Pedido rechazado.');
+        this.terminarOperacion('Entrega confirmada.');
       },
-      error: (error: HttpErrorResponse) => this.fallarOperacion(error),
+      error: (error: HttpErrorResponse) => {
+        this.confirmando.set(null);
+        this.fallarOperacion(error);
+      },
     });
   }
 
@@ -806,10 +951,24 @@ export class TicketDetalleComponent {
 
   /** Actor de la fila: nombre y apellido resueltos, con degradación a `#id`. */
   private actorDeFila(fila: HistorialTransicion): string {
-    const partes = [fila.usuario_apellido, fila.usuario_nombre].filter(
-      (parte): parte is string => typeof parte === 'string' && parte !== '',
-    );
-    return partes.length > 0 ? partes.join(', ') : `Usuario #${fila.usuario_id}`;
+    const nombre = this.nombrePersona(fila.usuario_nombre, fila.usuario_apellido);
+    return nombre !== '' ? nombre : `Usuario #${fila.usuario_id}`;
+  }
+
+  /** Gestor del read model: «Apellido, Nombre» o el texto de ausencia. */
+  private nombreGestor(gestor: GestorProceso | null): string {
+    if (gestor === null) {
+      return 'Sin gestión registrada';
+    }
+    const nombre = this.nombrePersona(gestor.nombre, gestor.apellido);
+    return nombre !== '' ? nombre : 'Sin gestión registrada';
+  }
+
+  /** «Apellido, Nombre» con las partes presentes; cadena vacía si no hay ninguna. */
+  private nombrePersona(nombre: string | null | undefined, apellido: string | null | undefined): string {
+    return [apellido, nombre]
+      .filter((parte): parte is string => typeof parte === 'string' && parte !== '')
+      .join(', ');
   }
 }
 
@@ -820,13 +979,4 @@ function normalizar(texto: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
-}
-
-/**
- * `true` si el nombre de estado es uno de los dos terminales canónicos (D-4),
- * reconocidos por nombre y no por su posición en el catálogo.
- */
-function esEstadoTerminal(nombre: string): boolean {
-  const propio = normalizar(nombre);
-  return propio === 'cerrado' || propio === 'anulado';
 }

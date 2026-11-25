@@ -146,6 +146,23 @@ class TicketEditar(BaseModel):
     )
 
 
+class GestorProcesoRespuesta(BaseModel):
+    """Ultimo actor de un rol que gestiono el pedido (Feature 013, D-23).
+
+    Read model de `historial_transicion_ticket` + `usuario`: nombre y apellido
+    del usuario cuyo rol **vigente** es el consultado. No es una entidad ORM ni
+    se persiste; lo arma `ticket_service` al construir el read model.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    usuario_id: int = Field(
+        description="Usuario del historial que gestiono el pedido."
+    )
+    nombre: str = Field(description="Nombre del usuario.")
+    apellido: str = Field(description="Apellido del usuario.")
+
+
 class TicketRespuesta(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -161,6 +178,61 @@ class TicketRespuesta(BaseModel):
     #: spec D-5/AC-9). La expone el alta y el despacho; los tickets legados sin
     #: migrar la conservan en `None`.
     sede_id: Optional[int] = None
+    #: Feature 013 (ampliacion §9.8, D-21): etiqueta de proceso derivada por el
+    #: servidor para el listado y el detalle. No es un estado canonico ni se
+    #: persiste; la precedencia vive en `ticket_proceso.derivar_etiqueta`.
+    etiqueta_proceso: str = Field(
+        default="",
+        description=(
+            "Etiqueta de proceso derivada (p. ej. «En aprobación»). No es un "
+            "estado canónico ni se persiste."
+        ),
+    )
+    explicacion_proceso: str = Field(
+        default="",
+        description=(
+            "Frase corta que dice qué falta o qué sigue en el proceso del pedido."
+        ),
+    )
+    estado_orden_cobertura: Optional[str] = Field(
+        default=None,
+        description=(
+            "Estado de la OC activa más avanzada que cubre el pedido "
+            "(`Recibida`, `Facturada` o `Emitida`); `None` si no hay."
+        ),
+    )
+    # Feature 020 (AC-10/AC-11): propiedad calculada con la misma simulacion
+    # greedy que usa la recepcion de compras. No es columna ni cambia el estado.
+    # La ampliacion de la 013 la sube a la base para exponerla tambien en el
+    # listado; el detalle la hereda y no la duplica.
+    stock_disponible: bool = Field(
+        default=False,
+        description=(
+            "True si el saldo de la sede cubre todos los detalles del ticket "
+            "segun prioridad y FIFO; no reserva stock ni muta el ticket."
+        ),
+    )
+    entrega_confirmada: bool = Field(
+        default=False,
+        description=(
+            "True si el Solicitante dueño ya confirmó la entrega; la etiqueta "
+            "pasa a «Entregado» sin cambiar el estado canónico."
+        ),
+    )
+    gestionado_por_bodeguero: Optional[GestorProcesoRespuesta] = Field(
+        default=None,
+        description=(
+            "Último usuario con rol vigente Bodeguero que gestionó el pedido; "
+            "`None` si no hay."
+        ),
+    )
+    gestionado_por_administrador: Optional[GestorProcesoRespuesta] = Field(
+        default=None,
+        description=(
+            "Último usuario con rol vigente Administrador que gestionó el "
+            "pedido; `None` si no hay."
+        ),
+    )
     detalles: List[DetalleTicketRespuesta] = []
 
 
@@ -215,6 +287,10 @@ class TicketDetalleRespuesta(TicketRespuesta):
     canceladas) y `cadena_productos` (solicitado → comprado → recibido →
     entregado → faltante). Ambas listas son lecturas derivadas: no cambian el
     estado del pedido ni `stock_disponible`.
+
+    La ampliación del 25/Nov/2026 (§9.8) agrega la línea de entrega
+    (`entrega_confirmada_en` y `_por_*`) y hereda `stock_disponible` de
+    `TicketRespuesta`, donde vive desde entonces para no duplicarlo.
     """
 
     estado_nombre: Optional[str] = Field(
@@ -239,14 +315,23 @@ class TicketDetalleRespuesta(TicketRespuesta):
             "ticket legado sin instantanea."
         ),
     )
-    # Feature 020 (AC-10/AC-11): propiedad calculada con la misma simulacion
-    # greedy que usa la recepcion de compras. No es columna ni cambia el estado.
-    stock_disponible: bool = Field(
-        default=False,
+    # Feature 013 (ampliacion §9.8, D-25): linea «Entregado el … por …». Se
+    # derivan de la fila `Cerrado → Cerrado` con el motivo canonico del
+    # historial; el estado canonico no cambia y `fecha_cierre` no se toca.
+    entrega_confirmada_en: Optional[datetime] = Field(
+        default=None,
         description=(
-            "True si el saldo de la sede cubre todos los detalles del ticket "
-            "segun prioridad y FIFO; no reserva stock ni muta el ticket."
+            "Fecha del servidor de la confirmación de entrega; `None` si el "
+            "pedido no está confirmado."
         ),
+    )
+    entrega_confirmada_por_nombre: Optional[str] = Field(
+        default=None,
+        description="Nombre del Solicitante que confirmó la entrega.",
+    )
+    entrega_confirmada_por_apellido: Optional[str] = Field(
+        default=None,
+        description="Apellido del Solicitante que confirmó la entrega.",
     )
     #: Feature 021: OC que cubren el pedido, incluidas las canceladas.
     asignaciones: List[AsignacionTicketRespuesta] = []

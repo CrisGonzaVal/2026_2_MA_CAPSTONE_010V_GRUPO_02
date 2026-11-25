@@ -57,7 +57,7 @@ from tests.funcional.integracion._soporte_ciclo_vida_catalogo_014 import (
 )
 from tests.funcional.integracion._soporte_ciclo_vida_013 import OPERACIONES_013
 from tests.funcional.integracion.test_ciclo_vida_autorizacion_013 import RETIRADAS_017
-from tests.no_funcional.seguridad.test_permisos_012 import MATRIZ_012
+from tests.no_funcional.seguridad.test_permisos_012 import MATRIZ_012, RESTRINGIDAS_013
 
 #: Metodos que FastAPI publica en `/openapi.json`.
 _METODOS_OPENAPI = {"get", "put", "post", "delete", "patch"}
@@ -95,12 +95,20 @@ def test_matriz_declara_las_cinco_operaciones_exclusivas_del_administrador_ac_2(
 
 
 def test_matriz_conserva_las_operaciones_previas_intactas_ac_2():
-    """AC-2: la 014 solo agrega filas; ninguna operacion previa cambia."""
+    """AC-2: la 014 solo agrega filas; ninguna operacion previa cambia.
+
+    Ampliacion 25/Nov/2026 de la 013 (spec §9.10, AC-49): el `PATCH /estado`
+    de la transcripcion historica se **restringe** a solo Administrador; la
+    entrada no se retira y el resto de las filas previas conserva sus roles.
+    """
     for clave in OPERACIONES_014:
         exigir_operacion(*clave)
     for clave, roles in MATRIZ_012.items():
         actual = permisos.MATRIZ_PERMISOS.get(clave)
         assert actual is not None, f"la operacion {clave} desaparecio de la matriz"
+        if clave in RESTRINGIDAS_013:
+            assert set(actual) == RESTRINGIDAS_013[clave], clave
+            continue
         esperado = set(roles) - ({"Superadmin"} if clave in RETIRADAS_017 else set())
         assert set(actual) == esperado, clave
     for clave, roles in OPERACIONES_013.items():
@@ -119,15 +127,17 @@ def test_matriz_tiene_exactamente_60_operaciones_tras_014():
     plan §1.1.4) suma `GET /api/v1/inventario/existencias/{producto_id}`
     (61 -> 62), la Feature 020 (spec D-7/AC-13, plan §4) suma las diez rutas de
     compras (62 -> 72) y la Feature 021 (spec AC-2/AC-10, plan §3) suma
-    `POST /api/v1/compras/cobertura/preview` (72 -> 73). Ninguna cambia una fila
-    de la 014. No es una reescritura silenciosa del contrato, es una ampliacion
-    documentada.
+    `POST /api/v1/compras/cobertura/preview` (72 -> 73). La ampliacion
+    25/Nov/2026 de la 013 suma la aprobacion del pedido (73 -> 74, T21) y la
+    confirmacion de entrega (74 -> 75, T22). Ninguna cambia una fila de la 014.
+    No es una reescritura silenciosa del contrato, es una ampliacion documentada.
     """
     total = len(permisos.MATRIZ_PERMISOS)
-    assert total == 73, (
-        "la matriz debe tener 73 operaciones (55 previas + 5 de la 014 + la de "
+    assert total == 75, (
+        "la matriz debe tener 75 operaciones (55 previas + 5 de la 014 + la de "
         f"ambito de la 018 + el detalle de producto de la 019 + las 10 de compras "
-        f"de la 020 + el preview de la 021); tiene {total}"
+        f"de la 020 + el preview de la 021 + la aprobacion y la confirmacion de "
+        f"entrega de la ampliacion de la 013); tiene {total}"
     )
 
 
@@ -165,8 +175,10 @@ def test_openapi_tiene_60_operaciones_tras_014(cliente):
     plan §1.1.4) publica `GET /api/v1/inventario/existencias/{producto_id}`
     (61 -> 62), la Feature 020 (spec D-7/AC-13) publica las diez rutas de compras
     (62 -> 72) y la Feature 021 (spec AC-2) publica el preview de cobertura
-    (72 -> 73), sin alterar las cinco rutas de la 014. Ampliacion documentada, no
-    reescritura silenciosa.
+    (72 -> 73), sin alterar las cinco rutas de la 014. La ampliacion 25/Nov/2026
+    de la 013 publica la aprobacion del pedido (73 -> 74, T21) y la confirmacion
+    de entrega (74 -> 75, T22). Ampliacion documentada, no reescritura
+    silenciosa.
     """
     contrato = cliente.get("/openapi.json").json()
     total = sum(
@@ -176,7 +188,7 @@ def test_openapi_tiene_60_operaciones_tras_014(cliente):
         for metodo in operaciones
         if metodo in _METODOS_OPENAPI
     )
-    assert total == 73, f"/openapi.json debe publicar 73 operaciones v1; publica {total}"
+    assert total == 75, f"/openapi.json debe publicar 75 operaciones v1; publica {total}"
 
 
 @pytest.mark.parametrize(

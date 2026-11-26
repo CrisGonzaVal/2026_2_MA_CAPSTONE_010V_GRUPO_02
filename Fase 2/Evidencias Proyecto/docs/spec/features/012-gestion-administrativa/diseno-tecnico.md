@@ -376,6 +376,11 @@ POST   /api/v1/organizacion/departamentos/{departamento_id}/encargados   -> {Adm
 DELETE /api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id} -> {Administrador}
 ```
 
+> **Nota de superación (26/Nov/2026).** La enmienda de la Feature 007 del 26/Nov/2026 restringe
+> `POST /api/v1/tickets/` al **Solicitante**. La línea anterior, con los tres roles, se conserva
+> como registro histórico de esta transcripción y **no es normativa**; la matriz vigente vive en
+> `backend/app/core/permisos.py`.
+
 Total: **28**. Las operaciones nuevas de la 012 son aditivas (control SaaS y CRUD
 organizacional) y no modifican roles de ninguna de las 28.
 

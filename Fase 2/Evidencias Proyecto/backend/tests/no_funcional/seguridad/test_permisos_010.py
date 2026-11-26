@@ -271,8 +271,12 @@ RETIRADAS_017: frozenset[tuple[str, str]] = frozenset(
 #: Administrador. La entrada no se retira (y el numero de operaciones solo
 #: crece con la aprobacion); el Bodeguero conserva despacho, rechazo y
 #: recepcion de compras.
+#: Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29/AC-33): el alta de tickets
+#: de la transcripcion historica (`_ESCRITURA_TICKETS`) queda **solo** para el
+#: Solicitante; Administrador y Bodeguero reciben 403. La entrada se conserva.
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+    ("POST", "/api/v1/tickets/"): {"Solicitante"},
 }
 
 

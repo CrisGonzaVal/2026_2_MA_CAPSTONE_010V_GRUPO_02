@@ -534,6 +534,13 @@ plan/tareas e implementación.
 **Actualización 22/Oct/2026:** la reescritura se ejecutó; la evidencia observada de AC-33…AC-35
 está en los propios AC y en [`evidencia/README.md`](evidencia/README.md).
 
+> **Nota de superación (26/Nov/2026).** La enmienda de la Feature 007 del 26/Nov/2026
+> restringe `POST /api/v1/tickets/` al **Solicitante**. Queda superado el **alcance de roles**
+> de AC-33 y de su evidencia: los 201 de Administrador y Bodeguero observados el 22/Oct/2026
+> se conservan como registro histórico, pero ya no son la regla vigente ni se reproducen en
+> los tests vivos. La autoatribución de sesión para el Solicitante y el resto de reglas del
+> alta siguen vigentes.
+
 ## 7. Restricciones
 
 - `constitucion.md:17` (Trazabilidad Absolenta): esta feature **no** cambia stock, así que no

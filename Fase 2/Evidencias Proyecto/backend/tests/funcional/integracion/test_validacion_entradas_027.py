@@ -56,13 +56,15 @@ def _usuario(datos_base, **cambios):
     return datos
 
 
-def test_ticket_acepta_500_y_rechaza_501_sin_500(cliente, datos_base):
-    aceptado = cliente.post(
+def test_ticket_acepta_500_y_rechaza_501_sin_500(
+    cliente_solicitante, datos_base
+):
+    aceptado = cliente_solicitante.post(
         "/api/v1/tickets/", json=_ticket(datos_base, descripcion="a" * 500)
     )
     assert aceptado.status_code == 201, aceptado.text
 
-    rechazado = cliente.post(
+    rechazado = cliente_solicitante.post(
         "/api/v1/tickets/", json=_ticket(datos_base, descripcion="a" * 501)
     )
     assert rechazado.status_code == 422, rechazado.text
@@ -71,14 +73,16 @@ def test_ticket_acepta_500_y_rechaza_501_sin_500(cliente, datos_base):
     assert detalle["type"] == "string_too_long"
 
 
-def test_ticket_rechaza_campo_extra_y_asunto_de_solo_espacios(cliente, datos_base):
-    extra = cliente.post(
+def test_ticket_rechaza_campo_extra_y_asunto_de_solo_espacios(
+    cliente_solicitante, datos_base
+):
+    extra = cliente_solicitante.post(
         "/api/v1/tickets/", json=_ticket(datos_base, campo_extra=1)
     )
     assert extra.status_code == 422
     assert extra.json()["detail"][0]["type"] == "extra_forbidden"
 
-    espacios = cliente.post(
+    espacios = cliente_solicitante.post(
         "/api/v1/tickets/", json=_ticket(datos_base, asunto="   ")
     )
     assert espacios.status_code == 422

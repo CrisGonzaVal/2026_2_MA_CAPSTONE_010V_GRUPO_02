@@ -11,6 +11,11 @@ integracion, sistema, e2e, aceptacion, humo) y `tests/no_funcional/`
 La base es SQLite en memoria para que la suite corra sin depender del
 contenedor de PostgreSQL. Las aserciones no consultan la base directamente:
 todo se comprueba leyendo la API, igual que lo haria un cliente real.
+
+Enmienda 007 (26/Nov/2026, E26N-1): `identidad_actual` es un contenedor
+mutable que permite alternar roles con `actuar_como` sobre un mismo
+`TestClient`; `identidad_persistida` crea a demanda usuarios reales de
+Bodeguero/Solicitante sin ampliar el catalogo base de `datos_base`.
 """
 
 import os
@@ -25,7 +30,7 @@ os.environ["DB_URL"] = "sqlite+pysqlite:///:memory:"
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -126,15 +131,203 @@ def identidad_de_prueba() -> IdentidadAutenticada:
     return IdentidadAutenticada(usuario=usuario, sub="sub-legacy-pruebas")
 
 
+def _identidad_autenticada(
+    *,
+    usuario_id: int,
+    departamento_id: int,
+    rol_id: int,
+    nombre_rol: str,
+    correo: str,
+    nombre: str = "Identidad",
+    apellido: str = "De Prueba",
+) -> IdentidadAutenticada:
+    """Usuario suelto con ids reales y el rol legible pedido (patron de 011).
+
+    No se persiste: la autorizacion solo lee `usuario.rol.nombre_rol` y los
+    endpoints que releen el usuario lo hacen por `usuario_id` en la base.
+    """
+    usuario = Usuario(
+        usuario_id=usuario_id,
+        nombre=nombre,
+        apellido=apellido,
+        correo=correo,
+        departamento_id=departamento_id,
+        rol_id=rol_id,
+    )
+    usuario.rol = Rol(nombre_rol=nombre_rol)
+    return IdentidadAutenticada(
+        usuario=usuario, sub=f"sub-prueba-{nombre_rol.lower()}"
+    )
+
+
+def _rol_solicitante(datos_base, motor) -> int:
+    """Devuelve el rol Solicitante, reutilizando el de `dos_instituciones`.
+
+    Enmienda 007 (E26N-1, DT-5): el rol se busca por nombre para no duplicarlo
+    cuando la suite ya sembro el padron multiinstitucion; solo se crea si falta.
+    """
+    if "rol_solicitante_id" in datos_base:
+        return datos_base["rol_solicitante_id"]
+
+    with sessionmaker(bind=motor)() as db:
+        rol = db.execute(
+            select(Rol).where(Rol.nombre_rol == "Solicitante")
+        ).scalars().first()
+        if rol is None:
+            rol = Rol(
+                nombre_rol="Solicitante",
+                descripcion="Rol limitado de prueba (E26N-1)",
+            )
+            db.add(rol)
+            db.commit()
+            db.refresh(rol)
+        rol_id = rol.rol_id
+
+    datos_base["rol_solicitante_id"] = rol_id
+    return rol_id
+
+
+def _buscar_o_crear_usuario(
+    motor,
+    *,
+    rol_id: int,
+    departamento_id: int,
+    correo: str,
+    nombre_rol: str,
+) -> tuple[int, str]:
+    """Primer usuario con ese rol en el departamento, o uno nuevo persistido.
+
+    Devuelve `(usuario_id, correo)` y es idempotente: una segunda llamada con el
+    mismo rol y departamento reutiliza la fila creada por la primera.
+    """
+    with sessionmaker(bind=motor)() as db:
+        usuario = db.execute(
+            select(Usuario)
+            .where(
+                Usuario.rol_id == rol_id,
+                Usuario.departamento_id == departamento_id,
+            )
+            .order_by(Usuario.usuario_id)
+        ).scalars().first()
+        if usuario is None:
+            usuario = Usuario(
+                nombre=nombre_rol,
+                apellido="Prueba",
+                correo=correo,
+                departamento_id=departamento_id,
+                rol_id=rol_id,
+            )
+            db.add(usuario)
+            db.commit()
+            db.refresh(usuario)
+        return usuario.usuario_id, usuario.correo
+
+
+def identidad_persistida(datos_base, rol: str, motor=None) -> IdentidadAutenticada:
+    """Identidad autenticada con ids reales; persiste solo cuando hace falta.
+
+    Enmienda 007 (E26N-1, DT-5): Administrador reutiliza a Ana
+    (`datos_base["usuario_id"]`) y Superadmin es una identidad suelta porque su
+    403 de matriz ocurre antes de la base. Bodeguero y Solicitante se buscan o
+    crean de forma idempotente en el departamento de `datos_base`, y los ids
+    resultantes quedan expuestos ahi (`usuario_bodeguero_id`,
+    `rol_solicitante_id` y `usuario_solicitante_id`). La sede **no** se asigna:
+    cada suite la resuelve con `asegurar_sede_de_departamento` o su helper.
+    """
+    nombre_rol = (rol or "").strip()
+    departamento_id = datos_base["departamento_id"]
+
+    if nombre_rol == "Administrador":
+        return _identidad_autenticada(
+            usuario_id=datos_base["usuario_id"],
+            departamento_id=departamento_id,
+            rol_id=datos_base["rol_id"],
+            nombre_rol="Administrador",
+            correo=datos_base["correo_usado"],
+            nombre="Ana",
+            apellido="Perez",
+        )
+    if nombre_rol == "Superadmin":
+        return _identidad_autenticada(
+            usuario_id=datos_base["usuario_id"],
+            departamento_id=departamento_id,
+            rol_id=datos_base["rol_id"],
+            nombre_rol="Superadmin",
+            correo=datos_base["correo_usado"],
+        )
+    if nombre_rol not in {"Bodeguero", "Solicitante"}:
+        raise ValueError(f"rol no soportado por el harness de pruebas: {rol!r}")
+    if motor is None:
+        raise ValueError(
+            "identidad_persistida necesita `motor` para persistir "
+            f"el rol {nombre_rol}"
+        )
+
+    if nombre_rol == "Bodeguero":
+        rol_id = datos_base["rol_bodeguero_id"]
+        clave_usuario = "usuario_bodeguero_id"
+        correo = "bodeguero.harness007@compustock.cl"
+    else:
+        rol_id = _rol_solicitante(datos_base, motor)
+        clave_usuario = "usuario_solicitante_id"
+        correo = "solicitante.harness007@compustock.cl"
+
+    usuario_id, correo_persistido = _buscar_o_crear_usuario(
+        motor,
+        rol_id=rol_id,
+        departamento_id=departamento_id,
+        correo=correo,
+        nombre_rol=nombre_rol,
+    )
+    datos_base[clave_usuario] = usuario_id
+    return _identidad_autenticada(
+        usuario_id=usuario_id,
+        departamento_id=departamento_id,
+        rol_id=rol_id,
+        nombre_rol=nombre_rol,
+        correo=correo_persistido,
+        nombre=nombre_rol,
+        apellido="Prueba",
+    )
+
+
+#: Centinela para distinguir un override ausente de uno instalado con `None`.
+_SIN_OVERRIDE = object()
+
+
+def _registrar_override(previos: dict, clave: object, valor: object) -> None:
+    """Instala un override y recuerda su valor previo (o su ausencia)."""
+    previos[clave] = app.dependency_overrides.get(clave, _SIN_OVERRIDE)
+    app.dependency_overrides[clave] = valor
+
+
+def _restaurar_overrides(previos: dict) -> None:
+    """Devuelve las claves tocadas a su estado previo, sin `clear()` global.
+
+    Enmienda 007 (E26N-1, DT-4): un cliente anidado o un helper que ya overridea
+    `get_current_user` conserva su estado al salir del contexto.
+    """
+    for clave, valor in previos.items():
+        if valor is _SIN_OVERRIDE:
+            app.dependency_overrides.pop(clave, None)
+        else:
+            app.dependency_overrides[clave] = valor
+
+
 @contextmanager
-def _cliente_de_prueba(motor, **opciones):
+def _cliente_de_prueba(motor, identidad_actual=None, **opciones):
     """Enlaza `get_db` al motor en memoria durante el contexto.
 
-    Ademas overridea `get_current_user` con `identidad_de_prueba` para que la
-    suite funcional legacy vuelva a ejercer su comportamiento de negocio bajo el
-    router protegido. Este override vive **solo** en el harness de tests y no se
-    aplica a `test_auth.py`, cuyas pruebas de seguridad construyen su propio
-    cliente sin el override.
+    Ademas overridea `get_current_user` con la identidad del contenedor mutable
+    `identidad_actual` para que la suite funcional legacy vuelva a ejercer su
+    comportamiento de negocio bajo el router protegido y para que `actuar_como`
+    cambie de rol sin recrear el `TestClient` (E26N-1, DT-4). Este override vive
+    **solo** en el harness de tests y no se aplica a `test_auth.py`, cuyas
+    pruebas de seguridad construyen su propio cliente sin el override.
+
+    Los overrides que instala se guardan y se restauran al salir; nunca se borra
+    el diccionario completo, de modo que un cliente anidado no pisa el estado
+    del cliente externo.
     """
     FabricaSesion = sessionmaker(autocommit=False, autoflush=False, bind=motor)
 
@@ -145,41 +338,81 @@ def _cliente_de_prueba(motor, **opciones):
         finally:
             db.close()
 
-    app.dependency_overrides[dependencies.get_db] = obtener_db_de_prueba
-    app.dependency_overrides[dependencies.get_current_user] = identidad_de_prueba
-    # Feature 024 (T6): `/ready` usa SQLite en la suite, no el motor dedicado a
-    # PostgreSQL que se crea en `app.db.database`.
-    app.dependency_overrides[dependencies.obtener_motor_readiness] = lambda: motor
-    # Feature 012 (D-3/AC-8): el alta local verifica el correo contra Clerk. La
-    # costura se overridea para no invocar la red (el alta no crea identidades).
-    app.dependency_overrides[dependencies.obtener_verificador_correo_clerk] = (
-        lambda: (lambda _correo: True)
+    contenedor = (
+        identidad_actual
+        if identidad_actual is not None
+        else {"actual": identidad_de_prueba()}
     )
-    from tests.funcional.integracion.soporte_frontera_017 import instalar_frontera_clerk
 
-    instalar_frontera_clerk(identidad_existente=True)
+    previos: dict = {}
     try:
+        _registrar_override(previos, dependencies.get_db, obtener_db_de_prueba)
+        # El rol se lee en **cada peticion** del contenedor mutable.
+        _registrar_override(
+            previos,
+            dependencies.get_current_user,
+            lambda: contenedor["actual"],
+        )
+        # Feature 024 (T6): `/ready` usa SQLite en la suite, no el motor dedicado
+        # a PostgreSQL que se crea en `app.db.database`.
+        _registrar_override(
+            previos, dependencies.obtener_motor_readiness, lambda: motor
+        )
+        # Feature 012 (D-3/AC-8): el alta local verifica el correo contra Clerk.
+        # La costura se overridea para no invocar la red (el alta no crea cuentas).
+        _registrar_override(
+            previos,
+            dependencies.obtener_verificador_correo_clerk,
+            lambda: (lambda _correo: True),
+        )
+        from tests.funcional.integracion.soporte_frontera_017 import (
+            instalar_frontera_clerk,
+        )
+
+        # La frontera Clerk instala tres costuras mas: se registran antes para
+        # devolverlas a su estado previo y no contaminar la suite.
+        for clave in (
+            dependencies.obtener_consultor_identidad_clerk,
+            dependencies.obtener_creador_invitacion_clerk,
+            dependencies.obtener_revocador_invitacion_clerk,
+        ):
+            previos[clave] = app.dependency_overrides.get(clave, _SIN_OVERRIDE)
+        instalar_frontera_clerk(identidad_existente=True)
+
         with TestClient(app, **opciones) as cliente_http:
             yield cliente_http
     finally:
-        app.dependency_overrides.clear()
+        _restaurar_overrides(previos)
 
 
 @pytest.fixture
-def cliente(motor):
+def identidad_actual():
+    """Contenedor mutable de la identidad de la sesion de prueba (E26N-1).
+
+    `cliente` y `cliente_sin_excepcion` leen `identidad_actual["actual"]` en cada
+    peticion; `actuar_como` lo sustituye sin recrear el `TestClient`.
+    """
+    return {"actual": identidad_de_prueba()}
+
+
+@pytest.fixture
+def cliente(motor, identidad_actual):
     """`TestClient` con `get_db` redirigido al motor en memoria."""
-    with _cliente_de_prueba(motor) as cliente_http:
+    with _cliente_de_prueba(motor, identidad_actual) as cliente_http:
         yield cliente_http
 
 
 @pytest.fixture
-def cliente_sin_excepcion(motor):
+def cliente_sin_excepcion(motor, identidad_actual):
     """Igual que `cliente`, pero las excepciones no manejadas se vuelven 500.
 
     `TestClient` por defecto relanza la excepcion en vez de responder, lo que
     impide observar que la API devuelve 500 ante un error de base de datos.
+    Comparte el contenedor de identidad con `cliente` (misma sesion mutable).
     """
-    with _cliente_de_prueba(motor, raise_server_exceptions=False) as cliente_http:
+    with _cliente_de_prueba(
+        motor, identidad_actual, raise_server_exceptions=False
+    ) as cliente_http:
         yield cliente_http
 
 
@@ -294,6 +527,30 @@ def datos_base(motor):
         }
     finally:
         db.close()
+
+
+@pytest.fixture
+def actuar_como(motor, datos_base, identidad_actual):
+    """Cambia el rol de la sesion de prueba sin recrear el `TestClient`.
+
+    Enmienda 007 (E26N-1, DT-4): debe poder invocarse despues de crear
+    `cliente` y antes de cada peticion. Devuelve la identidad resultante y deja
+    en `datos_base` los ids de los usuarios o roles persistidos que el rol
+    necesite (ver `identidad_persistida`).
+    """
+
+    def _cambiar(rol: str) -> IdentidadAutenticada:
+        identidad_actual["actual"] = identidad_persistida(datos_base, rol, motor)
+        return identidad_actual["actual"]
+
+    return _cambiar
+
+
+@pytest.fixture
+def cliente_solicitante(cliente, actuar_como):
+    """Deja el contenedor en Solicitante y devuelve el mismo `cliente`."""
+    actuar_como("Solicitante")
+    return cliente
 
 
 @pytest.fixture

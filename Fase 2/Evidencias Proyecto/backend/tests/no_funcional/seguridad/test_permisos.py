@@ -182,8 +182,13 @@ MATRIZ_018_ADITIVA: dict[tuple[str, str], set[str]] = {
 #: **restringe** a solo Administrador. Es una restriccion documentada de una
 #: entrada existente, no una relajacion: el Bodeguero pierde el permiso y
 #: conserva sus operaciones propias (despacho, rechazo y recepcion de compras).
+#: Enmienda 26/Nov/2026 de la Feature 007 (spec D-11/AC-29/AC-33): la fila
+#: historica del alta (`_ESCRITURA_TICKETS`, tres roles) se conserva intacta y
+#: encima se aplica la restriccion **solo Solicitante**. Administrador y
+#: Bodeguero pasan a recibir 403; el servicio de alta no cambia (D-12).
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+    ("POST", "/api/v1/tickets/"): {"Solicitante"},
 }
 
 _ROLES = ("Superadmin", "Administrador", "Bodeguero", "Solicitante")

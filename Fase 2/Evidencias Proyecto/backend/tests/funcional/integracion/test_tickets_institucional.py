@@ -447,18 +447,37 @@ def _contar_detalles(motor) -> int:
         db.close()
 
 
-def _abrir_ticket_en_curso(cliente, datos, usuario_id, producto_id, cantidad=3) -> int:
-    """Alta por API en `Pendiente` y avance a `EnCurso` (dos pasos contiguos)."""
-    respuesta = cliente.post(
-        RUTA_TICKETS, json=_payload(datos, usuario_id, producto_id, cantidad)
-    )
-    assert respuesta.status_code == 201, respuesta.text
-    ticket_id = respuesta.json()["ticket_id"]
-    for estado_id in (datos["estado_en_revision_id"], datos["estado_en_curso_id"]):
-        avance = cliente.patch(
-            f"{RUTA_TICKETS}{ticket_id}/estado", json={"estado_id": estado_id}
+def _abrir_ticket_en_curso(motor, datos, producto_id, cantidad=3) -> int:
+    """Alta por API como Solicitante y avance a `EnCurso` con Administrador.
+
+    Enmienda 26/Nov/2026 (E26N-5): el alta solo la ejerce el Solicitante y el
+    `PATCH /estado` sigue siendo del Administrador; se abren clientes
+    secuenciales (nunca anidados) para no pisar overrides.
+    """
+    with _cliente(
+        motor,
+        "Solicitante",
+        datos["departamento_id"],
+        datos["solicitante_id"],
+    ) as solicitante:
+        respuesta = solicitante.post(
+            RUTA_TICKETS,
+            json=_payload(datos, datos["solicitante_id"], producto_id, cantidad),
         )
-        assert avance.status_code == 200, avance.text
+        assert respuesta.status_code == 201, respuesta.text
+        ticket_id = respuesta.json()["ticket_id"]
+
+    with _cliente(
+        motor,
+        "Administrador",
+        datos["departamento_id"],
+        datos["usuario_id"],
+    ) as administrador:
+        for estado_id in (datos["estado_en_revision_id"], datos["estado_en_curso_id"]):
+            avance = administrador.patch(
+                f"{RUTA_TICKETS}{ticket_id}/estado", json={"estado_id": estado_id}
+            )
+            assert avance.status_code == 200, avance.text
     return ticket_id
 
 
@@ -528,7 +547,9 @@ def test_crear_ticket_con_producto_ajeno_404_sin_parcial(motor, particion):
     inicio_tickets = _contar_tickets(motor)
     inicio_detalles = _contar_detalles(motor)
 
-    with _cliente(motor, "Administrador", particion["departamento_id"]) as cliente:
+    with _cliente(
+        motor, "Solicitante", particion["departamento_id"], particion["solicitante_id"]
+    ) as cliente:
         respuesta = cliente.post(
             RUTA_TICKETS,
             json=_payload(
@@ -547,7 +568,7 @@ def test_crear_ticket_con_solicitante_ajeno_201_atribuye_a_la_sesion(motor, part
     inicio_detalles = _contar_detalles(motor)
 
     with _cliente(
-        motor, "Administrador", particion["departamento_id"], particion["usuario_id"]
+        motor, "Solicitante", particion["departamento_id"], particion["solicitante_id"]
     ) as cliente:
         respuesta = cliente.post(
             RUTA_TICKETS,
@@ -557,7 +578,7 @@ def test_crear_ticket_con_solicitante_ajeno_201_atribuye_a_la_sesion(motor, part
         )
 
     assert respuesta.status_code == 201, respuesta.text
-    assert respuesta.json()["usuario_id"] == particion["usuario_id"]
+    assert respuesta.json()["usuario_id"] == particion["solicitante_id"]
     assert _contar_tickets(motor) == inicio_tickets + 1
     assert _contar_detalles(motor) == inicio_detalles + 1
 
@@ -566,10 +587,10 @@ def test_crear_ticket_con_solicitante_ajeno_201_atribuye_a_la_sesion(motor, part
     assert persistido["detalles"] == ["INST01"]
 
 
-def test_administrador_omite_usuario_id_y_atiende_a_la_sesion(motor, particion):
-    """AC-18/AC-33: el alta sin `usuario_id` es valida para un rol autorizado."""
+def test_solicitante_omite_usuario_id_y_atiende_a_la_sesion(motor, particion):
+    """AC-21/AC-33: el alta sin `usuario_id` es valida para el rol autorizado."""
     with _cliente(
-        motor, "Administrador", particion["departamento_id"], particion["usuario_id"]
+        motor, "Solicitante", particion["departamento_id"], particion["solicitante_id"]
     ) as cliente:
         respuesta = cliente.post(
             RUTA_TICKETS,
@@ -582,7 +603,7 @@ def test_administrador_omite_usuario_id_y_atiende_a_la_sesion(motor, particion):
         )
 
     assert respuesta.status_code == 201, respuesta.text
-    assert respuesta.json()["usuario_id"] == particion["usuario_id"]
+    assert respuesta.json()["usuario_id"] == particion["solicitante_id"]
 
     persistido = _instituciones_persistidas(motor, respuesta.json()["ticket_id"])
     assert persistido["ticket"] == "INST01"
@@ -594,7 +615,7 @@ def test_crear_ticket_puebla_institucion_en_ticket_y_detalle(motor, particion):
     # mutacion del ciclo de vida inserta su fila de historial con FK a
     # `usuario` (AC-9), y la identidad sintetica 9999 no existe en la BD.
     with _cliente(
-        motor, "Administrador", particion["departamento_id"], particion["usuario_id"]
+        motor, "Solicitante", particion["departamento_id"], particion["solicitante_id"]
     ) as cliente:
         respuesta = cliente.post(
             RUTA_TICKETS,
@@ -712,19 +733,14 @@ def test_despacho_falta_stock_409_sin_efectos(motor, particion):
 def test_despacho_valido_actualiza_stock_entrega_estado_y_auditoria(motor, particion):
     # Actor persistido: el despacho registra su fila de historial con FK a
     # `usuario` (013, AC-9); la sonda sintetica 9999 no existe en la BD.
-    # Ampliacion 25/Nov/2026 (AC-49): el pedido se abre por la API con el
-    # Administrador (unico rol del `PATCH /estado`); el despacho lo ejecuta el
-    # Bodeguero, que conserva su operacion.
-    with _cliente(
-        motor, "Administrador", particion["departamento_id"], particion["usuario_id"]
-    ) as administrador:
-        ticket_id = _abrir_ticket_en_curso(
-            administrador,
-            particion,
-            particion["solicitante_id"],
-            particion["producto_propio_id"],
-            cantidad=3,
-        )
+    # Enmienda 26/Nov/2026: el pedido se abre por la API con el Solicitante; el
+    # `PATCH /estado` lo ejerce el Administrador y el despacho el Bodeguero.
+    ticket_id = _abrir_ticket_en_curso(
+        motor,
+        particion,
+        particion["producto_propio_id"],
+        cantidad=3,
+    )
 
     with _cliente(
         motor, "Bodeguero", particion["departamento_id"], particion["usuario_id"]
@@ -765,24 +781,17 @@ def test_despacho_revierte_todo_si_el_commit_falla(motor, particion):
     from sqlalchemy.orm import Session
 
     # Actor persistido para la fila de historial del despacho (013, AC-9).
-    # Ampliacion 25/Nov/2026 (AC-49): el pedido se abre por la API con el
-    # Administrador (unico rol del `PATCH /estado`).
-    with _cliente(
+    # Enmienda 26/Nov/2026: el pedido se abre con el Solicitante y el `PATCH` de
+    # avance lo ejerce el Administrador.
+    stock_inicial = _stock_sede(
+        motor, particion["sede_propia_id"], particion["producto_propio_id"]
+    )
+    ticket_id = _abrir_ticket_en_curso(
         motor,
-        "Administrador",
-        particion["departamento_id"],
-        particion["usuario_id"],
-    ) as cliente_previo:
-        stock_inicial = _stock_sede(
-            motor, particion["sede_propia_id"], particion["producto_propio_id"]
-        )
-        ticket_id = _abrir_ticket_en_curso(
-            cliente_previo,
-            particion,
-            particion["solicitante_id"],
-            particion["producto_propio_id"],
-            cantidad=3,
-        )
+        particion,
+        particion["producto_propio_id"],
+        cantidad=3,
+    )
 
     def commit_que_falla(self):
         raise RuntimeError("fallo de commit inyectado en el despacho")

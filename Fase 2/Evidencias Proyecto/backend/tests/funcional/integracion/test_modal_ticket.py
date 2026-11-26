@@ -303,8 +303,8 @@ def test_catalogo_de_una_sola_fila_no_tiene_productos_agregados_inventados(
 # --- AC-9: validaciones de forma, 422 ---
 
 
-def test_asunto_muy_corto_responde_422(cliente, datos_catalogo_ticket):
-    respuesta = cliente.post(
+def test_asunto_muy_corto_responde_422(cliente_solicitante, datos_catalogo_ticket):
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, asunto="ab")
     )
 
@@ -312,16 +312,16 @@ def test_asunto_muy_corto_responde_422(cliente, datos_catalogo_ticket):
     assert "asunto" in str(respuesta.json()["detail"])
 
 
-def test_asunto_vacio_responde_422(cliente, datos_catalogo_ticket):
-    respuesta = cliente.post(
+def test_asunto_vacio_responde_422(cliente_solicitante, datos_catalogo_ticket):
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, asunto="")
     )
 
     assert respuesta.status_code == 422
 
 
-def test_asunto_demasiado_largo_responde_422(cliente, datos_catalogo_ticket):
-    respuesta = cliente.post(
+def test_asunto_demasiado_largo_responde_422(cliente_solicitante, datos_catalogo_ticket):
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, asunto="x" * 151)
     )
 
@@ -329,19 +329,19 @@ def test_asunto_demasiado_largo_responde_422(cliente, datos_catalogo_ticket):
     assert "asunto" in str(respuesta.json()["detail"])
 
 
-def test_asunto_en_el_limite_exacto_se_acepta(cliente, datos_catalogo_ticket):
+def test_asunto_en_el_limite_exacto_se_acepta(cliente_solicitante, datos_catalogo_ticket):
     """Frontera: 150 es el maximo valido y 151 no. Un `>` equivocado en el
     schema rechazaria justo el caso que si debe entrar."""
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, asunto="x" * 150)
     )
 
     assert respuesta.status_code == 201
 
 
-def test_ticket_sin_detalles_responde_422(cliente, datos_catalogo_ticket):
+def test_ticket_sin_detalles_responde_422(cliente_solicitante, datos_catalogo_ticket):
     """Un ticket sin items no es un ticket: `detalles` admite un minimo de 1."""
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, detalles=[])
     )
 
@@ -349,8 +349,8 @@ def test_ticket_sin_detalles_responde_422(cliente, datos_catalogo_ticket):
     assert "detalles" in str(respuesta.json()["detail"])
 
 
-def test_cantidad_cero_responde_422(cliente, datos_catalogo_ticket):
-    respuesta = cliente.post(
+def test_cantidad_cero_responde_422(cliente_solicitante, datos_catalogo_ticket):
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -367,8 +367,8 @@ def test_cantidad_cero_responde_422(cliente, datos_catalogo_ticket):
     assert "cantidad_solicitada" in str(respuesta.json()["detail"])
 
 
-def test_cantidad_negativa_responde_422(cliente, datos_catalogo_ticket):
-    respuesta = cliente.post(
+def test_cantidad_negativa_responde_422(cliente_solicitante, datos_catalogo_ticket):
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -384,9 +384,9 @@ def test_cantidad_negativa_responde_422(cliente, datos_catalogo_ticket):
     assert respuesta.status_code == 422
 
 
-def test_cantidad_un_es_el_minimo_valido(cliente, datos_catalogo_ticket):
+def test_cantidad_un_es_el_minimo_valido(cliente_solicitante, datos_catalogo_ticket):
     """Frontera de `gt=0`: 1 entra, 0 no."""
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -402,12 +402,12 @@ def test_cantidad_un_es_el_minimo_valido(cliente, datos_catalogo_ticket):
     assert respuesta.status_code == 201
 
 
-def test_descripcion_ausente_se_acepta(cliente, datos_catalogo_ticket):
+def test_descripcion_ausente_se_acepta(cliente_solicitante, datos_catalogo_ticket):
     """`descripcion` es opcional: quitarla del payload no puede ser un 422."""
     cuerpo = cuerpo_ticket_valido(datos_catalogo_ticket)
     del cuerpo["descripcion"]
 
-    respuesta = cliente.post("/api/v1/tickets/", json=cuerpo)
+    respuesta = cliente_solicitante.post("/api/v1/tickets/", json=cuerpo)
 
     assert respuesta.status_code == 201
     assert respuesta.json()["descripcion"] is None
@@ -417,14 +417,15 @@ def test_descripcion_ausente_se_acepta(cliente, datos_catalogo_ticket):
 
 
 def test_ticket_valido_responde_201_con_detalles_y_entregada_en_cero(
-    cliente, datos_catalogo_ticket
+    cliente_solicitante, datos_base, datos_catalogo_ticket
 ):
-    respuesta = cliente.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket))
+    """Enmienda 26/Nov/2026: el autor es el Solicitante de la sesion."""
+    respuesta = cliente_solicitante.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket))
 
     assert respuesta.status_code == 201
     cuerpo = respuesta.json()
     assert cuerpo["ticket_id"] > 0
-    assert cuerpo["usuario_id"] == datos_catalogo_ticket["usuario_id"]
+    assert cuerpo["usuario_id"] == datos_base["usuario_solicitante_id"]
     assert cuerpo["prioridad_id"] == datos_catalogo_ticket["prioridad_id"]
     assert cuerpo["estado_id"] == datos_catalogo_ticket["estado_ingresado_id"]
     assert cuerpo["fecha_creacion"]
@@ -435,18 +436,18 @@ def test_ticket_valido_responde_201_con_detalles_y_entregada_en_cero(
     assert cuerpo["detalles"][0]["producto"]["nombre"] == "Cuaderno linedado"
 
 
-def test_ticket_valido_aparece_en_el_listado(cliente, datos_catalogo_ticket):
+def test_ticket_valido_aparece_en_el_listado(cliente_solicitante, datos_catalogo_ticket):
     """El alta tiene que verse en `GET /tickets/` (AC-13, AC-29)."""
-    creado = cliente.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket)).json()
+    creado = cliente_solicitante.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket)).json()
 
-    listado = cliente.get("/api/v1/tickets/").json()
+    listado = cliente_solicitante.get("/api/v1/tickets/").json()
 
     assert any(t["ticket_id"] == creado["ticket_id"] for t in listado)
 
 
-def test_ticket_valido_con_dos_items_distintos(cliente, datos_catalogo_ticket):
+def test_ticket_valido_con_dos_items_distintos(cliente_solicitante, datos_catalogo_ticket):
     """Dos lineas de productos distintos se guardan como dos detalles."""
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -470,13 +471,13 @@ def test_ticket_valido_con_dos_items_distintos(cliente, datos_catalogo_ticket):
 # --- AC-11: la escritura no valida ni descuenta stock ---
 
 
-def test_crear_ticket_no_valida_stock(cliente, datos_catalogo_ticket):
+def test_crear_ticket_no_valida_stock(cliente_solicitante, datos_catalogo_ticket):
     """Pide 9999 cuadernos con stock 50 y entra igual.
 
     El ticket es una *peticion*, no una entrega: validar stock y descontar
     inventario son del despacho del bodeguero (Feature 005).
     """
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -492,15 +493,15 @@ def test_crear_ticket_no_valida_stock(cliente, datos_catalogo_ticket):
     assert respuesta.status_code == 201
 
 
-def test_crear_ticket_no_descuenta_inventario(cliente, datos_catalogo_ticket):
+def test_crear_ticket_no_descuenta_inventario(cliente_solicitante, datos_catalogo_ticket):
     """El stock tiene que quedar igual, comprobado por la API de inventario."""
     producto_id = datos_catalogo_ticket["producto_id"]
-    antes = cliente.get("/api/v1/inventario/existencias").json()
+    antes = cliente_solicitante.get("/api/v1/inventario/existencias").json()
     stock_antes = next(p["stock_total"] for p in antes if p["producto_id"] == producto_id)
 
-    cliente.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket))
+    cliente_solicitante.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket))
 
-    despues = cliente.get("/api/v1/inventario/existencias").json()
+    despues = cliente_solicitante.get("/api/v1/inventario/existencias").json()
     stock_despues = next(p["stock_total"] for p in despues if p["producto_id"] == producto_id)
     assert stock_despues == stock_antes
 
@@ -508,14 +509,14 @@ def test_crear_ticket_no_descuenta_inventario(cliente, datos_catalogo_ticket):
 # --- AC-6 y AC-7: referencias inexistentes, 404 y no 500 ---
 
 
-def test_ticket_con_producto_inexistente_responde_404(cliente, datos_catalogo_ticket):
+def test_ticket_con_producto_inexistente_responde_404(cliente_solicitante, datos_catalogo_ticket):
     """El 500 por `producto_id` invalido es el defecto que esta feature corrige.
 
     Antes la FK se violaba en el `INSERT` y PostgreSQL (o SQLite) devolvia un
     500 opaco. Ahora la referencia se comprueba **antes** de escribir y el
     mensaje nombra el producto que falta.
     """
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -527,13 +528,13 @@ def test_ticket_con_producto_inexistente_responde_404(cliente, datos_catalogo_ti
     assert "99999" in respuesta.json()["detail"]
 
 
-def test_producto_inexistente_no_toca_los_demas_productos(cliente, datos_catalogo_ticket):
+def test_producto_inexistente_no_toca_los_demas_productos(cliente_solicitante, datos_catalogo_ticket):
     """Un detalle valido acompañado de uno invalido se rechaza entero.
 
     Valida los tres productos de una vez antes de escribir: no se acepta el
     ticket "a medias" porque el primero exista.
     """
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -550,14 +551,14 @@ def test_producto_inexistente_no_toca_los_demas_productos(cliente, datos_catalog
     assert "42424" in detalle or "55555" in detalle
 
 
-def test_productos_repetidos_no_disparan_busquedas_redundantes(cliente, datos_catalogo_ticket):
+def test_productos_repetidos_no_disparan_busquedas_redundantes(cliente_solicitante, datos_catalogo_ticket):
     """Cinco lineas del mismo producto se validan una sola vez y se guardan cinco.
 
     El `set` de ids del service es lo que evita cinco `db.get`; y recordarlo en
     un test evita que alguien lo "simplifique" a un bucle mas adelante.
     """
     producto_id = datos_catalogo_ticket["producto_id"]
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -570,20 +571,20 @@ def test_productos_repetidos_no_disparan_busquedas_redundantes(cliente, datos_ca
 
 
 def test_ticket_con_usuario_inexistente_se_ignora_y_atiende_a_la_sesion(
-    cliente, datos_catalogo_ticket
+    cliente_solicitante, datos_base, datos_catalogo_ticket
 ):
     """AC-33/AC-18: `usuario_id` ya no es referencia; un id inexistente se ignora."""
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, usuario_id=98765)
     )
 
     assert respuesta.status_code == 201, respuesta.text
     assert respuesta.json()["usuario_id"] != 98765
-    assert respuesta.json()["usuario_id"] == datos_catalogo_ticket["usuario_id"]
+    assert respuesta.json()["usuario_id"] == datos_base["usuario_solicitante_id"]
 
 
-def test_ticket_con_prioridad_inexistente_responde_404(cliente, datos_catalogo_ticket):
-    respuesta = cliente.post(
+def test_ticket_con_prioridad_inexistente_responde_404(cliente_solicitante, datos_catalogo_ticket):
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, prioridad_id=87654)
     )
 
@@ -591,8 +592,8 @@ def test_ticket_con_prioridad_inexistente_responde_404(cliente, datos_catalogo_t
     assert "87654" in respuesta.json()["detail"]
 
 
-def test_ticket_con_estado_inexistente_responde_404(cliente, datos_catalogo_ticket):
-    respuesta = cliente.post(
+def test_ticket_con_estado_inexistente_responde_404(cliente_solicitante, datos_catalogo_ticket):
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, estado_id=76543)
     )
 
@@ -600,7 +601,7 @@ def test_ticket_con_estado_inexistente_responde_404(cliente, datos_catalogo_tick
     assert "76543" in respuesta.json()["detail"]
 
 
-def test_el_404_distingue_tipo_y_valor_de_la_referencia(cliente, datos_catalogo_ticket):
+def test_el_404_distingue_tipo_y_valor_de_la_referencia(cliente_solicitante, datos_catalogo_ticket):
     """Dos 404 por motivos distintos: el mensaje tiene que decir **cual**.
 
     Un 404 generico obligaria a adivinar si el problema era la prioridad o el
@@ -608,10 +609,10 @@ def test_el_404_distingue_tipo_y_valor_de_la_referencia(cliente, datos_catalogo_
     enmienda D-33 `usuario_id` ya no es una referencia validada, asi que la
     distincion se ejerce con las dos referencias compartidas que quedan.
     """
-    por_prioridad = cliente.post(
+    por_prioridad = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, prioridad_id=22222)
     ).json()["detail"]
-    por_estado = cliente.post(
+    por_estado = cliente_solicitante.post(
         "/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket, estado_id=33333)
     ).json()["detail"]
 
@@ -623,13 +624,13 @@ def test_el_404_distingue_tipo_y_valor_de_la_referencia(cliente, datos_catalogo_
 # --- AC-8: atomicidad ---
 
 
-def test_referencia_invalida_no_deja_ticket_huerfano(cliente, datos_catalogo_ticket):
+def test_referencia_invalida_no_deja_ticket_huerfano(cliente_solicitante, datos_catalogo_ticket):
     """Tras un 404 no queda ningun ticket persistido.
 
     Este es el criterio que importa: el 404 es visible, pero un ticket huerfano
     se descubriria meses despues en un tablero.
     """
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -638,16 +639,16 @@ def test_referencia_invalida_no_deja_ticket_huerfano(cliente, datos_catalogo_tic
     )
 
     assert respuesta.status_code == 404
-    assert cliente.get("/api/v1/tickets/").json() == []
+    assert cliente_solicitante.get("/api/v1/tickets/").json() == []
 
 
-def test_referencia_invalida_no_deja_detalles_sin_ticket(cliente, datos_catalogo_ticket):
+def test_referencia_invalida_no_deja_detalles_sin_ticket(cliente_solicitante, datos_catalogo_ticket):
     """Despues del 404, el detalle valido del payload tampoco se persistio.
 
     Comprueba el otro lado de la atomicidad: no solo que falta el ticket, sino
     que tampoco quedo la linea huerfana.
     """
-    cliente.post(
+    cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -658,10 +659,10 @@ def test_referencia_invalida_no_deja_detalles_sin_ticket(cliente, datos_catalogo
         ),
     )
 
-    assert cliente.get("/api/v1/tickets/").json() == []
+    assert cliente_solicitante.get("/api/v1/tickets/").json() == []
 
 
-def test_despues_de_un_404_la_siguiente_peticion_sigue_funcionando(cliente, datos_catalogo_ticket):
+def test_despues_de_un_404_la_siguiente_peticion_sigue_funcionando(cliente_solicitante, datos_catalogo_ticket):
     """Un 404 no deja nada a medias: el siguiente POST valido funciona.
 
     Ojo con lo que este test **no** cubre: no verifica el `rollback()` del
@@ -671,7 +672,7 @@ def test_despues_de_un_404_la_siguiente_peticion_sigue_funcionando(cliente, dato
     (ver `tasks.md` §9). Lo que si verifica es que la prevalidacion no dejo la
     peticion a medias.
     """
-    cliente.post(
+    cliente_solicitante.post(
         "/api/v1/tickets/",
         json=cuerpo_ticket_valido(
             datos_catalogo_ticket,
@@ -679,20 +680,20 @@ def test_despues_de_un_404_la_siguiente_peticion_sigue_funcionando(cliente, dato
         ),
     )
 
-    segundo = cliente.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket))
+    segundo = cliente_solicitante.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket))
 
     assert segundo.status_code == 201
-    assert len(cliente.get("/api/v1/tickets/").json()) == 1
+    assert len(cliente_solicitante.get("/api/v1/tickets/").json()) == 1
 
 
-def test_varios_404_seguidos_no_se_acumulan(cliente, datos_catalogo_ticket):
+def test_varios_404_seguidos_no_se_acumulan(cliente_solicitante, datos_catalogo_ticket):
     """Tres rechazos seguidos y despues un alta valida.
 
     Cubre el caso en que el usuario reintenta sin corregir nada, que es como se
     manifestaria un rollback pendiente.
     """
     for id_inexistente in (99991, 99992, 99993):
-        respuesta = cliente.post(
+        respuesta = cliente_solicitante.post(
             "/api/v1/tickets/",
             json=cuerpo_ticket_valido(
                 datos_catalogo_ticket,
@@ -701,4 +702,4 @@ def test_varios_404_seguidos_no_se_acumulan(cliente, datos_catalogo_ticket):
         )
         assert respuesta.status_code == 404
 
-    assert cliente.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket)).status_code == 201
+    assert cliente_solicitante.post("/api/v1/tickets/", json=cuerpo_ticket_valido(datos_catalogo_ticket)).status_code == 201

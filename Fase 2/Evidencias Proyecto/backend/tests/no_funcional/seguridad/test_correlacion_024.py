@@ -135,7 +135,11 @@ def test_el_log_de_acceso_no_contiene_token_correo_ni_query(cliente):
             json={"correo": "foo@example.com", "token": "token-secreto"},
         )
 
-    assert respuesta.status_code in (400, 401, 422), respuesta.text
+    # Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-33): el cliente legacy
+    # (Administrador) ya no puede crear tickets. Con un cuerpo JSON parseable,
+    # el 403 de matriz se resuelve antes de validar el contrato. Las aserciones
+    # del log y de la redaccion de secretos se conservan sin cambios.
+    assert respuesta.status_code == 403, respuesta.text
 
     registradas = _lineas_de_acceso(lineas)
     assert registradas, "debe existir una linea de acceso"

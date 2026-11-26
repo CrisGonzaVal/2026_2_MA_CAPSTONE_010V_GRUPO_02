@@ -175,3 +175,321 @@ Riesgos principales: cobertura incompleta entre los 18 endpoints de D-3; fuga po
 | AC-15 | Pruebas backend/frontend y OpenAPI de denegaciones. |
 | AC-16 | Verificación de migración en PostgreSQL y suites completas verdes. |
 | AC-17 | Evidencia por AC, OpenAPI, recorrido 4200 y 8080 reconstruido, grep de coherencia. |
+
+---
+
+## Enmienda de alta reservada al Solicitante (26/Nov/2026)
+
+> Plan de la enmienda aprobada en `spec.md` (D-11…D-18, AC-21…AC-34). Cambia **una fila** de
+> la matriz y su contrato; no crea operaciones, DDL, capacidades ni flujos. La implementación
+> va en una sola pasada: backend y contrato → pruebas → suites → frontend/documentación →
+> cierre. No existe feature 028: todo pertenece a la 007.
+
+### Enfoque técnico por capa
+
+- **Autorización.** La fila `("POST", "/api/v1/tickets/")` de `MATRIZ_PERMISOS` queda en
+  `frozenset({_SOLICITANTE})`. Se elimina `_ESCRITURA_TICKETS` porque su único uso era esa
+  fila y su nombre promete tres roles. Ninguna otra entrada se toca; la matriz sigue con 75
+  operaciones. `requiere_operacion` ya produce el 403 antes del cuerpo y antes de
+  `get_db_negocio`; no se modifica la dependencia ni su orden.
+- **Contrato.** En `backend/app/api/v1/endpoints/tickets.py` se actualiza **solo la
+  `description`** de `crear_ticket`: declara que únicamente el Solicitante crea y por qué
+  Administrador, Bodeguero y Superadmin reciben 403. No se añade `respuesta_conflicto()` ni
+  el 409 a `responses` (hoy el 409 vive solo en la descripción); no cambian `response_model`,
+  `status_code=201`, `responses` ni las dependencias.
+- **Servicio.** En `backend/app/services/ticket_service.py` se actualiza **solo el docstring**
+  de `crear_ticket`, que enumera Administrador/Bodeguero/Solicitante. No se añade comprobación
+  de rol: la autoatribución, el orden de validaciones, la institución/sede, `Pendiente`, la
+  transacción y el historial de creación quedan intactos (D-12).
+- **Pruebas backend.** Un archivo nuevo de aceptación cubre AC-21…AC-25, AC-28 y AC-31 con la
+  app real; AC-26/AC-27 se añaden al arnés de institución inactiva; las seis transcripciones
+  de la matriz y `test_correlacion_024.py` se actualizan; las suites que hacen altas pasan a
+  un cliente Solicitante, y los fixtures históricos de autoría Admin/Bodeguero se siembran por
+  ORM.
+- **Presentación.** Solo comentarios y títulos de pruebas en `roles.ts`, `roles.spec.ts`,
+  `tickets.component.ts` y `tickets.component.spec.ts`. El botón ya está oculto desde el
+  25/Nov/2026; **no** se añade guarda de apertura ni cambia comportamiento.
+- **Documentación.** Se anota la transcripción de `012-gestion-administrativa/diseno-tecnico.md`;
+  al implementar se actualizan la fila de la 007 en `roadmap.md` y `MEMORY.md`, sin anunciar
+  una feature 028. La nota de la 003 ya está hecha en `spec.md`.
+- **Cierre.** `pytest`, `ng test` (Edge/ChromeHeadless), `/openapi.json`, recorrido 4200 y humo
+  8080 tras reconstruir la imagen, grep de coherencia y evidencia AC por AC.
+
+### Archivos que se modifican
+
+| Archivo | Responsabilidad | AC |
+|---|---|---|
+| `backend/app/core/permisos.py` | Fila del alta a `{Solicitante}`; retirar `_ESCRITURA_TICKETS`; comentario que cita la enmienda. Sin tocar otra fila. | AC-21…AC-29 |
+| `backend/app/api/v1/endpoints/tickets.py` | Descripción del alta con el rol autorizado y el 403. Sin cambios de contrato declarado. | AC-29 |
+| `backend/app/services/ticket_service.py` | Docstring de `crear_ticket` alineado con el rol único. Sin lógica nueva. | AC-34 |
+| `backend/tests/conftest.py` | Identidad mutable, `actuar_como`, usuarios persistidos de Bodeguero/Solicitante y restauración de overrides. | AC-21…AC-33 |
+| `backend/tests/funcional/integracion/test_alta_solo_solicitante_007.py` (nuevo) | Aceptación AC-21…AC-25, AC-28, AC-31. | AC-21…AC-25, AC-28, AC-31 |
+| `backend/tests/no_funcional/seguridad/test_institucion_inactiva_012.py` (dos casos nuevos al final) | AC-26/AC-27 con la app real y el endpoint de alta, reutilizando `_preparar`. | AC-26, AC-27 |
+| `backend/tests/no_funcional/seguridad/test_permisos.py`, `test_permisos_008.py`, `test_permisos_010.py`, `test_permisos_012.py`, `test_permisos_endpoints.py` | Transcripciones históricas con la restricción documentada. | AC-29, AC-33 |
+| `backend/tests/funcional/integracion/test_ciclo_vida_autorizacion_013.py` | Sexta transcripción: `RESTRINGIDAS_013` incluye el alta. | AC-29, AC-33 |
+| `backend/tests/no_funcional/seguridad/test_correlacion_024.py` | El POST del cliente legacy pasa a esperar 403. | AC-33 |
+| `backend/tests/funcional/**` (14 suites del inventario) | Altas vivas con Solicitante; operaciones conservadas por rol. | AC-21, AC-30, AC-33 |
+| `frontend/src/app/core/auth/roles.ts`, `roles.spec.ts`, `frontend/src/app/features/tickets/tickets.component.ts`, `tickets.component.spec.ts` | Comentarios y títulos dejan de hablar de demo; sin cambio de comportamiento. | AC-32, AC-34 |
+| `docs/spec/features/012-gestion-administrativa/diseno-tecnico.md` | Nota de superación de su transcripción de `POST /tickets/`. | AC-34 |
+| `docs/spec/roadmap.md`, `MEMORY.md` | Fila/estado de la 007 con la enmienda; sin feature 028. | AC-34 |
+
+### Decisiones técnicas
+
+#### DT-1 — Fila de matriz con `frozenset({_SOLICITANTE})`
+
+Se reutiliza el literal existente y se elimina `_ESCRITURA_TICKETS`, que solo alimentaba esta
+fila. El comentario cita la enmienda del 26/Nov/2026 y el 403 de Administrador/Bodeguero.
+
+**Alternativa descartada:** conservar `_ESCRITURA_TICKETS` con un solo rol. Dejaría un nombre
+que sugiere tres roles y una constante sin uso real; el lector tendría que comprobar que ya no
+significa lo que dice.
+
+#### DT-2 — Sin comprobación de rol en `crear_ticket`
+
+La matriz y la dependencia del endpoint son la única frontera. El servicio sigue recibiendo la
+identidad ya resuelta y autoatribuyendo; no pregunta por el rol.
+
+**Alternativa descartada:** `if rol != "Solicitante"` en el servicio. Duplicaría la política,
+divergiría de la matriz y bloquearía la creación interna sin sesión (ticket automático de la
+016), que no tiene rol de sesión.
+
+#### DT-3 — Solo la descripción del contrato; el 409 no se declara
+
+`POST /tickets/` mantiene `responses` con 201, 401, 403, 404 y 422. El 409 sigue únicamente en
+la descripción y esta enmienda no lo convierte en respuesta declarada.
+
+**Alternativa descartada:** añadir `respuesta_conflicto()` para documentar el 409. Cambiaría el
+contrato declarado en una enmienda cuyo alcance es una fila de roles y obligaría a revisar
+todas las aserciones de OpenAPI; el 409 ya está explicado en la descripción.
+
+#### DT-4 — Identidad mutable + `actuar_como(rol)` en `conftest`
+
+`_cliente_de_prueba` deja de fijar `identidad_de_prueba` directamente y recibe un contenedor
+`identidad_actual = {"actual": identidad_de_prueba()}`. El override es
+`lambda: identidad_actual["actual"]`, de modo que el rol se lee en cada petición. Un fixture
+`actuar_como(rol)` cambia el contenido del contenedor y devuelve la identidad; el `TestClient`
+es el mismo. Así un test crea con Solicitante y aprueba/despacha con Administrador/Bodeguero
+sin abrir un segundo cliente ni pisar overrides.
+
+El fixture `cliente` conserva su valor por defecto (Administrador) y su firma; `cliente` y
+`cliente_sin_excepcion` comparten el contenedor. `_cliente_de_prueba` guarda y **restaura** los
+overrides que instala en lugar de `app.dependency_overrides.clear()`, para que un cliente
+anidado o un helper que ya overridea `get_current_user` no borre el estado del otro. Se añade
+un fixture de conveniencia `cliente_solicitante` que cambia el contenedor y devuelve el mismo
+`cliente`.
+
+**Alternativa descartada:** un `cliente_como(rol)` que construye un `TestClient` por rol. Los
+`with` anidados comparten `app.dependency_overrides` y el `clear()` del interior borraría la
+identidad del exterior; además reinstalaría la frontera Clerk en cada nivel. El contenedor
+mutable evita ambos problemas con un solo cliente.
+
+#### DT-5 — Usuarios persistidos mínimos y sede por suite
+
+`datos_base` **no** se amplía globalmente: añadir un rol/usuario Solicitante cambiaría conteos
+de catálogos y de administración en muchas suites. El helper
+`identidad_persistida(datos_base, rol)` garantiza, de forma idempotente:
+
+- **Administrador:** reutiliza `datos_base["usuario_id"]` (Ana, INST01, departamento
+  `datos_base["departamento_id"]`).
+- **Bodeguero:** busca o crea un usuario con `datos_base["rol_bodeguero_id"]` en ese mismo
+  departamento; expone `datos_base["usuario_bodeguero_id"]`.
+- **Solicitante:** busca o crea el rol `Solicitante` (si `dos_instituciones` ya lo creó, lo
+  reutiliza) y un usuario en el mismo departamento; expone
+  `datos_base["usuario_solicitante_id"]` y `datos_base["rol_solicitante_id"]`.
+- **Superadmin:** identidad suelta con `Rol("Superadmin")`, sin persistencia: el 403 de matriz
+  ocurre antes de la base.
+
+La identidad es un `Usuario` suelto con el `usuario_id` real y el `departamento_id` real (el
+patrón de `_soporte_sede_011.cliente`/`cliente_con_rol`). La **sede no se autoasigna**: cada
+suite sigue resolviéndola con `asegurar_sede_de_departamento` o su helper, para no romper los
+casos que esperan 409 sin sede. El alta del Solicitante necesita un producto de su institución
+y el estado `Pendiente`, que ya provee `datos_base`.
+
+**Alternativa descartada:** agregar el Solicitante a `datos_base` para todas las suites. Es
+más simple de escribir, pero altera el catálogo base de rol/usuarios que usan las pruebas de
+administración y de catálogo de tickets; el coste de regresión supera el ahorro.
+
+#### DT-6 — Fixtures históricos por ORM, no por alta de Solicitante
+
+Los tickets con autoría Administrador/Bodeguero que prueban AC-31/AC-43 se siembran por ORM
+con `Ticket`/`DetalleTicket`/`HistorialTransicionTicket`, siguiendo
+`test_ciclo_vida_confirmacion_013.py::_sembrar_cerrado`. No se crean con el alta del
+Solicitante ni se reasignan después.
+
+**Alternativa descartada:** crear el ticket con el Solicitante y actualizar `usuario_id` a
+Administrador. Produciría un historial de creación con un actor que no es el autor y
+falsificaría el escenario que AC-31/AC-43 quieren probar.
+
+#### DT-7 — Transcripciones de matriz por restricción documentada
+
+Las cinco `test_permisos*.py` y `test_ciclo_vida_autorizacion_013.py` conservan sus baselines
+históricos y aplican la nueva restricción con el mismo patrón de `RESTRINGIDAS_013` (un mapa
+`("POST", "/api/v1/tickets/") -> {"Solicitante"}`). `test_permisos_008.py` documenta la
+excepción a `OPERACIONES_AJUSTADAS` porque su aserción actual exige que el Administrador
+conserve todas esas escrituras.
+
+**Alternativa descartada:** reescribir los baselines con el valor nuevo. Perdería la
+trazabilidad de que la 007/008/010/012/013 transcribieron tres roles y haría indistinguible un
+cambio de regla de un error de transcripción.
+
+### Harness de identidad Solicitante (diseño concreto)
+
+```python
+@pytest.fixture
+def identidad_actual():
+    return {"actual": identidad_de_prueba()}          # Administrador por defecto
+
+@pytest.fixture
+def cliente(motor, identidad_actual):
+    with _cliente_de_prueba(motor, identidad_actual) as c:
+        yield c
+
+@pytest.fixture
+def actuar_como(datos_base, identidad_actual):
+    def _cambiar(rol: str):
+        identidad_actual["actual"] = identidad_persistida(datos_base, rol)
+        return identidad_actual["actual"]
+    return _cambiar
+
+@pytest.fixture
+def cliente_solicitante(cliente, actuar_como):
+    actuar_como("Solicitante")
+    return cliente
+```
+
+`_cliente_de_prueba` cambia su override por
+`app.dependency_overrides[get_current_user] = lambda: identidad_actual["actual"]` y restaura
+las claves que tocó en el `finally`. `cliente_sin_excepcion` recibe el mismo contenedor.
+`identidad_persistida(datos_base, rol)` es el helper descrito en DT-5; para `Superadmin`
+devuelve una identidad suelta.
+
+Reglas de uso:
+
+- Un test puede alternar `actuar_como("Solicitante")` → alta, `actuar_como("Administrador")` →
+  aprobación/despacho, `actuar_como("Bodeguero")` → rechazo/recepción, sin recrear el cliente.
+- No se anidan `cliente` y `cliente_sin_excepcion` en el mismo test; si se necesita un 500, se
+  usa el segundo como único cliente.
+- Las pruebas de 401 no usan `cliente` (que inyecta identidad): usan un cliente sin override
+  de `get_current_user` o la variante `SIN_AUTENTICAR` de `_soporte_sede_011`.
+- Las suites que ya usan `cliente_con_rol`/`_soporte_sede_011.cliente` pueden conservarlo;
+  no se migran a la fuerza. El contenedor es para las suites que usan el `cliente` de
+  `conftest`.
+
+### Estrategia de pruebas
+
+#### Backend
+
+1. **Nuevo `test_alta_solo_solicitante_007.py`** (integración, app real):
+   - AC-21: Solicitante con sede y payload válido → 201; autoría de sesión; `usuario_id` del
+     payload omitido/propio/ajeno/inexistente ignorado; institución/sede/`Pendiente`/historial;
+     422/404/409 del alta con las reglas vigentes.
+   - AC-22/AC-23: Administrador y Bodeguero con payload válido → 403 y conteos de `Ticket`,
+     `DetalleTicket` e `HistorialTransicionTicket` sin cambios.
+   - AC-24: payload JSON parseable pero inválido para el contrato (asunto corto, `detalles`
+     vacío, cantidad no positiva, campo extra, `estado_id` ausente) → 403 para
+     Administrador/Bodeguero; mismo caso con Solicitante → 422. Un JSON malformado no se usa
+     para afirmar 403.
+   - AC-25: Superadmin → 403 con JSON parseable válido o inválido.
+   - AC-28: capacidad `tickets` apagada → 403 para Solicitante y para Admin/Bodeguero;
+     rehabilitada → 201. Reutilizar el patrón `_sembrar_contexto_capacidades` de
+     `test_ciclo_vida_confirmacion_013.py` (promoverlo a `_soporte_ciclo_vida_013.py` si se
+     importa desde dos archivos) y usar su correo de contexto en la identidad del Solicitante;
+     si el correo no resuelve contexto, el gating no se aplica y el test mediría otra cosa.
+   - AC-31: ticket histórico sembrado por ORM con autor Administrador; se lee, conserva autor y
+     el Administrador puede aprobarlo/despacharlo según estado; sin confirmación de entrega.
+2. **AC-26/AC-27** en `test_institucion_inactiva_012.py` (dos casos nuevos al final, con
+   `TestClient(app)` real y overrides de `get_db`/`get_current_user`, reutilizando
+   `_preparar`): 401 sin/invalid token; con institución inactiva, Administrador/Bodeguero →
+   403 por matriz y Solicitante → 401 del contexto de tenant; sin filas. No reordenar
+   dependencias.
+3. **Matriz y contrato.** Actualizar las seis transcripciones; `test_permisos_endpoints.py`
+   pasa `MATRIZ_D3[("POST", "/api/v1/tickets/")]` a `{"Solicitante"}` y sus casos
+   permitidos/denegados se regeneran; el caso permitido usa Solicitante. En
+   `test_permisos_008.py`, además de la comparación viva, `CASOS_AJUSTADOS` debe esperar 403
+   para Administrador/Bodeguero y 200 para Solicitante en el alta, y
+   `test_administrador_conserva_las_escrituras_institucionales` excluye esa entrada.
+   `test_correlacion_024.py` cambia `(400, 401, 422)` por 403.
+4. **Suites de altas vivas.** Adaptar con `actuar_como`/`cliente_solicitante` y, donde falte,
+   `asegurar_sede_de_departamento`:
+
+   | Suite | Cambio |
+   |---|---|
+   | `humo/test_smoke.py` | Alta por Solicitante; el resto de humo conserva Admin. |
+   | `e2e/test_transaccion_ticket.py` | Alta por Solicitante; casos de detalle inválido siguen esperando 422/404. |
+   | `integracion/test_modal_ticket.py` | Alta por Solicitante; catálogo y payload sin `usuario_id` intactos. |
+   | `integracion/test_tablero_kanban.py` | Alta por Solicitante; transiciones con Admin/Bodeguero. |
+   | `e2e/test_despacho_transaccional.py` | Helpers `abrir_ticket_en_curso`/`crear_ticket_en_estado` crean por Solicitante y despachan por Bodeguero/Admin. |
+   | `integracion/test_ciclo_vida_alta_inicial_013.py` | Alta por Solicitante; 422/404/409 del alta intactos. |
+   | `integracion/test_ciclo_vida_historial_013.py` | `_crear_ticket_via_api` con Solicitante; ya tiene `_cliente_solicitante`. |
+   | `e2e/test_flujo_aprobacion_entrega_013.py` | `_alta` por Solicitante; aprobación/despacho/confirmación por rol. |
+   | `integracion/test_ticket_proceso_013.py` | `test_ac_39_el_201_del_alta_publica_el_read_model` crea por Solicitante; la etiqueta se lee con Admin. |
+   | `integracion/test_ticket_sede_011.py` | `cliente_con_rol(..., "Administrador")` del alta pasa a Solicitante; el despacho conserva Bodeguero/Admin. |
+   | `integracion/test_historial_movimientos.py` | Alta por Solicitante; el historial de stock y el despacho no cambian. |
+   | `integracion/test_validacion_entradas_027.py` | Alta por Solicitante para 422/404/409; los 403 de Admin/Bodeguero se añaden en el archivo nuevo. |
+   | `integracion/test_tickets_alcance.py` | Reemplazar la parametrización de alta por rol: Solicitante 201; Admin/Bodeguero 403. `test_administrador_crea_para_solicitante_propio_201` y `test_administrador_ignora_solicitante_de_otra_institucion_y_atribuye_a_sesion` pasan a denegación 403 (o se retiran como alta) y la autoatribución se conserva con Solicitante. Conservar propiedad/listado. |
+   | `integracion/test_tickets_institucional.py` | Alta por Solicitante; producto ajeno 404 sin parcial. |
+   | `no_funcional/seguridad/test_correlacion_024.py` | Solo la expectativa de estado, no las aserciones de log. |
+
+5. **Fixtures históricos.** Auditar los escenarios que necesitan autoría Admin/Bodeguero
+   (AC-31 y AC-43) y sembrarlos por ORM; no convertirlos en altas de Solicitante. Las suites
+   de cobertura 021 y Compras no se tocan: siembran por ORM o no hacen POST de tickets.
+
+#### Frontend
+
+- `roles.ts`: el comentario de `ROLES_CREACION_TICKETS` pasa de «cambio de demo» a espejo de la
+  matriz.
+- `tickets.component.ts`: el comentario de `puedeCrearPedido` deja de decir que la API admite a
+  los tres roles.
+- `roles.spec.ts`: el título de la prueba deja de decir «demo 25/Nov/2026».
+- `tickets.component.spec.ts`: el `describe` de alta por rol deja de decir «demo»; los casos de
+  botón visible/oculto se conservan sin cambios de expectativa.
+- Sin guarda de apertura, sin cambios de template ni de servicio.
+
+#### Contrato y cierre
+
+- `/openapi.json`: 75 operaciones v1 y 77 totales (75 + `GET /` + `/health`); `POST` declara
+  201/401/403/404/422, la descripción nombra al Solicitante y el 409 sigue solo en el texto.
+- 4200: Solicitante crea; Administrador y Bodeguero reciben 403 por API; el tablero y las
+  operaciones de su rol siguen funcionando.
+- 8080: `docker compose -f docker-compose.yml build frontend` + `up -d frontend`; humo de la
+  vista y del botón.
+- Grep final en `docs/`, `backend/` y `frontend/`.
+
+### Trazabilidad AC-21…AC-34
+
+| AC | Componentes / pruebas |
+|---|---|
+| AC-21 | `permisos.py` (fila), `crear_ticket` sin cambio funcional, `test_alta_solo_solicitante_007.py` (201, autoría, 422/404/409) |
+| AC-22 | Matriz + `test_alta_solo_solicitante_007.py` (403 Admin, conteos) |
+| AC-23 | Matriz + mismo archivo (403 Bodeguero, conteos) |
+| AC-24 | Mismo archivo (payload JSON parseable inválido → 403; Solicitante → 422) |
+| AC-25 | Mismo archivo (Superadmin 403) |
+| AC-26 | `test_institucion_inactiva_007.py`/`test_institucion_inactiva_012.py` (401) |
+| AC-27 | Mismo archivo (Admin/Bodeguero 403; Solicitante 401 de tenant) |
+| AC-28 | `test_alta_solo_solicitante_007.py` (capacidad apagada/rehabilitada) |
+| AC-29 | `permisos.py`, descripción de `tickets.py`, `test_permisos_endpoints.py`, `/openapi.json` |
+| AC-30 | Suites de roles de tickets (lectura, aprobación, despacho, rechazo, PATCH, confirmación) |
+| AC-31 | `test_alta_solo_solicitante_007.py` + fixtures ORM de AC-43 |
+| AC-32 | `roles.ts`, `tickets.component.ts`, `roles.spec.ts`, `tickets.component.spec.ts` |
+| AC-33 | Seis transcripciones, `test_correlacion_024.py`, suites del inventario, `conftest.py` |
+| AC-34 | Comentarios/docstrings, `diseno-tecnico.md` 012, `roadmap.md`, `MEMORY.md`, grep |
+
+### Riesgos y alcance no tocado
+
+| Riesgo | Mitigación |
+|---|---|
+| El refactor de `conftest` rompe suites que dependen del override global | Mantener `cliente` como Administrador por defecto y la misma firma; ejecutar la suite completa tras la tarea del harness; restaurar overrides en vez de `clear()`. |
+| Un test alterna roles y el contenedor conserva el último rol | El contenedor es function-scoped; cada test lo reinicia. `actuar_como` es explícito antes de cada petición. |
+| `test_permisos_008.py` exige al Administrador en `OPERACIONES_AJUSTADAS` | Excepción documentada para el alta; el resto de operaciones ajustadas se conserva. |
+| `test_correlacion_024.py` deja de ejercer un 422 | Su propósito es el log sin secretos; se actualiza el estado esperado a 403 y se conservan las aserciones de redacción. |
+| `identidad_persistida` crea usuarios y altera conteos de administración | Solo se invoca cuando el test pide ese rol; las suites que cuentan usuarios/roles ajustan su expected o siembran su propio usuario. `datos_base` no cambia para el resto. |
+| Un fixture histórico se convierte en alta de Solicitante y AC-43 deja de probar lo que dice | Sembrar por ORM con `usuario_id` Admin/Bodeguero; prohibido reasignar autores. |
+| Añadir el 409 a `responses` por inercia | Revisar el decorador: solo `description`; el 409 no se declara. |
+| Reordenar dependencias para “arreglar” la institución inactiva | No se toca el orden: Admin/Bodeguero 403 por matriz; Solicitante 401 de tenant. |
+| Verificar 8080 sin reconstruir | `docker compose build frontend` + `up -d frontend` antes del humo; comprobar el hash del bundle. |
+
+**No se toca:** DDL, `database/01_esquema.sql`, `database/02_datos_semilla.sql`, versión
+`026.0`, tablas/entidades, autenticación Clerk, capacidades, modelo de datos, servicio de alta
+en su comportamiento, `GET /tickets/catalogos`, listado/detalle/historial, tablero, aprobación,
+despacho, rechazo, anulación, edición, `PATCH /estado`, confirmación de entrega, cobertura 021
+ni Compras.

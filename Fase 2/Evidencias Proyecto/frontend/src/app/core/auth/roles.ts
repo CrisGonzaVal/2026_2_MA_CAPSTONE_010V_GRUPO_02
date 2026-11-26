@@ -114,10 +114,11 @@ export const ROLES_EDICION_TICKETS = ['Administrador', 'Solicitante'] as const;
 /**
  * Roles que ven el alta de pedidos («+ Crear pedido») en la vista de tickets.
  *
- * Cambio de demo del 25/Nov/2026: solo el Solicitante. Es **presentación**; la
- * matriz del backend (`_ESCRITURA_TICKETS` en `permisos.py`) sigue admitiendo
- * también a Administrador y Bodeguero hasta la implementación de negocio del
- * alta por sede. No es una frontera de seguridad.
+ * Espejo de la matriz de la Feature 007 tras su enmienda del 26/Nov/2026:
+ * solo el Solicitante crea tickets y la fila de `POST /api/v1/tickets/` en
+ * `permisos.py` declara `{Solicitante}`. La API es la frontera de seguridad
+ * (D-2): Administrador, Bodeguero y Superadmin reciben 403. Esta constante solo
+ * alinea la visibilidad del botón, no autoriza.
  */
 export const ROLES_CREACION_TICKETS = ['Solicitante'] as const;
 
@@ -285,9 +286,9 @@ export function puedeEditarTicket(rol: string | null): boolean {
 /**
  * `true` si el rol ve el botón «+ Crear pedido».
  *
- * Cambio de demo del 25/Nov/2026: solo Solicitante. Es presentación pura; la
- * API sigue siendo la frontera y, por ahora, admite también a Administrador y
- * Bodeguero. La restricción de negocio se implementará después.
+ * Espejo de la matriz tras la enmienda de la 007 (26/Nov/2026): solo el
+ * Solicitante crea; la API es la frontera y responde 403 a Administrador,
+ * Bodeguero y Superadmin.
  */
 export function puedeCrearTicket(rol: string | null): boolean {
   return contiene(ROLES_CREACION_TICKETS, rol);

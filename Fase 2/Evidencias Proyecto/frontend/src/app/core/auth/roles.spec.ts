@@ -182,9 +182,9 @@ describe('roles', () => {
     expect(puedeEditarTicket(null)).toBe(false);
   });
 
-  // --- Alta de pedidos por rol (cambio de demo 25/Nov/2026) ---
+  // --- Alta de pedidos por rol (enmienda 007, 26/Nov/2026) ---
 
-  it('el alta de pedidos se limita al Solicitante en la UI (demo 25/Nov/2026)', () => {
+  it('el alta de pedidos se limita al Solicitante en la UI (enmienda 007, 26/Nov/2026)', () => {
     expect(ROLES_CREACION_TICKETS).toEqual(['Solicitante']);
     expect(puedeCrearTicket('Solicitante')).toBe(true);
     for (const rol of ['Administrador', 'Bodeguero', 'Superadmin', 'Admin', null]) {

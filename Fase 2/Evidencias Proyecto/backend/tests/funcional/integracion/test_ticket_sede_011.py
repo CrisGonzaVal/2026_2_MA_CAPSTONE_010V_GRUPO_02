@@ -26,7 +26,6 @@ capacidad y falla con un motivo explicito.
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy.orm import sessionmaker
 
 from app.models import Ticket
@@ -118,29 +117,42 @@ def _crear_ticket_directo(
         db.close()
 
 
+def _cliente_creador(motor, datos):
+    """Cliente del Solicitante de INST01, unico rol que ejerce el alta.
+
+    Enmienda 26/Nov/2026 (E26N-5): Administrador y Bodeguero reciben 403 por
+    matriz; las transiciones y el despacho conservan sus propios clientes.
+    """
+    return cliente(
+        motor,
+        "Solicitante",
+        departamento_id=datos["departamento_id"],
+        usuario_id=datos["usuarios_inst01"]["Solicitante"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC-6/AC-9: la sede se almacena al crear
 # ---------------------------------------------------------------------------
 
 
-def test_crear_ticket_almacena_la_sede_del_departamento(motor, datos_base):
+def test_crear_ticket_almacena_la_sede_del_departamento(
+    motor, datos_base, dos_instituciones
+):
     """AC-9: el alta guarda la sede vigente del departamento del solicitante."""
     exigir_contrato_ticket_con_sede()
     ids = _instalar_flujo(motor)
     sede_id = crear_sede(motor, institucion_id=datos_base["institucion_id"])
     asignar_sede_a_departamento(motor, datos_base["departamento_id"], sede_id)
+    usuario_solicitante = dos_instituciones["usuarios_inst01"]["Solicitante"]
 
     # Actor autenticado persistido: la 013 registra la creacion en el historial
-    # con FK a `usuario` (AC-9); la sonda sintetica 9999 no existe en la BD.
-    with cliente(
-        motor,
-        "Administrador",
-        departamento_id=datos_base["departamento_id"],
-        usuario_id=datos_base["usuario_id"],
-    ) as cliente_http:
+    # con FK a `usuario` (AC-9). Enmienda 26/Nov/2026: el alta la ejerce el
+    # Solicitante, unico rol autorizado.
+    with _cliente_creador(motor, dos_instituciones) as cliente_http:
         respuesta = _crear_ticket(
             cliente_http,
-            usuario_id=datos_base["usuario_id"],
+            usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
             estado_id=ids["Pendiente"],
             producto_id=datos_base["producto_id"],
@@ -152,19 +164,20 @@ def test_crear_ticket_almacena_la_sede_del_departamento(motor, datos_base):
     assert leer_sede_de_ticket(motor, cuerpo["ticket_id"]) == sede_id
 
 
-def test_departamento_sin_sede_no_crea_ticket_responde_409(motor, datos_base):
+def test_departamento_sin_sede_no_crea_ticket_responde_409(
+    motor, datos_base, dos_instituciones
+):
     """AC-6: sin sede asignada el alta responde 409 y no deja ticket."""
     exigir_contrato_ticket_con_sede()
     ids = _instalar_flujo(motor)
     asignar_sede_a_departamento(motor, datos_base["departamento_id"], None)
+    usuario_solicitante = dos_instituciones["usuarios_inst01"]["Solicitante"]
     tickets_antes = contar_en(motor, Ticket)
 
-    with cliente(
-        motor, "Administrador", departamento_id=datos_base["departamento_id"]
-    ) as cliente_http:
+    with _cliente_creador(motor, dos_instituciones) as cliente_http:
         respuesta = _crear_ticket(
             cliente_http,
-            usuario_id=datos_base["usuario_id"],
+            usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
             estado_id=ids["Pendiente"],
             producto_id=datos_base["producto_id"],
@@ -179,7 +192,9 @@ def test_departamento_sin_sede_no_crea_ticket_responde_409(motor, datos_base):
 # ---------------------------------------------------------------------------
 
 
-def test_ticket_abierto_despacha_desde_la_sede_almacenada(motor, datos_base):
+def test_ticket_abierto_despacha_desde_la_sede_almacenada(
+    motor, datos_base, dos_instituciones
+):
     """AC-9: reasignar el departamento no redirige un ticket ya emitido.
 
     El ticket nace en la sede A (stock 50). Antes del despacho el departamento se
@@ -200,16 +215,12 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(motor, datos_base):
         stock_actual=7, institucion_id=datos_base["institucion_id"],
     )
     asignar_sede_a_departamento(motor, datos_base["departamento_id"], sede_a)
+    usuario_solicitante = dos_instituciones["usuarios_inst01"]["Solicitante"]
 
-    with cliente(
-        motor,
-        "Administrador",
-        departamento_id=datos_base["departamento_id"],
-        usuario_id=datos_base["usuario_id"],
-    ) as cliente_http:
+    with _cliente_creador(motor, dos_instituciones) as cliente_http:
         alta = _crear_ticket(
             cliente_http,
-            usuario_id=datos_base["usuario_id"],
+            usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
             estado_id=ids["Pendiente"],
             producto_id=datos_base["producto_id"],
@@ -217,6 +228,13 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(motor, datos_base):
         )
         assert alta.status_code == 201, alta.text
         ticket_id = alta.json()["ticket_id"]
+
+    with cliente(
+        motor,
+        "Administrador",
+        departamento_id=datos_base["departamento_id"],
+        usuario_id=datos_base["usuario_id"],
+    ) as cliente_http:
         _transicionar(cliente_http, ticket_id, ids["EnRevision"])
         _transicionar(cliente_http, ticket_id, ids["EnCurso"])
 
@@ -227,9 +245,11 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(motor, datos_base):
             RUTA_DESPACHO.format(ticket_id=ticket_id),
             json={"usuario_id": datos_base["usuario_id"]},
         )
+
+    with _cliente_creador(motor, dos_instituciones) as cliente_http:
         futuro = _crear_ticket(
             cliente_http,
-            usuario_id=datos_base["usuario_id"],
+            usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
             estado_id=ids["Pendiente"],
             producto_id=datos_base["producto_id"],
@@ -247,7 +267,9 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(motor, datos_base):
     assert futuro.json()["sede_id"] == sede_b, "el ticket futuro usa la sede vigente"
 
 
-def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(motor, datos_base):
+def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(
+    motor, datos_base, dos_instituciones
+):
     """AC-9: sin saldo en la sede almacenada el despacho no cambia nada."""
     exigir_contrato_ticket_con_sede()
     ids = _instalar_flujo(motor)
@@ -258,6 +280,19 @@ def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(motor, datos_base
     )
     asignar_sede_a_departamento(motor, datos_base["departamento_id"], sede_id)
     auditorias_antes = contar_movimientos(motor)
+    usuario_solicitante = dos_instituciones["usuarios_inst01"]["Solicitante"]
+
+    with _cliente_creador(motor, dos_instituciones) as cliente_http:
+        alta = _crear_ticket(
+            cliente_http,
+            usuario_id=usuario_solicitante,
+            prioridad_id=datos_base["prioridad_id"],
+            estado_id=ids["Pendiente"],
+            producto_id=datos_base["producto_id"],
+            cantidad=5,
+        )
+        assert alta.status_code == 201, alta.text
+        ticket_id = alta.json()["ticket_id"]
 
     with cliente(
         motor,
@@ -265,15 +300,6 @@ def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(motor, datos_base
         departamento_id=datos_base["departamento_id"],
         usuario_id=datos_base["usuario_id"],
     ) as cliente_http:
-        alta = _crear_ticket(
-            cliente_http,
-            usuario_id=datos_base["usuario_id"],
-            prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
-            producto_id=datos_base["producto_id"],
-            cantidad=5,
-        )
-        ticket_id = alta.json()["ticket_id"]
         _transicionar(cliente_http, ticket_id, ids["EnRevision"])
         _transicionar(cliente_http, ticket_id, ids["EnCurso"])
         despacho = cliente_http.post(
@@ -289,7 +315,9 @@ def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(motor, datos_base
     )
 
 
-def test_despacho_registra_movimiento_por_stock_sede(motor, datos_base):
+def test_despacho_registra_movimiento_por_stock_sede(
+    motor, datos_base, dos_instituciones
+):
     """AC-9: la salida de auditoria referencia la sede y deja el legado intacto."""
     exigir_contrato_ticket_con_sede()
     ids = _instalar_flujo(motor)
@@ -299,6 +327,19 @@ def test_despacho_registra_movimiento_por_stock_sede(motor, datos_base):
         stock_actual=20, institucion_id=datos_base["institucion_id"],
     )
     asignar_sede_a_departamento(motor, datos_base["departamento_id"], sede_id)
+    usuario_solicitante = dos_instituciones["usuarios_inst01"]["Solicitante"]
+
+    with _cliente_creador(motor, dos_instituciones) as cliente_http:
+        alta = _crear_ticket(
+            cliente_http,
+            usuario_id=usuario_solicitante,
+            prioridad_id=datos_base["prioridad_id"],
+            estado_id=ids["Pendiente"],
+            producto_id=datos_base["producto_id"],
+            cantidad=4,
+        )
+        assert alta.status_code == 201, alta.text
+        ticket_id = alta.json()["ticket_id"]
 
     with cliente(
         motor,
@@ -306,15 +347,6 @@ def test_despacho_registra_movimiento_por_stock_sede(motor, datos_base):
         departamento_id=datos_base["departamento_id"],
         usuario_id=datos_base["usuario_id"],
     ) as cliente_http:
-        alta = _crear_ticket(
-            cliente_http,
-            usuario_id=datos_base["usuario_id"],
-            prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
-            producto_id=datos_base["producto_id"],
-            cantidad=4,
-        )
-        ticket_id = alta.json()["ticket_id"]
         _transicionar(cliente_http, ticket_id, ids["EnRevision"])
         _transicionar(cliente_http, ticket_id, ids["EnCurso"])
         despacho = cliente_http.post(
@@ -359,27 +391,27 @@ def test_ticket_legado_sin_sede_no_se_despacha(motor, datos_base):
     assert leer_estado_de_ticket(motor, ticket_id) == ids["EnCurso"]
 
 
-@pytest.mark.parametrize("rol", ["Bodeguero", "Solicitante"])
-def test_crear_ticket_sin_sede_de_departamento_afecta_a_todos_los_roles_creadores(
-    motor, dos_instituciones, rol
+def test_crear_ticket_solicitante_sin_sede_de_departamento_responde_409(
+    motor, dos_instituciones
 ):
-    """AC-6: la ausencia de sede bloquea el alta con independencia del rol creador."""
+    """AC-6: la ausencia de sede bloquea el unico alta vigente.
+
+    Enmienda 26/Nov/2026: Administrador y Bodeguero ya no llegan a esta regla
+    porque la matriz les responde 403 antes del payload (AC-22/AC-23), cubierto
+    en `test_alta_solo_solicitante_007.py`.
+    """
     exigir_contrato_ticket_con_sede()
     ids = _instalar_flujo(motor)
     asignar_sede_a_departamento(motor, dos_instituciones["departamento_id"], None)
+    usuario_solicitante = dos_instituciones["usuarios_inst01"]["Solicitante"]
 
-    with cliente(
-        motor,
-        rol,
-        departamento_id=dos_instituciones["departamento_id"],
-        usuario_id=dos_instituciones["usuarios_inst01"][rol],
-    ) as cliente_http:
+    with _cliente_creador(motor, dos_instituciones) as cliente_http:
         respuesta = _crear_ticket(
             cliente_http,
-            usuario_id=dos_instituciones["usuarios_inst01"][rol],
+            usuario_id=usuario_solicitante,
             prioridad_id=dos_instituciones["prioridad_id"],
             estado_id=ids["Pendiente"],
             producto_id=dos_instituciones["producto_id"],
         )
 
-    assert respuesta.status_code == 409, (rol, respuesta.text)
+    assert respuesta.status_code == 409, respuesta.text

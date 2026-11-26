@@ -21,8 +21,9 @@ Cubre ademas:
   `GET /compras/necesidades` y el pedido cierra normal (AC-35);
 * el `PATCH /estado` de legado: **403** para el Bodeguero, 200 y 409 para el
   Administrador (AC-28/AC-36/AC-49);
-* el alta administrativa sin confirmacion posible: el pedido queda
-  «Despachado» para siempre (AC-43/D-26);
+* los **tickets historicos** con autoria de Administrador/Bodeguero, sembrados
+  por ORM (enmienda 007 del 26/Nov/2026, D-16/E26N-6), sin confirmacion
+  posible: el pedido queda «Despachado» para siempre (AC-43/D-26);
 * la matriz de errores 401/403/404/409 de aprobacion y confirmacion
   (AC-43/AC-45/AC-46).
 
@@ -560,55 +561,81 @@ def test_patch_de_legado_solo_administrador_y_cierre_reservado(motor, datos_013)
 
 
 # ---------------------------------------------------------------------------
-# Alta administrativa: el dueño sin rol Solicitante no confirma
+# Tickets historicos: el dueño sin rol Solicitante no confirma
 # ---------------------------------------------------------------------------
 
 
-def test_altas_sin_rol_solicitante_quedan_despachadas_sin_confirmacion(
+def test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmacion(
     motor, datos_013
 ):
-    """AC-43/D-26: un pedido creado por Administrador o Bodeguero (dueño sin rol
-    Solicitante) no tiene confirmacion posible; tras el despacho permanece
-    «Despachado»."""
+    """AC-43/D-26: un ticket historico con autoria Administrador o Bodeguero
+    (dueño sin rol Solicitante) no tiene confirmacion posible; tras el despacho
+    permanece «Despachado».
+
+    Enmienda 007 del 26/Nov/2026 (D-16/E26N-6): la autoria se **siembra por
+    ORM**, no se crea con el alta (que ya solo ejerce el Solicitante,
+    AC-22/AC-23) y el autor no se reasigna.
+    """
     datos = datos_013
     administrador_id = datos["usuario_id"]
     bodeguero_id = datos["usuarios_inst01"]["Bodeguero"]
 
-    with cliente_de_rol(motor, datos, "Administrador") as admin:
-        ticket_id = _alta(admin, datos, asunto="Alta administrativa del e2e")
+    # Ticket historico con autor Administrador: se siembra por ORM.
+    ticket_administrador = sembrar_ticket(
+        motor,
+        datos,
+        usuario_id=administrador_id,
+        estado_id=datos["estados"]["Pendiente"],
+        asunto="Ticket historico del Administrador (e2e 013)",
+    )
 
-        detalle = _detalle(admin, ticket_id)
+    with cliente_de_rol(motor, datos, "Administrador") as admin:
+        detalle = _detalle(admin, ticket_administrador)
         assert detalle["usuario_id"] == administrador_id, (
-            "la autoria es la identidad de la sesion (Administrador)"
+            "la autoria historica es la del Administrador y no se reasigna"
         )
         assert detalle["etiqueta_proceso"] == ETIQUETA_EN_APROBACION
 
-        aprobacion = _aprobar(admin, ticket_id)
+        aprobacion = _aprobar(admin, ticket_administrador)
         assert aprobacion.status_code == 200, aprobacion.text
 
-        despacho = _despachar(admin, ticket_id, administrador_id)
+        despacho = _despachar(admin, ticket_administrador, administrador_id)
         assert despacho.status_code == 200, despacho.text
         assert despacho.json()["estado_id"] == datos["estados"]["Cerrado"]
 
         # El Administrador no tiene la operacion de confirmacion (403 por
         # matriz); el pedido se queda «Despachado» para siempre.
-        confirmacion = _confirmar(admin, ticket_id)
+        confirmacion = _confirmar(admin, ticket_administrador)
         assert confirmacion.status_code == 403, confirmacion.text
 
-        detalle = _detalle(admin, ticket_id)
+        detalle = _detalle(admin, ticket_administrador)
+        assert detalle["usuario_id"] == administrador_id
         assert detalle["estado_id"] == datos["estados"]["Cerrado"]
         assert detalle["entrega_confirmada"] is False
         assert detalle["etiqueta_proceso"] == ETIQUETA_DESPACHADO
         assert _filas_por_motivo(
-            leer_historial(admin, ticket_id), MOTIVO_CONFIRMACION
+            leer_historial(admin, ticket_administrador), MOTIVO_CONFIRMACION
         ) == [], "no se inventa una confirmacion por otro rol"
 
-    # El mismo caso con un pedido creado por el Bodeguero: tampoco confirma.
-    with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
-        ticket_bodeguero = _alta(bodeguero, datos, asunto="Alta del Bodeguero")
-        assert _detalle(bodeguero, ticket_bodeguero)["usuario_id"] == bodeguero_id
+    # Un Solicitante que no es el dueño tampoco confirma: 404 de ocultamiento.
+    with cliente_de_rol(motor, datos, "Solicitante") as solicitante:
+        ajena = _confirmar(solicitante, ticket_administrador)
+        assert ajena.status_code == 404, ajena.text
+
+    # El mismo caso con un ticket historico del Bodeguero: tampoco confirma.
+    ticket_bodeguero = sembrar_ticket(
+        motor,
+        datos,
+        usuario_id=bodeguero_id,
+        estado_id=datos["estados"]["Pendiente"],
+        asunto="Ticket historico del Bodeguero (e2e 013)",
+    )
 
     with cliente_de_rol(motor, datos, "Administrador") as admin:
+        detalle = _detalle(admin, ticket_bodeguero)
+        assert detalle["usuario_id"] == bodeguero_id, (
+            "la autoria historica del Bodeguero no se reasigna"
+        )
         aprobacion = _aprobar(admin, ticket_bodeguero)
         assert aprobacion.status_code == 200, aprobacion.text
 
@@ -617,6 +644,7 @@ def test_altas_sin_rol_solicitante_quedan_despachadas_sin_confirmacion(
         assert despacho.status_code == 200, despacho.text
         assert _confirmar(bodeguero, ticket_bodeguero).status_code == 403
         detalle = _detalle(bodeguero, ticket_bodeguero)
+        assert detalle["usuario_id"] == bodeguero_id
         assert detalle["entrega_confirmada"] is False
         assert detalle["etiqueta_proceso"] == ETIQUETA_DESPACHADO
 

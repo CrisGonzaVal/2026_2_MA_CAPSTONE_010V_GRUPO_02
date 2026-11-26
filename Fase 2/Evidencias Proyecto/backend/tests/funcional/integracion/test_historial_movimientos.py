@@ -127,8 +127,13 @@ def datos_despacho(motor, datos_base):
     return datos
 
 
-def _abrir_ticket_en_curso(cliente, datos, detalles) -> int:
-    """Da de alta un ticket y lo lleva a `EnCurso` por la API; devuelve su id."""
+def _abrir_ticket_en_curso(cliente, actuar_como, datos, detalles) -> int:
+    """Da de alta un ticket como Solicitante y lo lleva a `EnCurso` como Admin.
+
+    Enmienda 26/Nov/2026: el alta solo la ejerce el Solicitante; el avance por
+    `PATCH` conserva al Administrador. Devuelve el id del ticket.
+    """
+    actuar_como("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
         json={
@@ -142,6 +147,7 @@ def _abrir_ticket_en_curso(cliente, datos, detalles) -> int:
     )
     assert respuesta.status_code == 201, respuesta.text
     ticket_id = respuesta.json()["ticket_id"]
+    actuar_como("Administrador")
     for estado_id in (datos["estado_en_revision_id"], datos["estado_en_curso_id"]):
         avance = cliente.patch(
             f"/api/v1/tickets/{ticket_id}/estado", json={"estado_id": estado_id}
@@ -250,7 +256,7 @@ def test_historial_ordena_por_fecha_desc_y_desempata_por_id_desc(
 
 
 def test_la_salida_de_un_despacho_aparece_en_el_historial_por_stock_sede(
-    cliente, motor, datos_despacho
+    cliente, actuar_como, motor, datos_despacho
 ):
     """AC-9 (Feature 011): el despacho audita contra `stock_sede` y se lee en el historial.
 
@@ -262,6 +268,7 @@ def test_la_salida_de_un_despacho_aparece_en_el_historial_por_stock_sede(
     """
     ticket_id = _abrir_ticket_en_curso(
         cliente,
+        actuar_como,
         datos_despacho,
         [{"producto_id": datos_despacho["producto_id"], "cantidad_solicitada": 3}],
     )

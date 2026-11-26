@@ -204,11 +204,18 @@ def _payload_alta(datos, estado_id: int) -> dict:
     }
 
 
-def crear_ticket_con_estado(cliente, datos, estado_id: int) -> int:
-    """Alta via API en el estado indicado; devuelve el `ticket_id`."""
+def crear_ticket_con_estado(cliente, actuar_como, datos, estado_id: int) -> int:
+    """Alta via API en `Pendiente` como Solicitante; devuelve el `ticket_id`.
+
+    Enmienda 26/Nov/2026: el alta solo la ejerce el Solicitante. Al volver, la
+    sesion queda en Administrador para conservar el flujo por `PATCH`.
+    """
+    actuar_como("Solicitante")
     respuesta = cliente.post("/api/v1/tickets/", json=_payload_alta(datos, estado_id))
     assert respuesta.status_code == 201, respuesta.text
-    return respuesta.json()["ticket_id"]
+    ticket_id = respuesta.json()["ticket_id"]
+    actuar_como("Administrador")
+    return ticket_id
 
 
 def sembrar_ticket(motor, datos, estado_id: int, *, fecha_cierre=None) -> int:
@@ -263,10 +270,12 @@ def cambiar_estado(cliente, ticket_id: int, estado_id: int):
 # --- Transiciones validas: un paso en cualquier direccion (AC-9, AC-10) ---
 
 
-def test_avanzar_un_paso_pasa_al_siguiente_estado(cliente, datos_flujo_canonico):
+def test_avanzar_un_paso_pasa_al_siguiente_estado(
+    cliente, actuar_como, datos_flujo_canonico
+):
     """Pendiente -> EnRevision es un paso: 200 y el ticket queda ahí."""
     ticket_id = crear_ticket_con_estado(
-        cliente, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
+        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
     )
 
     respuesta = cambiar_estado(
@@ -297,10 +306,12 @@ def test_retroceder_un_paso_vuelve_al_estado_anterior(
 # --- Rechazos del flujo (AC-13) ---
 
 
-def test_salto_de_estado_se_rechaza_con_409(cliente, datos_flujo_canonico):
+def test_salto_de_estado_se_rechaza_con_409(
+    cliente, actuar_como, datos_flujo_canonico
+):
     """Pendiente -> EnCurso salta EnRevision: 409 y el ticket no cambia."""
     ticket_id = crear_ticket_con_estado(
-        cliente, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
+        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
     )
 
     respuesta = cambiar_estado(
@@ -313,10 +324,12 @@ def test_salto_de_estado_se_rechaza_con_409(cliente, datos_flujo_canonico):
     ], "un 409 no puede dejar el ticket en otro estado"
 
 
-def test_pedir_el_estado_actual_se_rechaza_con_409(cliente, datos_flujo_canonico):
+def test_pedir_el_estado_actual_se_rechaza_con_409(
+    cliente, actuar_como, datos_flujo_canonico
+):
     """Pedir el estado en el que ya está no es una transición: 409."""
     ticket_id = crear_ticket_con_estado(
-        cliente, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
+        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
     )
 
     respuesta = cambiar_estado(
@@ -354,7 +367,7 @@ def test_retroceso_desde_el_terminal_se_rechaza_con_409(
 
 
 def test_estado_inexistente_responde_404_sin_modificar(
-    cliente_sin_excepcion, datos_flujo_canonico
+    cliente_sin_excepcion, actuar_como, datos_flujo_canonico
 ):
     """Un estado que no existe en el catálogo es 404 nombrando la referencia.
 
@@ -364,6 +377,7 @@ def test_estado_inexistente_responde_404_sin_modificar(
     """
     ticket_id = crear_ticket_con_estado(
         cliente_sin_excepcion,
+        actuar_como,
         datos_flujo_canonico,
         datos_flujo_canonico["estado_pendiente_id"],
     )
@@ -515,7 +529,7 @@ def test_una_transicion_no_reservada_desde_en_curso_sigue_siendo_200(
 
 
 def test_el_alta_en_cerrado_minuscula_se_rechaza_con_409(
-    cliente, datos_flujo_cerrado_minuscula
+    cliente, actuar_como, datos_flujo_cerrado_minuscula
 ):
     """Enmienda AC-27 (05/Nov/2026): derogado el alta directa en `Cerrado`.
 
@@ -523,6 +537,7 @@ def test_el_alta_en_cerrado_minuscula_se_rechaza_con_409(
     AC-18 de la 004); hoy el unico estado inicial es `Pendiente` y el alta en
     `CERRADO` responde 409, con independencia del casing.
     """
+    actuar_como("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
         json=_payload_alta(
@@ -577,13 +592,14 @@ def test_salir_de_cerrado_responde_409_y_conserva_la_fecha_sellada(
 
 
 def test_crear_ticket_en_cerrado_se_rechaza_con_409(
-    cliente, datos_flujo_canonico
+    cliente, actuar_como, datos_flujo_canonico
 ):
     """Enmienda AC-27 (05/Nov/2026): derogado el AC-17 de la 004 en el alta.
 
     `Cerrado` solo se alcanza por el despacho transaccional de la 005; el alta
     en ese estado responde 409 y no sella nada porque no escribe nada.
     """
+    actuar_como("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
         json=_payload_alta(
@@ -599,7 +615,7 @@ def test_crear_ticket_en_cerrado_se_rechaza_con_409(
 
 
 def test_listar_tickets_ordena_por_fecha_desc_y_ticket_id_desc(
-    cliente, datos_flujo_canonico
+    cliente, actuar_como, datos_flujo_canonico
 ):
     """AC-27: `fecha_creacion DESC` y, en empate, `ticket_id DESC`.
 
@@ -610,6 +626,7 @@ def test_listar_tickets_ordena_por_fecha_desc_y_ticket_id_desc(
     ids = [
         crear_ticket_con_estado(
             cliente,
+            actuar_como,
             datos_flujo_canonico,
             datos_flujo_canonico["estado_pendiente_id"],
         )
@@ -631,7 +648,7 @@ def test_listar_tickets_ordena_por_fecha_desc_y_ticket_id_desc(
 
 
 def test_listar_tickets_no_hace_consultas_por_ticket(
-    cliente, motor, datos_flujo_canonico
+    cliente, actuar_como, motor, datos_flujo_canonico
 ):
     """AC-27: con carga eager en cadena, el nº de SELECT no crece con los tickets.
 
@@ -648,6 +665,7 @@ def test_listar_tickets_no_hace_consultas_por_ticket(
     try:
         crear_ticket_con_estado(
             cliente,
+            actuar_como,
             datos_flujo_canonico,
             datos_flujo_canonico["estado_pendiente_id"],
         )
@@ -658,6 +676,7 @@ def test_listar_tickets_no_hace_consultas_por_ticket(
         for _ in range(2):
             crear_ticket_con_estado(
                 cliente,
+                actuar_como,
                 datos_flujo_canonico,
                 datos_flujo_canonico["estado_pendiente_id"],
             )

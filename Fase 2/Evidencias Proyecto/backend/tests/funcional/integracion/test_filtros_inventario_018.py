@@ -846,6 +846,9 @@ def test_matriz_conserva_las_operaciones_previas_intactas():
 
     Se compara contra las transcripciones historicas independientes de las
     Features 012, 013 y 014 (nunca contra `MATRIZ_PERMISOS` como fuente).
+    Enmienda 26/Nov/2026 de la 007 (D-11/AC-29/AC-33): la restriccion
+    documentada heredada de la 013 tambien fija el alta de tickets en solo
+    Solicitante; la 018 no la toca y conserva todos sus conteos.
     """
     for clave in OPERACIONES_018:
         _exigir_operacion_018(*clave)
@@ -855,6 +858,8 @@ def test_matriz_conserva_las_operaciones_previas_intactas():
         if clave in RESTRINGIDAS_013:
             # Ampliacion 25/Nov/2026 de la 013 (§9.10, AC-49): el `PATCH /estado`
             # se restringe a solo Administrador; la entrada no se retira.
+            # Enmienda 26/Nov/2026 de la 007 (D-11): el alta se restringe a solo
+            # Solicitante; tampoco se retira.
             assert set(actual) == RESTRINGIDAS_013[clave], clave
             continue
         esperado = set(roles) - ({"Superadmin"} if clave in RETIRADAS_017 else set())
@@ -867,6 +872,10 @@ def test_matriz_conserva_las_operaciones_previas_intactas():
         actual = permisos.MATRIZ_PERMISOS.get(clave)
         assert actual is not None, f"la operacion de la 014 {clave} desaparecio"
         assert set(actual) == roles, clave
+    # La restriccion documentada importada de la 013 incluye el alta de tickets.
+    assert set(permisos.MATRIZ_PERMISOS[("POST", "/api/v1/tickets/")]) == {
+        "Solicitante"
+    }
 
 
 def test_matriz_tiene_exactamente_61_operaciones_tras_018():

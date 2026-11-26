@@ -45,16 +45,23 @@ _SEDE_BASE_ID: int | None = None
 #: departamental.
 _MOTOR = None
 
+#: Cambio de rol de la sesion, fijado por el fixture autouse. Enmienda 26/Nov/2026
+#: (E26N-5): los helpers de alta crean como Solicitante y devuelven la sesion a
+#: Administrador para el `PATCH`/despacho, sin recrear el `TestClient`.
+_ACTUAR_COMO = None
+
 
 @pytest.fixture(autouse=True)
-def _sede_de_datos_base(motor, datos_base):
+def _sede_de_datos_base(motor, datos_base, actuar_como):
     """Feature 011 (T9): toda alta/despacho exige la sede del departamento.
 
     Se siembra una sede de INST01 para el departamento de `datos_base` con stock
     para su producto. `datos_despacho` anade despues el stock del producto escaso.
+    Enmienda 26/Nov/2026 (E26N-5): expone `actuar_como` a los helpers de alta.
     """
-    global _SEDE_BASE_ID, _MOTOR
+    global _SEDE_BASE_ID, _MOTOR, _ACTUAR_COMO
     _MOTOR = motor
+    _ACTUAR_COMO = actuar_como
     sede_base = asegurar_sede_de_departamento(
         motor, datos_base, stocks={datos_base["producto_id"]: 50}
     )
@@ -338,11 +345,15 @@ def datos_inventario_invalido(motor, datos_base):
 
 
 def abrir_ticket_en_curso(cliente, datos, detalles) -> int:
-    """Da de alta un ticket en `Pendiente` y lo avanza a `EnCurso` por la API.
+    """Da de alta un ticket en `Pendiente` (Solicitante) y lo avanza con Admin.
 
     Devuelve el `ticket_id`. Se avanza con el PATCH de la 004 (dos pasos
     contiguos) para llegar al único estado elegible sin sembrar la base a mano.
+    Enmienda 26/Nov/2026: el alta es solo del Solicitante y el `PATCH` sigue
+    siendo del Administrador; el helper alterna ambos roles sobre el mismo
+    cliente.
     """
+    _ACTUAR_COMO("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
         json={
@@ -357,6 +368,7 @@ def abrir_ticket_en_curso(cliente, datos, detalles) -> int:
     assert respuesta.status_code == 201, respuesta.text
     ticket_id = respuesta.json()["ticket_id"]
 
+    _ACTUAR_COMO("Administrador")
     for estado_id in (datos["estado_en_revision_id"], datos["estado_en_curso_id"]):
         avance = cliente.patch(
             f"/api/v1/tickets/{ticket_id}/estado", json={"estado_id": estado_id}
@@ -371,11 +383,14 @@ def despachar(cliente, ticket_id: int, payload):
 
 
 def crear_ticket_en_estado(cliente, datos, estado_id: int, detalles) -> int:
-    """Alta por API en un estado arbitrario; devuelve el `ticket_id`.
+    """Alta por API como Solicitante; devuelve el `ticket_id`.
 
     Sirve para los casos que no parten de `EnCurso` (estado no elegible,
-    catalogos degenerados) sin sembrar la tabla a mano.
+    catalogos degenerados) sin sembrar la tabla a mano. Enmienda 26/Nov/2026: el
+    alta la ejerce el Solicitante y la sesion vuelve a Administrador para que el
+    despacho posterior conserve su rol.
     """
+    _ACTUAR_COMO("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
         json={
@@ -388,6 +403,7 @@ def crear_ticket_en_estado(cliente, datos, estado_id: int, detalles) -> int:
         },
     )
     assert respuesta.status_code == 201, respuesta.text
+    _ACTUAR_COMO("Administrador")
     return respuesta.json()["ticket_id"]
 
 

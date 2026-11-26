@@ -177,8 +177,14 @@ RETIRADAS_017: frozenset[tuple[str, str]] = frozenset(
 #: `PATCH /estado` de la transcripcion historica queda **solo** para el
 #: Administrador. Es una restriccion documentada de la entrada (que no se
 #: retira), no una relajacion; el Bodeguero conserva despacho y rechazo.
+#: Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29/AC-33): el alta de tickets
+#: de la transcripcion historica (`_ESCRITURA_TICKETS`) queda **solo** para el
+#: Solicitante; Administrador y Bodeguero reciben 403. La entrada se conserva.
+#: Este mapa es la restriccion documentada que consumen tambien las
+#: transcripciones de la 014 y la 018.
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+    ("POST", "/api/v1/tickets/"): {"Solicitante"},
 }
 
 
@@ -188,7 +194,8 @@ def test_matriz_conserva_las_44_operaciones_previas_intactas_ac_17():
     Feature 017: las 11 lecturas de D-9 ajustan solo el rol Superadmin; los
     roles institucionales conservan exactamente el conjunto de la 012.
     Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH /estado` se restringe a
-    solo Administrador.
+    solo Administrador. Enmienda 26/Nov/2026 de la 007 (D-11/AC-29/AC-33): el
+    alta de tickets se restringe a solo Solicitante.
     """
     assert len(MATRIZ_012) == 44
     for clave, roles in MATRIZ_012.items():

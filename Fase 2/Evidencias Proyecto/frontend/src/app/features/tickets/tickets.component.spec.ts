@@ -383,7 +383,7 @@ describe('TicketsComponent', () => {
   beforeEach(async () => {
     // El tablero no condiciona su lectura al rol (D-14: sin controles de
     // mutación que ocultar), pero el alta de pedidos sí se oculta por rol
-    // (cambio de demo 25/Nov/2026) y el modal lee la identidad para presentar
+    // (enmienda 007, 26/Nov/2026) y el modal lee la identidad para presentar
     // el autor informativo (AC-34). Se inyecta un doble con una señal para
     // poder variarla.
     identidad = signal<IdentidadAutenticada | null>(crearIdentidad());
@@ -1017,7 +1017,7 @@ describe('TicketsComponent', () => {
     it('no pinta el banner de «solo consulta» de la 004 (derogado con D-14)', () => {
       // El tablero ya no muta para nadie: no hay controles de transición que
       // ocultar. La única pieza condicionada al rol es el alta de pedidos
-      // (cambio de demo 25/Nov/2026), no el Kanban.
+      // (enmienda 007, 26/Nov/2026), no el Kanban.
       expect(fixture.nativeElement.textContent).not.toContain('Vista de solo consulta');
       expect(
         fixture.nativeElement.querySelector('button[aria-label^="Avanzar ticket"]')
@@ -1795,12 +1795,11 @@ describe('TicketsComponent', () => {
   });
 
   /**
-   * Cambio de demo del 25/Nov/2026: el alta de pedidos se oculta a
-   * Administrador y Bodeguero; el Solicitante la conserva. Es solo la
-   * visibilidad del botón: la API sigue admitiendo a los tres roles hasta la
-   * implementación de negocio del alta por sede.
+   * Enmienda de la 007 (26/Nov/2026): solo el Solicitante crea tickets, así
+   * que el botón de alta se oculta a Administrador, Bodeguero y Superadmin.
+   * La API es la frontera y responde 403 a esos roles.
    */
-  describe('alta de pedidos por rol (demo 25/Nov/2026)', () => {
+  describe('alta de pedidos por rol (enmienda 007, 26/Nov/2026)', () => {
     function botonCrearPedido(): HTMLButtonElement | null {
       const botones = Array.from(
         fixture.nativeElement.querySelectorAll(

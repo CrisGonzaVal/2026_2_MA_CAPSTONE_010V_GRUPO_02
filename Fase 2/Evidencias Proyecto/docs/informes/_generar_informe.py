@@ -352,7 +352,7 @@ MATRIX = [
     ("Filtrar inventario por sede/departamento", "—", "Sí", "Sí (sede fija)", "—"),
     ("Gestionar catálogo y ciclo de vida", "—", "Sí", "—", "—"),
     ("Registrar movimientos de stock", "—", "API", "API", "—"),
-    ("Crear pedido", "—", "Sí", "Sí", "Sí (principal)"),
+    ("Crear pedido", "—", "—", "—", "Sí (principal)"),
     ("Avanzar o retroceder pedido", "—", "Sí", "Sí", "—"),
     ("Rechazar pedido con motivo", "—", "Sí", "Sí", "—"),
     ("Editar pedido", "—", "Sí", "—", "Propio (Pendiente)"),

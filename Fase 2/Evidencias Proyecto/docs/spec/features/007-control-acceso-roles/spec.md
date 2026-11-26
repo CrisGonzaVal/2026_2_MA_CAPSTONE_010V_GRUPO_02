@@ -1,12 +1,19 @@
 # Feature 007: Control de acceso por roles y retiro de credenciales locales
 
-**Estado:** Cerrada y verificada  
+**Estado:** Cerrada y verificada; con enmienda posterior cerrada (26/Nov/2026)  
 **Release:** 2.0 — Sprint 3  
 **Tipo:** Autorización y saneamiento de credenciales
 
 > **Enmienda posterior al cierre (22/Oct/2026):** la Feature 007 permanece cerrada y
 > verificada. Esta enmienda posterior solo ajusta presentación/contrato de alta de ticket;
 > no cambia la matriz de roles, DDL, dependencias ni permisos por operación.
+
+> **Enmienda posterior al cierre (26/Nov/2026):** la Feature 007 sigue cerrada y verificada
+> en su alcance original. Esta segunda enmienda restringe la fila de `POST /tickets/` de la
+> matriz al **Solicitante** y supera el alcance de roles de AC-6, AC-18 y AC-20; no cambia nada
+> más de la matriz, el DDL, las dependencias, la autenticación ni las capacidades. Ver
+> «Enmienda posterior al cierre: alta de tickets reservada al Solicitante — 26/Nov/2026», al
+> final de §7.
 
 ## 1. Problema
 
@@ -138,6 +145,12 @@ Las solicitudes con parámetros `departamento_id` de otra institución para
 `/inventario/existencias` o `/stock` responden 403 para los roles limitados; no se
 silencia ni se aplica un filtro alternativo. Los catálogos de prioridad/estado y roles
 son compartidos.
+
+> **Superación de la fila `POST /tickets/` (26/Nov/2026).** La fila de `POST /tickets/` de
+> esta tabla es **histórica**: la enmienda del 26/Nov/2026 la restringe a **solo
+> `Solicitante`**. La tabla, la nota de autoatribución y la evidencia de AC-18/AC-20 se
+> conservan como registro; la regla vigente está en «Enmienda posterior al cierre: alta de
+> tickets reservada al Solicitante — 26/Nov/2026», al final de §7.
 
 ### D-4 — Límites institucionales desde 007
 
@@ -430,6 +443,14 @@ contrato invalida.
 - **AC-20 — Herencia del ámbito y sede.** DADO Administrador o Bodeguero cuya identidad está vinculada a un departamento con sede, CUANDO crea un ticket válido, ENTONCES el ticket y su instantánea de sede corresponden al departamento autenticado. Si no hay sede asignada, responde 409 sin ticket ni detalle parcial. No se usa `usuario.sede_id` como sustituto de `departamento.sede_id`.
   - *Evidencia (observada 22/Oct/2026):* `test_tickets_alcance.py::test_departamento_sin_sede_responde_409_sin_ticket_detalle_ni_historial` y `test_ticket_sede_011.py::test_crear_ticket_sin_sede_de_departamento_afecta_a_todos_los_roles_creadores` (409 sin ticket ni detalle), frente a `test_ticket_sede_011.py::test_crear_ticket_almacena_la_sede_del_departamento` (201 con la sede del departamento). En 4200 y en BD: Administrador (usuario 13, Dirección) → ticket 11 con `sede_id 1`; Solicitante (usuario 11, Biblioteca) → ticket 12 con `sede_id 2`; sin usar `usuario.sede_id`. Evidencia: [`evidencia/README.md`](evidencia/README.md).
 
+> **Nota de superación de AC-18 y AC-20 (26/Nov/2026).** Ambos criterios y su evidencia se
+> conservan como **registro histórico** de lo observado el 22/Oct/2026. Desde la enmienda del
+> 26/Nov/2026, Administrador y Bodeguero reciben **403** en `POST /tickets/`: los 201 de esos
+> roles quedan como registro y los tests vivos dejan de reproducirlos. En su alcance de roles,
+> la misma superación alcanza la frase de AC-6 que describe el alta de Administrador y
+> Bodeguero. La regla de autoatribución del alta (D-8) sigue vigente para el único rol
+> autorizado, el Solicitante.
+
 #### Evidencia anterior afectada
 
 En AC-6, AC-15 y su tabla de evidencia queda obsoleto el test histórico del `usuario_id`
@@ -441,6 +462,343 @@ Toda evidencia nueva quedó reescrita tras la enmienda en la fase de implementac
 
 **Actualización 22/Oct/2026:** reescritura ejecutada; la evidencia observada de AC-18…AC-20
 está en los propios AC y en [`evidencia/README.md`](evidencia/README.md).
+
+### Enmienda posterior al cierre: alta de tickets reservada al Solicitante — 26/Nov/2026
+
+> **Qué enmienda.** No reescribe el cierre ni la evidencia de AC-1…AC-20. Restringe **una
+> fila existente** de la matriz de D-3: `POST /api/v1/tickets/` pasa de
+> `{Administrador, Bodeguero, Solicitante}` a `{Solicitante}`. No agrega ni retira
+> operaciones, no toca DDL, semilla, versión de esquema, autenticación, capacidades, modelo
+> de datos ni servicios. Convierte en regla de servidor lo que el 25/Nov/2026 solo se hizo en
+> la interfaz.
+
+#### Problema
+
+El 25/Nov/2026 se ocultó «+ Crear pedido» a Administrador y Bodeguero **solo en la UI**
+(`ROLES_CREACION_TICKETS = ['Solicitante']`), mientras la API siguió admitiendo a los tres
+roles. Esa demo dejó dos verdades: la vista dice una cosa y la matriz otra. Cualquier cliente
+fuera de Angular puede crear un ticket con un rol que la vista ya no ofrece; la enmienda de
+22/Oct/2026 (AC-18) verificó y documentó ese 201 para Administrador y Bodeguero, así que no
+es una sospecha.
+
+El hueco no es cosmético. Un ticket creado por Administrador o Bodeguero queda atribuido a
+esa identidad y hereda la sede e institución del departamento de esa identidad, que no es el
+de un funcionario solicitante que demanda para el suyo. Eso produce demanda falsa en el
+tablero y en Compras (020/021), y un pedido sin dueño Solicitante que pueda confirmar la
+entrega (013 AC-43). Además, ocultar un botón no autoriza: la frontera es la API.
+
+#### Qué cambia
+
+- La fila `POST /api/v1/tickets/` de `MATRIZ_PERMISOS` queda en **solo `Solicitante`**. La
+  matriz conserva **75** operaciones: cambian los roles de una entrada existente, no su
+  número.
+- Administrador y Bodeguero pasan de 201 a **403** por matriz; Superadmin sigue en 403.
+- El 403 se resuelve antes de validar el cuerpo, con JSON parseable, y no deja filas nuevas.
+- La descripción de la operación en `/openapi.json` declara que solo el Solicitante crea.
+- La UI deja de describirse como demo: el botón ya estaba oculto y solo se actualizan los
+  comentarios y los títulos de pruebas. **No** se añade una guarda de apertura del modal.
+- Se actualizan el docstring de `crear_ticket` (que aún enumera los tres roles), las notas de
+  la 003 y la transcripción de la 012, y al implementar `MEMORY.md` y el roadmap.
+
+#### Qué no cambia
+
+- El servicio de alta: autoatribución de sesión, `usuario_id` opcional e ignorado, institución
+  y sede derivadas de la identidad, `Pendiente` por nombre canónico, validaciones,
+  transacción e historial de creación.
+- `GET /tickets/catalogos` y su lista `solicitantes`; el listado, el detalle, el historial, el
+  tablero y sus filtros.
+- Aprobación, despacho, rechazo, anulación, edición, `PATCH /estado` y confirmación de
+  entrega, con sus roles actuales.
+- La capacidad `tickets`, que sigue gateando el alta como condición adicional.
+- El contrato declarado: `POST /api/v1/tickets/` publica `201, 401, 403, 404 y 422`; el 409
+  sigue apareciendo **solo en la descripción** y esta enmienda no añade ni retira respuestas.
+- DDL, datos semilla, versión `026.0`, tablas, entidades, autenticación Clerk y el conjunto
+  cerrado de capacidades.
+- Los tickets existentes y su autoría: no se reasignan, no se anulan y no se borran.
+
+#### Por qué una enmienda
+
+La matriz por operación es el artefacto de la 007 (D-3) y esta decisión no crea operaciones,
+flujo, DDL ni capacidades: ajusta los roles de una fila y su contrato. Tramitarlo como feature
+independiente (se descartó la carpeta 028) duplicaría la fuente de verdad y sugeriría un
+alcance nuevo que no existe. La enmienda conserva el cierre original, anota la superación de
+AC-6/AC-18/AC-20 y deja una única regla vigente.
+
+#### Decisiones de la enmienda
+
+##### D-11 — Solo el Solicitante emite pedidos de insumo
+
+El único rol autorizado a `POST /api/v1/tickets/` es `Solicitante`. La denegación es por rol:
+no depende del payload, la institución, el departamento ni el ticket.
+
+**Por qué:** la constitución asigna al Solicitante la emisión de requerimientos para su
+departamento; el Bodeguero abastece y el Administrador administra. Un ticket de esos roles no
+representa la demanda de un Solicitante, ensucia la cobertura de Compras y nace sin dueño que
+pueda confirmar la entrega (013 AC-43). La regla también elimina la duplicidad «la vista dice
+una cosa, la API otra», que es exactamente lo que una matriz central existe para evitar.
+
+##### D-12 — La matriz es la frontera; el servicio de alta no repite el rol
+
+La restricción vive en la fila de la matriz y en la dependencia de autorización del endpoint.
+El servicio que persiste el ticket sigue siendo agnóstico del rol: autoatribuye la identidad
+recibida y no vuelve a preguntar si es Solicitante.
+
+**Por qué:** la 007 fija que la política es central y explícita por operación (D-3) y que los
+servicios reciben la identidad ya resuelta, no flags de confianza. Duplicar la regla en el
+servicio crearía dos fuentes que pueden divergir y rompería dos casos legítimos: las pruebas
+que ejercen el servicio directamente y la creación interna de tickets sin sesión (el ticket
+automático de la 016), que no tiene un rol de sesión que consultar.
+
+**Alternativa descartada:** añadir un `if rol != Solicitante` dentro de `crear_ticket`. Se
+descarta por duplicación, por acoplar la persistencia a un rol y por bloquear la creación
+interna futura.
+
+##### D-13 — El 403 de matriz es anterior al payload con JSON parseable
+
+Con un cuerpo **JSON parseable**, el 403 de matriz se resuelve antes de la validación del
+contrato: Administrador y Bodeguero reciben 403 aunque el payload tenga asunto corto,
+`detalles` vacío, cantidad no positiva, campo extra o `estado_id` ausente. No se abre
+transacción y no hay filas nuevas. Un cuerpo que **no** es JSON parseable puede producir 422
+antes de que se resuelvan las dependencias; queda fuera de esta garantía y no se reordena
+nada para cambiarlo.
+
+**Por qué:** fail closed sin filtrar la forma del contrato ni dejar escritura parcial. La
+ausencia de escritura no se promete por un `rollback`, sino porque la petición no llega al
+servicio.
+
+##### D-14 — La capacidad `tickets` sigue siendo un gating adicional
+
+Con `tickets` habilitada, el Solicitante crea y Administrador/Bodeguero siguen en 403 por
+matriz. Con `tickets` apagada, el Solicitante también recibe 403. La capacidad describe la
+disponibilidad funcional de la institución (012 D-6); el rol describe quién puede ejecutar la
+operación.
+
+**Por qué:** son ejes ortogonales. Convertir la capacidad en la regla de rol obligaría a que
+una institución «apagara» el alta para impedir que su Administrador cree tickets, que es un
+error de modelado y una regresión del gating existente.
+
+##### D-15 — La UI es espejo; el cambio se limita a lo ya oculto y a sus comentarios
+
+«+ Crear pedido» se muestra solo al Solicitante; el botón ya está oculto desde el
+25/Nov/2026. Administrador y Bodeguero conservan el acceso a `/tickets`, el tablero y el
+detalle, y no tienen ningún otro control visible que abra el modal. El Solicitante conserva
+el botón, el modal y el envío sin `usuario_id`. **No** se añade una guarda de apertura dentro
+del componente.
+
+**Por qué:** retirar `/tickets` a Administrador y Bodeguero les quitaría la aprobación, el
+despacho, el rechazo y la consulta, que sí les corresponden. Una guarda de apertura
+duplicaría en la vista una defensa que no es la frontera y añadiría superficie sin valor de
+seguridad; la regla se prueba en la API.
+
+##### D-16 — Los tickets históricos no se tocan
+
+Los tickets creados antes por Administrador o Bodeguero conservan su autor, institución, sede,
+detalles e historial y se operan según su estado con las reglas vigentes. Ninguno de esos
+pedidos admite confirmación de entrega si su dueño no es Solicitante, como ya documenta la 013
+AC-43.
+
+**Por qué:** la autoría es un hecho histórico y la trazabilidad es un principio inmutable del
+sistema (`constitucion.md` §4, principio 2). Reasignar autores para «arreglar» el pasado
+falsificaría la auditoría. Esta enmienda cambia quién puede crear, no quién creó.
+
+##### D-17 — Superación histórica de 003 AC-33 y 007 AC-6/AC-18/AC-20, sin reescribir la evidencia
+
+La regla de autoatribución sigue vigente y ahora se aplica al único rol autorizado: el
+Solicitante. Lo que queda **superado** es el alcance de roles: la 003 AC-33 y su evidencia de
+201 para Administrador/Bodeguero; la 007 AC-18 y AC-20; y la frase de AC-6 que describe el
+alta de Administrador y Bodeguero. La transcripción histórica de D-3 y toda la evidencia
+observada el 22/Oct/2026 se conservan como registro, con su nota de superación; no se
+reescriben ni se borran.
+
+**Por qué:** el SDD mantiene la trazabilidad de las decisiones. Cambiar el pasado ocultaría
+que el sistema admitió esos 201 y por qué se retiraron. La nota de superación permite leer la
+historia sin confundirla con la regla vigente.
+
+##### D-18 — Alta del Bodeguero por sede y ticket automático 016: fuera de alcance
+
+El Bodeguero no gana aquí ninguna capacidad de alta, ni siquiera acotada a su sede. Cuando se
+implemente, será una operación y un flujo propios (reposición por sede), con su spec, y no una
+reapertura silenciosa de `POST /tickets/` para ese rol. El ticket automático por stock mínimo
+pertenece a la 016 y se apoya en el servicio de alta, que D-12 mantiene independiente del rol.
+
+**Por qué:** mezclar ambas cosas reintroduciría la ambigüedad que esta enmienda cierra y
+obligaría a decidir hoy reglas de reposición (sede destino, cantidades, aprobación) que no
+están definidas. La fila única del alta queda limpia: Solicitante, y nada más.
+
+#### Reglas del flujo de la enmienda
+
+| Rol | `POST /api/v1/tickets/` | Efecto |
+|---|---|---|
+| **Solicitante** | **201** con payload válido y capacidad `tickets` habilitada; 422/404/409 según las reglas vigentes del alta | Ticket y detalles en una sola transacción, con autoría, institución y sede de la identidad de sesión, estado `Pendiente` y su fila de historial de creación |
+| **Administrador** | **403** por matriz | Ninguna fila nueva en ticket, detalle ni historial |
+| **Bodeguero** | **403** por matriz | Ninguna fila nueva en ticket, detalle ni historial |
+| **Superadmin** | **403** por matriz (sin cambio desde 008/017) | Ninguna fila nueva en ticket, detalle ni historial |
+
+**Precedencia de las respuestas que esta enmienda fija.** 1) **401** sin `Authorization` o con
+Bearer inválido o expirado. 2) **403** por capacidad `tickets` apagada o por rol fuera de la
+matriz; con JSON parseable, el cuerpo no se valida. 3) **422** de forma del payload, solo para
+el Solicitante con la capacidad habilitada. 4) **404** de referencia inexistente o producto
+ajeno. 5) **409** de precondición del alta. 6) **201** persistido. Un JSON **malformado** puede
+responder 422 antes del paso 2; no se promete 403 en ese caso. La institución inactiva se
+documenta aparte porque no sigue este orden.
+
+**Institución inactiva.** `get_current_user` resuelve la identidad; la inactividad se detecta
+después, en `get_db_negocio` → `resolver_contexto_solicitud`. En `POST /tickets/`,
+`requiere_operacion` se resuelve antes que `get_db_negocio`: un Administrador o Bodeguero de
+institución inactiva recibe **403 por matriz**; un Solicitante, que sí pasa la matriz, alcanza
+el **401** del contexto de tenant. No se reordena ninguna dependencia ni se cambia la
+autenticación.
+
+#### Criterios de aceptación de la enmienda (AC-21–AC-34)
+
+- **AC-21 — Alta del Solicitante.** DADO un Solicitante autenticado, con la capacidad
+  `tickets` habilitada, un departamento con sede y un payload válido (prioridad existente,
+  `estado_id` de `Pendiente`, asunto, descripción y al menos un detalle de un producto de su
+  institución), CUANDO invoca `POST /api/v1/tickets/`, ENTONCES responde **201** con el read
+  model; el ticket queda con `usuario_id` de la sesión, la institución y la sede del
+  departamento, estado `Pendiente` y una fila de historial de creación con origen nulo y el
+  actor de sesión. Si el payload trae `usuario_id` (propio, ajeno o inexistente), se ignora
+  sin 422/403/404 por ese campo. SI el payload es inválido para el contrato, ENTONCES 422; SI
+  una referencia no existe o el producto es de otra institución, 404; SI el estado no es
+  `Pendiente`, el producto no está disponible o falta la sede, 409; en los tres casos sin
+  escritura.
+- **AC-22 — Administrador denegado sin efectos.** DADO un Administrador autenticado con la
+  capacidad `tickets` habilitada, CUANDO invoca `POST /api/v1/tickets/` con un payload JSON
+  parseable y válido para el contrato, ENTONCES responde **403** con el mensaje estándar de
+  permiso insuficiente, sin datos del payload, y las cuentas de ticket, detalle e historial de
+  creación son idénticas antes y después. Aplica también al Administrador autor de tickets
+  históricos.
+- **AC-23 — Bodeguero denegado sin efectos.** DADO un Bodeguero autenticado con la capacidad
+  `tickets` habilitada, CUANDO invoca `POST /api/v1/tickets/` con un payload JSON parseable y
+  válido para el contrato, ENTONCES **403** con el mensaje estándar y cero filas nuevas en
+  ticket, detalle e historial.
+- **AC-24 — El 403 precede al payload con JSON parseable.** DADO un Administrador o un
+  Bodeguero autenticado, CUANDO envía un cuerpo **JSON parseable** pero inválido para el
+  contrato (asunto de menos de 3 caracteres, `detalles` vacío, cantidad no positiva, campo
+  extra o `estado_id` ausente), ENTONCES responde **403**, no 422/404/409, y no escribe nada.
+  La misma petición con un Solicitante y la capacidad habilitada responde el 422/404/409 que
+  corresponda. Un cuerpo que **no** es JSON parseable puede responder 422 antes de las
+  dependencias; esta garantía no lo cubre y no se reordena nada para conseguirlo.
+- **AC-25 — Superadmin sin cambio.** DADO un Superadmin autenticado, CUANDO invoca
+  `POST /api/v1/tickets/` con un cuerpo JSON parseable, válido o inválido para el contrato,
+  ENTONCES **403** por matriz y cero filas nuevas. La enmienda no le concede nada ni le quita
+  nada respecto de 008/017.
+- **AC-26 — Sesión ausente o inválida.** DADO una petición sin `Authorization` o con un Bearer
+  inválido o expirado, CUANDO invoca `POST /api/v1/tickets/`, ENTONCES **401** y sin
+  escritura. La enmienda no promete 401 para otros escenarios: la institución inactiva se rige
+  por AC-27. No se cambia la autenticación ni el orden de las dependencias.
+- **AC-27 — Institución inactiva tal como es.** DADO una identidad cuya institución está
+  inactiva, CUANDO invoca `POST /api/v1/tickets/`, ENTONCES: el Administrador y el Bodeguero
+  reciben **403 por matriz**, porque `requiere_operacion` se resuelve antes de `get_db_negocio`;
+  el Solicitante, que sí pasa la matriz, alcanza el **401** del contexto de tenant al no
+  resolverse su institución activa. En ambos casos no hay escritura. Este es el comportamiento
+  vigente; la enmienda no lo altera ni reordena dependencias.
+- **AC-28 — Capacidad `tickets` deshabilitada.** DADO un Solicitante autenticado y la
+  capacidad `tickets` deshabilitada, CUANDO invoca `POST /api/v1/tickets/` con un payload
+  válido, ENTONCES **403** por capacidad y sin escritura; al rehabilitarla, el mismo caso con
+  el resto de las condiciones de AC-21 responde **201**. DADO un Administrador o Bodeguero con
+  la capacidad deshabilitada, ENTONCES **403** igualmente. La capacidad no concede la
+  operación a ningún rol: con `tickets` habilitada, Administrador y Bodeguero siguen en 403.
+- **AC-29 — Matriz y contrato publicados.** DADO la matriz central y `/openapi.json`, CUANDO
+  se consultan, ENTONCES `POST /api/v1/tickets/` declara exactamente `{Solicitante}`; la
+  matriz sigue con **75** operaciones (cambian los roles de una entrada, no el número); OpenAPI
+  publica **77 operaciones** (75 v1 + `GET /` + `/health`). `POST /api/v1/tickets/` declara
+  `201, 401, 403, 404 y 422`; el 409 sigue **solo en la descripción** y no se añade ni se
+  retira ninguna respuesta en esta enmienda. La descripción afirma que solo el Solicitante
+  crea y no insinúa tres roles. Sin operaciones, capacidades, versiones, tablas ni columnas
+  nuevas; `response_model` y códigos de éxito no cambian.
+- **AC-30 — El resto de operaciones de tickets no cambia.** DADO Administrador y Bodeguero,
+  CUANDO ejercen sus operaciones de tickets, ENTONCES conservan la lectura de tickets,
+  catálogos, detalle e historial de su institución; el Administrador conserva aprobación,
+  despacho, rechazo, anulación y edición según su rol y `PATCH /estado`; el Bodeguero conserva
+  despacho y rechazo y sigue recibiendo 403 en el `PATCH`; ambos siguen recibiendo 403 en el
+  alta. El Solicitante conserva la lectura de lo propio, la edición/anulación de lo suyo y la
+  confirmación de entrega. Ninguna otra fila de la matriz cambia de roles.
+- **AC-31 — Tickets históricos intactos.** DADO un ticket existente creado por un
+  Administrador o un Bodeguero, CUANDO se consulta o se opera según su estado, ENTONCES
+  conserva autor, institución, sede, detalles e historial, y su ciclo de vida funciona como
+  hoy (aprobación, despacho, rechazo o anulación por quien corresponda; sin confirmación de
+  entrega si su dueño no es Solicitante, como fija 013 AC-43). La enmienda no reasigna autores
+  ni modifica, anula o borra tickets existentes.
+- **AC-32 — La interfaz como espejo.** DADO la vista `/tickets` renderizada para cada rol,
+  CUANDO se inspeccionan sus controles visibles, ENTONCES «+ Crear pedido» aparece solo al
+  Solicitante; Administrador y Bodeguero no ven el botón ni ningún otro control visible que
+  abra el modal. Administrador y Bodeguero siguen entrando a `/tickets`, ven el tablero y
+  abren el detalle con sus acciones. El Solicitante conserva el botón, el modal y el envío sin
+  `usuario_id`. No se añade una guarda de apertura en el componente: la frontera es la API y
+  el cambio de UI se limita a lo ya oculto y a sus comentarios.
+- **AC-33 — Pruebas actualizadas sin pérdida de cobertura.** DADO la suite completa, CUANDO se
+  ejecuta `pytest` y `ng test`, ENTONCES las **seis** transcripciones independientes de la
+  matriz reflejan `POST /api/v1/tickets/ → {Solicitante}`: los cinco
+  `backend/tests/no_funcional/seguridad/test_permisos*.py` (`test_permisos.py`,
+  `test_permisos_008.py`, `test_permisos_010.py`, `test_permisos_012.py`,
+  `test_permisos_endpoints.py`) y `test_ciclo_vida_autorizacion_013.py`, que también
+  transcribe la fila con tres roles. `test_permisos_008.py` conserva su regla de que el
+  Administrador mantiene las operaciones de `OPERACIONES_AJUSTADAS` **salvo esta excepción
+  documentada**. `test_correlacion_024.py`, que hoy espera 400/401/422 con el cliente legacy,
+  pasa a esperar **403**. Las altas vivas de las suites usan una identidad/cliente
+  **Solicitante**; los fixtures históricos de tickets con autoría de Administrador o Bodeguero
+  que prueban AC-43 se siembran por ORM (patrón de
+  `test_ciclo_vida_confirmacion_013.py`), no se convierten en altas de Solicitante. Las suites
+  que siembran por ORM o no hacen POST de tickets —cobertura 021, Compras— no se ven
+  afectadas. No se borra cobertura: la autoatribución sigue probada con el Solicitante y se
+  añaden los 403 de Administrador y Bodeguero con payload válido e inválido y la comprobación
+  de cero filas. Ambas suites quedan en verde.
+- **AC-34 — Coherencia documental.** DADO un grep de cierre sobre `docs/`, `backend/` y
+  `frontend/`, CUANDO se buscan las afirmaciones de que el alta admite tres roles o de que la
+  restricción es solo presentación, ENTONCES ninguna queda vigente: se actualizan los
+  comentarios de `frontend/src/app/core/auth/roles.ts` y
+  `frontend/src/app/features/tickets/tickets.component.ts`, el docstring de `crear_ticket` en
+  `backend/app/services/ticket_service.py` (que aún enumera Administrador/Bodeguero/
+  Solicitante), la nota de la 003 y la transcripción de
+  `docs/spec/features/012-gestion-administrativa/diseno-tecnico.md` que lista los tres roles
+  para `POST /tickets/` (o se declara que los diseños históricos no son normativos y quedan
+  fuera del grep). `docs/spec/roadmap.md` registra la enmienda en la fila de la 007 y no anuncia
+  una feature 028; `MEMORY.md` sustituye la nota de demo del 25/Nov/2026 y la mención «028–029»
+  de los próximos pasos. La enmienda no se cierra como 028: pertenece a la 007.
+
+#### Impacto en pruebas de la enmienda
+
+- **Altas por HTTP con el cliente legacy (Administrador) o con cliente parametrizado por
+  rol:** `test_smoke.py`, `test_transaccion_ticket.py`, `test_modal_ticket.py`,
+  `test_tablero_kanban.py`, `test_despacho_transaccional.py`,
+  `test_ciclo_vida_alta_inicial_013.py`, `test_ciclo_vida_historial_013.py`,
+  `test_flujo_aprobacion_entrega_013.py`, `test_ticket_proceso_013.py`,
+  `test_ticket_sede_011.py`, `test_historial_movimientos.py`,
+  `test_validacion_entradas_027.py`, `test_tickets_alcance.py`,
+  `test_tickets_institucional.py` y `test_correlacion_024.py`. Requieren revisión y, donde
+  corresponda, una identidad/cliente Solicitante; `test_correlacion_024.py` pasa además a
+  esperar 403.
+- **Fixtures históricos:** los tickets con autoría de Administrador o Bodeguero que sostienen
+  AC-43 se siembran por ORM (patrón de `test_ciclo_vida_confirmacion_013.py`), no se recrean
+  con el alta del Solicitante.
+- **Sin impacto:** `test_cobertura_021.py` y las suites de Compras siembran por ORM o no hacen
+  POST de tickets; no crean tickets con la identidad legacy.
+- **Mejora opcional, no AC:** centralizar `RESTRINGIDAS_013`, hoy repetido en varias
+  transcripciones, evitaría una copia más al añadir restricciones futuras. No es requisito de
+  esta enmienda.
+
+#### Evidencia de la enmienda
+
+Evidencia observada al cierre del **26/Nov/2026**; no se inventa ninguna observación. Los
+recorridos de 4200 y 8080 usaron sesiones Clerk reales de la instancia dev (sin secretos).
+
+| AC | Estado | Evidencia |
+|---|---|---|
+| AC-21 | Verificado | `backend/tests/funcional/integracion/test_alta_solo_solicitante_007.py` (**41 casos / 17 funciones**): 201 con read model y autoría de sesión (`usuario_id` omitido, propio, ajeno o inexistente), estado `Pendiente`, institución, sede del departamento e historial de creación; 422/404/409 sin escritura. **4200 (26/Nov/2026):** el Solicitante (Paula Rojas, `usuario_id=11`) creó el pedido **#11** desde el modal; en BD `usuario_id=11`, `estado_id=1`, `sede_id=2`, `institucion_id=INST-001`, 1 detalle y 1 fila de historial. **8080:** `POST /api/v1/tickets/` con sesión de Solicitante → **201**, ticket **#10** con la misma autoría, estado y sede. |
+| AC-22 | Verificado | `test_alta_solo_solicitante_007.py::test_administrador_y_bodeguero_reciben_403_sin_escribir_ac_22_ac_23`. En vivo con sesión Clerk real: **8080** Administrador (Cristian González) → **403** `{"detail":"Permiso insuficiente para la operacion"}` y conteos SQL ticket/detalle/historial **9/9/8** idénticos antes y después; **4200** Administrador (cuenta QA `admin020.test`) → **403** con el mismo mensaje y tablero de 4 columnas accesible. |
+| AC-23 | Verificado | Mismo test de `test_alta_solo_solicitante_007.py`. En vivo: **8080** y **4200** Bodeguero (Roberto Díaz) → **403** estándar; conteos **10/10/9** sin cambios; `/tickets` conserva el tablero y el detalle #2 con «Rechazar». |
+| AC-24 | Verificado | `test_alta_solo_solicitante_007.py::test_el_403_precede_al_payload_invalido_parseable_ac_24` (Administrador/Bodeguero × 5 cuerpos JSON parseables inválidos) y `::test_solicitante_con_payload_invalido_recibe_422_sin_escribir_ac_21_ac_24`. En vivo, Admin y Bodeguero con cuerpo `{}` (parseable, inválido) recibieron **403**, no 422, y sin filas. |
+| AC-25 | Verificado | `test_alta_solo_solicitante_007.py::test_superadmin_recibe_403_con_json_parseable_ac_25` (cuerpo válido + 5 inválidos): **403** por matriz y cero filas. |
+| AC-26 | Verificado | `backend/tests/no_funcional/seguridad/test_institucion_inactiva_012.py` (**9 casos / 7 funciones**; 3 variantes nuevas): sin `Authorization`, Bearer ilegible y Bearer expirado → **401** con `WWW-Authenticate: Bearer` y conteos de alta sin cambios. |
+| AC-27 | Verificado | `test_institucion_inactiva_012.py::test_alta_con_institucion_inactiva_conserva_403_de_matriz_y_401_del_tenant_ac_27`: con institución inactiva, Administrador y Bodeguero → **403** por matriz; Solicitante → **401** del contexto de tenant; sin escritura y sin reordenar dependencias. |
+| AC-28 | Verificado | `test_alta_solo_solicitante_007.py::test_capacidad_tickets_apagada_deniega_y_al_rehabilitarla_crea_ac_28`: capacidad apagada → 403 para Solicitante, Administrador y Bodeguero sin filas; rehabilitada → **201** del Solicitante. |
+| AC-29 | Verificado | `test_alta_solo_solicitante_007.py::test_la_matriz_reserva_el_alta_al_solicitante_ac_29` (`MATRIZ_PERMISOS[...] == {Solicitante}`, **75** operaciones) y `::test_openapi_del_alta_conserva_el_contrato_y_declara_el_rol_ac_29`. **`/openapi.json` en vivo (8000):** **75** operaciones `/api/v1` + `GET /` + `GET /health` = **77**; `POST /api/v1/tickets/` declara **201, 401, 403, 404 y 422**; el **409 solo aparece en la descripción**; la descripción afirma que «solo el Solicitante» crea y que Administrador, Bodeguero y Superadmin reciben 403. |
+| AC-30 | Verificado | **137 casos** en las suites de ciclo de vida/despacho/confirmación (`test_tickets_alcance.py`, `test_tablero_kanban.py`, `test_despacho_transaccional.py`, `test_ciclo_vida_historial_013.py`, `test_ticket_proceso_013.py`, `test_ciclo_vida_confirmacion_013.py`, `test_flujo_aprobacion_entrega_013.py`) verdes. En 4200/8080, Administrador y Bodeguero conservan tablero, detalle y acciones; el Bodeguero mantiene «Rechazar» y `PATCH /estado` sigue reservado al Administrador. |
+| AC-31 | Verificado | `test_alta_solo_solicitante_007.py::test_ticket_historico_de_autor_administrador_conserva_su_autoria_ac_31` y `::test_ticket_historico_de_autor_bodeguero_conserva_su_autoria_ac_31` (sembrados por ORM; autor, institución, sede, detalles e historial intactos); `test_ciclo_vida_confirmacion_013.py::test_un_pedido_creado_por_un_administrador_no_admite_confirmacion_ac_43` y `test_flujo_aprobacion_entrega_013.py::test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmacion`. |
+| AC-32 | Verificado | `ng test` **639 SUCCESS** (Edge 158; nunca `npm test`) y `roles.spec.ts`/`tickets.component.spec.ts` conservan botón visible/oculto por rol. **4200 y 8080:** «+ Crear pedido» visible solo al Solicitante, oculto a Administrador y Bodeguero, que siguen entrando a `/tickets` con tablero y detalle; el modal muestra «Solicitante (sesión)» sin control `usuario_id` y el alta no envía ese campo. **Corrección post-validación (26/Nov/2026):** rebuild real **sin caché** de 8080 (`build --no-cache frontend` + `up -d --force-recreate frontend`), imagen **2026-11-26T17:43:22Z = 14:43 -03** posterior a los archivos del 26/Nov 03:57, contenedor `healthy` y bundle **`main-GULMVWMA.js`** (mismo hash: el delta de UI eran solo comentarios). Humo repetido con los tres roles: Administrador y Bodeguero sin «+ Crear pedido», con tablero y detalle operativos y `POST` real **403**; Solicitante con botón, modal «Solicitante (sesión)» sin `usuario_id` y alta **201** (#12). |
+| AC-33 | Verificado | Seis transcripciones con `POST /api/v1/tickets/ → {Solicitante}`: `test_permisos.py`, `test_permisos_008.py`, `test_permisos_010.py`, `test_permisos_012.py`, `test_permisos_endpoints.py` y `test_ciclo_vida_autorizacion_013.py`; `test_ciclo_vida_autorizacion_014.py` y `test_filtros_inventario_018.py` reutilizan la restricción; `test_correlacion_024.py` espera **403**. Altas vivas con cliente Solicitante e históricos por ORM. `pytest` **2024 passed / 112 skipped**; `ng test` **639 SUCCESS**. **Corrección post-validación (26/Nov/2026):** focal `test_alta_solo_solicitante_007.py` **41 passed**, grupo `tests/no_funcional/seguridad` **463 passed** y `ng test` **639 SUCCESS** reejecutados sobre el árbol corregido. |
+| AC-34 | Verificado | Grep de cierre `sigue admitiendo\|tres roles\|solo presentación\|demo 25/Nov\|028` sin afirmaciones vigentes sobre el alta (las menciones restantes son históricas o notas de superación). Comentarios actualizados en `roles.ts`, `tickets.component.ts`, `roles.spec.ts` y `tickets.component.spec.ts`; docstring de `crear_ticket`; notas de 003 y 012; `MEMORY.md` con la regla y sin feature 028; `roadmap.md` registra la enmienda y su cierre sin abrir feature nueva. `docs/informes/_generar_informe.py` y el `Informe_Flujos_Actores.docx` regenerado ya no atribuyen «Crear pedido» a Administrador/Bodeguero. **Corrección post-validación (26/Nov/2026):** el comentario de `permisos.py` sobre el alta se alineó con D-13/AC-24 (403 de matriz con JSON parseable; un JSON malformado puede responder 422 antes de las dependencias) y la evidencia de rebuild/humo de 8080 se corrigió con la imagen real y los tres roles. |
 
 ## 8. Riesgos y mitigaciones
 

@@ -62,7 +62,10 @@ _INVENTARIO_Y_TICKETS = {"Superadmin", "Administrador", "Bodeguero"}
 # tickets es institucional; Superadmin conserva solo sus lecturas.
 _ESCRITURA_CATALOGO = {"Administrador"}
 _ESCRITURA_STOCK = {"Administrador", "Bodeguero"}
-_ESCRITURA_TICKETS = {"Administrador", "Bodeguero", "Solicitante"}
+#: Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29/AC-33): la transcripcion
+#: historica del alta era de tres roles (`_ESCRITURA_TICKETS`); el contrato
+#: vigente la restringe a solo Solicitante. Administrador y Bodeguero reciben 403.
+_ALTA_SOLICITANTE = {"Solicitante"}
 #: Feature 017 (D-9/AC-15): lectura de negocio de los roles institucionales.
 _LECTURA_NEGOCIO = {"Administrador", "Bodeguero", "Solicitante"}
 #: Historial de movimientos sin Superadmin ni Solicitante (017 / 011).
@@ -99,7 +102,9 @@ MATRIZ_D3: dict[tuple[str, str], set[str]] = {
     ("POST", "/api/v1/inventario/movimientos"): _ESCRITURA_STOCK,
     ("GET", "/api/v1/tickets/catalogos"): _LECTURA_NEGOCIO,
     ("GET", "/api/v1/tickets/"): _LECTURA_NEGOCIO,
-    ("POST", "/api/v1/tickets/"): _ESCRITURA_TICKETS,
+    # Enmienda 26/Nov/2026 de la 007 (D-11): el alta es exclusiva del
+    # Solicitante; los casos permitidos/denegados se regeneran desde esta fila.
+    ("POST", "/api/v1/tickets/"): _ALTA_SOLICITANTE,
     ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
     # Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH` de legado queda solo
     # para el Administrador; el Bodeguero recibe 403 por matriz.

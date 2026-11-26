@@ -48,6 +48,7 @@ from tests.funcional.integracion._soporte_ciclo_vida_013 import (
     sembrar_ticket,
 )
 from tests.funcional.integracion._soporte_ciclo_vida_catalogo_014 import (
+    cliente_de_rol,
     fijar_stock_sede,
     sembrar_mundo_014,
 )
@@ -316,18 +317,18 @@ def test_ac_37_listado_y_detalle_exponen_etiqueta_y_frase(
 
 
 def test_ac_37_alta_pendiente_por_http_expone_en_aprobacion(
-    motor, cliente, mundo
+    cliente_solicitante, motor, mundo
 ):
     """AC-37: el alta nace en `Pendiente` y su etiqueta es «En aprobación»."""
-    respuesta = cliente.post(
+    respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
         json=payload_alta(mundo, mundo["estados"]["Pendiente"]),
     )
     assert respuesta.status_code == 201, respuesta.text
     ticket_id = respuesta.json()["ticket_id"]
 
-    assert abrir_ticket(cliente, ticket_id)["etiqueta_proceso"] == "En aprobación"
-    assert _detalle(cliente, ticket_id)["etiqueta_proceso"] == "En aprobación"
+    assert abrir_ticket(cliente_solicitante, ticket_id)["etiqueta_proceso"] == "En aprobación"
+    assert _detalle(cliente_solicitante, ticket_id)["etiqueta_proceso"] == "En aprobación"
 
 
 def test_ac_37_cerrado_con_confirmacion_es_entregado_y_expone_la_linea(
@@ -632,13 +633,22 @@ def test_ac_39_listado_y_detalle_coinciden_y_el_detalle_conserva_las_listas(
 # ---------------------------------------------------------------------------
 
 
-def test_ac_39_el_201_del_alta_publica_el_read_model(motor, cliente, mundo):
+def test_ac_39_el_201_del_alta_publica_el_read_model(
+    motor, cliente, actuar_como, mundo
+):
     """AC-39 (corrección T31): el `201` del alta trae el read model completo.
 
     El tablero inserta la respuesta del `POST /tickets/` sin reconsultar
     (AC-41), así que el alta debe devolver la misma etiqueta que el listado y
     no un `TicketRespuesta` derivado de un ORM desnudo (etiqueta vacía).
+
+    Enmienda 26/Nov/2026 (E26N-5): el alta la ejerce el Solicitante; la etiqueta
+    y el listado se leen con Administrador. La creación por Administrador que
+    contaba como gestor (AC-40) se recupera en
+    `test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos`
+    (E26N-6), sembrada por ORM y sin reasignar autores.
     """
+    actuar_como("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
         json=payload_alta(mundo, mundo["estados"]["Pendiente"]),
@@ -657,7 +667,8 @@ def test_ac_39_el_201_del_alta_publica_el_read_model(motor, cliente, mundo):
     assert cuerpo["entrega_confirmada"] is False
     assert cuerpo["estado_orden_cobertura"] is None
 
-    # La fila de creación existe, es única y es la que alimenta los gestores.
+    # Lectura con Administrador: el listado y el detalle siguen siendo suyos.
+    actuar_como("Administrador")
     historial = leer_historial(cliente, cuerpo["ticket_id"])
     assert len(historial) == 1, historial
     creacion = historial[0]
@@ -668,25 +679,19 @@ def test_ac_39_el_201_del_alta_publica_el_read_model(motor, cliente, mundo):
         estado_persistido = db.execute(
             select(Ticket.estado_id).where(Ticket.ticket_id == cuerpo["ticket_id"])
         ).scalar_one()
-        actor_nombre, actor_apellido, rol_actor = db.execute(
-            select(Usuario.nombre, Usuario.apellido, Rol.nombre_rol)
-            .join(Rol, Rol.rol_id == Usuario.rol_id)
+        rol_actor = db.execute(
+            select(Rol.nombre_rol)
+            .join(Usuario, Rol.rol_id == Usuario.rol_id)
             .where(Usuario.usuario_id == creacion["usuario_id"])
-        ).one()
+        ).scalar_one()
 
     assert estado_persistido == mundo["estados"]["Pendiente"], (
         "el alta sigue naciendo en `Pendiente` (AC-27)"
     )
 
-    gestor = {
-        "usuario_id": creacion["usuario_id"],
-        "nombre": actor_nombre,
-        "apellido": actor_apellido,
-    }
-    # La identidad de la suite (`cliente`) es el Administrador de INST01: su
-    # fila de creación cuenta como gestión (AC-40) y no hay Bodeguero.
-    assert rol_actor == "Administrador"
-    assert cuerpo["gestionado_por_administrador"] == gestor
+    # El actor de creación es el Solicitante (rol vigente): no es gestor.
+    assert rol_actor == "Solicitante"
+    assert cuerpo["gestionado_por_administrador"] is None
     assert cuerpo["gestionado_por_bodeguero"] is None
 
     # Y coincide con lo que publica el listado que consume el tablero.
@@ -873,6 +878,118 @@ def test_ac_40_sin_historial_o_sin_rol_gestor_queda_en_none(motor, cliente, mund
         "nombre": "Bodeguero",
         "apellido": "Inst01",
     }
+
+
+def test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos(
+    motor, mundo
+):
+    """AC-31 (007 D-16)/AC-40: un ticket historico con autoria Administrador o
+    Bodeguero conserva su autor y su gestor de creacion, y se opera con las
+    reglas vigentes.
+
+    Enmienda 007 del 26/Nov/2026 (E26N-6): el alta solo la ejerce el Solicitante;
+    la cobertura del antiguo `201` administrativo se recupera sembrando el
+    ticket por ORM, sin reasignar su autoria.
+    """
+    datos = mundo
+    administrador_id = datos["usuario_id"]
+    bodeguero_id = datos["usuarios_inst01"]["Bodeguero"]
+    pendiente = datos["estados"]["Pendiente"]
+
+    del_administrador = sembrar_ticket(
+        motor,
+        datos,
+        usuario_id=administrador_id,
+        estado_id=pendiente,
+        asunto="Ticket historico del Administrador",
+    )
+    _insertar_historial(
+        motor,
+        del_administrador,
+        usuario_id=administrador_id,
+        estado_origen_id=None,
+        estado_destino_id=pendiente,
+    )
+    del_bodeguero = sembrar_ticket(
+        motor,
+        datos,
+        usuario_id=bodeguero_id,
+        estado_id=pendiente,
+        asunto="Ticket historico del Bodeguero",
+    )
+    _insertar_historial(
+        motor,
+        del_bodeguero,
+        usuario_id=bodeguero_id,
+        estado_origen_id=None,
+        estado_destino_id=pendiente,
+    )
+
+    with cliente_de_rol(motor, datos, "Administrador") as admin:
+        en_listado = abrir_ticket(admin, del_administrador)
+        en_detalle = _detalle(admin, del_administrador)
+        detalle_bodeguero = _detalle(admin, del_bodeguero)
+
+        # El autor historico se conserva y el read model lo publica.
+        assert en_listado["usuario_id"] == administrador_id
+        assert en_detalle["usuario_id"] == administrador_id
+        assert detalle_bodeguero["usuario_id"] == bodeguero_id
+        assert en_detalle["etiqueta_proceso"] == "En aprobación"
+        assert [fila["producto_id"] for fila in en_detalle["detalles"]] == [
+            datos["producto_id"]
+        ], "los detalles del ticket historico se conservan"
+
+        # La fila de creacion cuenta como gestion del rol vigente del autor.
+        assert en_listado["gestionado_por_administrador"] == {
+            "usuario_id": administrador_id,
+            "nombre": "Ana",
+            "apellido": "Perez",
+        }
+        assert en_listado["gestionado_por_bodeguero"] is None
+        assert detalle_bodeguero["gestionado_por_bodeguero"] == {
+            "usuario_id": bodeguero_id,
+            "nombre": "Bodeguero",
+            "apellido": "Inst01",
+        }
+        assert detalle_bodeguero["gestionado_por_administrador"] is None
+
+        # Sigue operativo: el Administrador lo aprueba segun su estado.
+        aprobacion = admin.post(
+            f"/api/v1/tickets/{del_administrador}/aprobacion"
+        )
+        assert aprobacion.status_code == 200, aprobacion.text
+        assert aprobacion.json()["estado_id"] == datos["estados"]["EnCurso"]
+        assert aprobacion.json()["usuario_id"] == administrador_id, (
+            "aprobar no reasigna el autor historico"
+        )
+
+    with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
+        despacho = bodeguero.post(
+            f"/api/v1/tickets/{del_administrador}/despacho",
+            json={"usuario_id": bodeguero_id},
+        )
+        assert despacho.status_code == 200, despacho.text
+        assert despacho.json()["estado_id"] == datos["estados"]["Cerrado"]
+        assert despacho.json()["usuario_id"] == administrador_id, (
+            "despachar no reasigna el autor historico"
+        )
+
+    with cliente_de_rol(motor, datos, "Administrador") as admin:
+        final = _detalle(admin, del_administrador)
+        assert final["usuario_id"] == administrador_id
+        assert final["etiqueta_proceso"] == "Despachado"
+        assert final["entrega_confirmada"] is False
+        assert final["gestionado_por_administrador"]["usuario_id"] == administrador_id
+        assert final["gestionado_por_bodeguero"]["usuario_id"] == bodeguero_id
+
+        historial = leer_historial(admin, del_administrador)
+        creacion = next(
+            fila for fila in historial if fila["estado_origen_id"] is None
+        )
+        assert creacion["usuario_id"] == administrador_id, (
+            "la creacion del ticket historico conserva a su autor"
+        )
+        assert creacion["estado_destino_id"] == pendiente
 
 
 # ---------------------------------------------------------------------------

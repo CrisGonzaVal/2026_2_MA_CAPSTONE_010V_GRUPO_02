@@ -51,8 +51,11 @@ def _cuerpo_ticket(datos_base, detalles, asunto="Ticket de prueba"):
     }
 
 
-def test_detalle_invalido_no_deja_ticket_huerfano(cliente_sin_excepcion, datos_base):
+def test_detalle_invalido_no_deja_ticket_huerfano(
+    cliente_sin_excepcion, actuar_como, datos_base
+):
     """1 detalle valido + 1 con producto inexistente no debe persistir nada."""
+    actuar_como("Solicitante")
     cuerpo = _cuerpo_ticket(
         datos_base,
         detalles=[
@@ -75,9 +78,10 @@ def test_detalle_invalido_no_deja_ticket_huerfano(cliente_sin_excepcion, datos_b
 
 
 def test_detalle_invalido_no_deja_ticket_por_mas_que_haya_tres_detalles(
-    cliente_sin_excepcion, datos_base
+    cliente_sin_excepcion, actuar_como, datos_base
 ):
     """El fallo en el ultimo de N detalles tambien revierte los anteriores."""
+    actuar_como("Solicitante")
     detalles = [
         {"producto_id": datos_base["producto_id"], "cantidad_solicitada": n}
         for n in (1, 2, 3)
@@ -91,8 +95,11 @@ def test_detalle_invalido_no_deja_ticket_por_mas_que_haya_tres_detalles(
     assert cliente_sin_excepcion.get("/api/v1/tickets/").json() == []
 
 
-def test_ticket_valido_persiste_cabecera_y_detalles_juntos(cliente, datos_base):
+def test_ticket_valido_persiste_cabecera_y_detalles_juntos(
+    cliente, actuar_como, datos_base
+):
     """Contraprueba del anterior: el camino feliz sigue funcionando."""
+    actuar_como("Solicitante")
     cuerpo = _cuerpo_ticket(
         datos_base,
         detalles=[
@@ -111,7 +118,7 @@ def test_ticket_valido_persiste_cabecera_y_detalles_juntos(cliente, datos_base):
 
 
 def test_detalle_invalido_no_altera_el_stock(
-    cliente_sin_excepcion, motor, datos_base, sede_base
+    cliente_sin_excepcion, actuar_como, motor, datos_base, sede_base
 ):
     """Crear un ticket no debe mover inventario, ni siquiera al fallar.
 
@@ -119,6 +126,7 @@ def test_detalle_invalido_no_altera_el_stock(
     no descuenta stock. Ese descuento pertenece a la approbacion del ticket
     (Feature 004/005), no a la creacion.
     """
+    actuar_como("Solicitante")
     stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
     stock_antes = _stock_sede(motor, stock_sede_id)
 

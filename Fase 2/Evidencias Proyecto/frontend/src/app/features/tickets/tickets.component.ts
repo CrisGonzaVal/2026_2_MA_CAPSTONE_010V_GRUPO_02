@@ -383,10 +383,9 @@ export class TicketsComponent {
   readonly identidad = this.autenticacion.identidad;
 
   /**
-   * Cambio de demo del 25/Nov/2026: el alta de pedidos se oculta a
-   * Administrador y Bodeguero; solo el Solicitante ve el botón. Es
-   * presentación: la API sigue admitiendo a los tres roles hasta la
-   * implementación de negocio del alta por sede.
+   * Espejo de la matriz tras la enmienda de la 007 (26/Nov/2026): solo el
+   * Solicitante ve el botón de alta. La API es la frontera de seguridad y
+   * responde 403 a Administrador, Bodeguero y Superadmin.
    */
   readonly puedeCrearPedido = computed(() =>
     puedeCrearTicket(this.identidad()?.rol ?? null),

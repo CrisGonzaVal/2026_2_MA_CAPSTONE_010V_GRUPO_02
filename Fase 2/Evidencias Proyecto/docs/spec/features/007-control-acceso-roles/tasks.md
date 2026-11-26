@@ -178,3 +178,176 @@ Verificación habitual:
 | AC-18 | E22-1, E22-3, E22-4, E22-C1, E22-C2 |
 | AC-19 | E22-2, E22-3, E22-4, E22-C1, E22-C2 |
 | AC-20 | E22-1, E22-3, E22-4, E22-C1, E22-C2 |
+
+---
+
+## Enmienda de alta reservada al Solicitante (26/Nov/2026)
+
+> Tareas de la enmienda aprobada en `spec.md` (D-11…D-18, AC-21…AC-34). Nomenclatura
+> `E26N` = enmienda del 26/Nov, para no confundirla con la Feature 026. Orden de dependencia:
+> harness → matriz/contrato → sesión e institución → transcripciones → suites → frontend →
+> documentación → cierre. No existe feature 028.
+
+- [x] **E26N-1 — Harness de identidad mutable y cliente Solicitante.**
+  - **Archivos:** `backend/tests/conftest.py`; ajustes mínimos en `_soporte_sede_011.py` solo si
+    se reutiliza su patrón.
+  - **Pruebas primero:** un test de humo del harness (primer caso de
+    `test_alta_solo_solicitante_007.py` o un archivo hermano) que cree con
+    `actuar_como("Solicitante")` y luego lea/apruebe con `actuar_como("Administrador")` usando
+    el mismo `cliente`.
+  - `_cliente_de_prueba` recibe `identidad_actual = {"actual": ...}` y overridea
+    `get_current_user` con `lambda: identidad_actual["actual"]`; guarda y **restaura** los
+    overrides que instala (no `clear()`). `cliente` conserva su firma y su valor por defecto
+    Administrador; `cliente_sin_excepcion` comparte el contenedor. Fixture `actuar_como(rol)` y
+    conveniencia `cliente_solicitante`.
+  - `identidad_persistida(datos_base, rol)` garantiza de forma idempotente: Administrador = Ana;
+    Bodeguero y Solicitante persistidos en `datos_base["departamento_id"]`; reutiliza el rol
+    Solicitante si `dos_instituciones` ya lo creó. La sede **no** se autoasigna: la resuelve
+    cada suite con `asegurar_sede_de_departamento`.
+  - **AC:** habilita AC-21…AC-33 (sin AC propio).
+  - **Hecho cuando:** un mismo test alterna Solicitante → Administrador/Bodeguero sin recrear
+    el cliente ni pisar overrides; la suite existente sigue verde sin cambiar sus expectativas;
+    no hay usuario/rol nuevo en `datos_base` para todas las suites.
+  - **Comando:** `cd backend && .venv\Scripts\python.exe -m pytest -q`.
+
+- [x] **E26N-2 — Matriz, contrato y docstring del alta (AC-21…AC-25, AC-28, AC-29).**
+  - **Archivos:** `backend/app/core/permisos.py`, `backend/app/api/v1/endpoints/tickets.py`,
+    `backend/app/services/ticket_service.py`, `backend/tests/funcional/integracion/test_alta_solo_solicitante_007.py` (nuevo).
+  - **Rojo:** pruebas de AC-21 (201 Solicitante con autoría/institución/sede/`Pendiente`/
+    historial; `usuario_id` ignorado; 422/404/409), AC-22/AC-23 (403 Admin/Bodeguero con
+    payload válido y cero filas en ticket/detalle/historial), AC-24 (payload JSON parseable
+    inválido → 403; Solicitante → 422), AC-25 (Superadmin 403), AC-28 (capacidad apagada y
+    rehabilitada).
+  - **Verde:** fila `("POST", "/api/v1/tickets/")` a `frozenset({_SOLICITANTE})`; retirar
+    `_ESCRITURA_TICKETS`; actualizar la descripción del endpoint (solo descripción) y el
+    docstring de `crear_ticket`. Sin comprobación de rol en el servicio, sin 409 en
+    `responses`, sin cambio de `response_model`/201/dependencias. Para AC-28, reutilizar el
+    patrón `_sembrar_contexto_capacidades` de `test_ciclo_vida_confirmacion_013.py` y usar su
+    correo de contexto en la identidad del Solicitante; si se comparte, moverlo a
+    `_soporte_ciclo_vida_013.py`.
+  - **AC:** AC-21, AC-22, AC-23, AC-24, AC-25, AC-28, AC-29.
+  - **Hecho cuando:** las pruebas nuevas pasan; la matriz sigue con 75 operaciones; el
+    decorador conserva 201/401/403/404/422 y el 409 solo en la descripción; ningún otro rol
+    crea tickets.
+  - **Comando:** `cd backend && .venv\Scripts\python.exe -m pytest tests/funcional/integracion/test_alta_solo_solicitante_007.py -q`.
+
+- [x] **E26N-3 — Sesión e institución inactiva (AC-26, AC-27).**
+  - **Archivos:** `backend/tests/no_funcional/seguridad/test_institucion_inactiva_012.py` (dos
+    casos nuevos al final).
+  - **Pruebas primero:** 401 sin `Authorization` y con Bearer inválido/expirado; con institución
+    inactiva (`_preparar(activo=False)`), Administrador y Bodeguero → 403 por matriz, Solicitante
+    → 401 del contexto de tenant; sin filas. Usar `TestClient(app)` real con overrides de
+    `get_db`/`get_current_user`; la identidad del Solicitante usa el correo mapeado en
+    `_preparar` (`u.inst01@compustock.cl`). No usar el `cliente` que inyecta identidad para el
+    401.
+  - **AC:** AC-26, AC-27.
+  - **Hecho cuando:** ambos códigos se observan con la app real y el endpoint de alta; no se
+    reordena ninguna dependencia ni se cambia la autenticación.
+  - **Comando:** `cd backend && .venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad -q`.
+
+- [x] **E26N-4 — Seis transcripciones de la matriz y correlación (AC-29, AC-33).**
+  - **Archivos:** `test_permisos.py`, `test_permisos_008.py`, `test_permisos_010.py`,
+    `test_permisos_012.py`, `test_permisos_endpoints.py`,
+    `test_ciclo_vida_autorizacion_013.py`, `test_correlacion_024.py`.
+  - Añadir la restricción documentada `("POST", "/api/v1/tickets/") -> {"Solicitante"}` con el
+    patrón de `RESTRINGIDAS_013`; en `test_permisos_endpoints.py` actualizar `MATRIZ_D3` (los
+    casos permitidos/denegados se regeneran) y en `test_permisos_008.py` documentar la excepción
+    a `OPERACIONES_AJUSTADAS`, ajustar `CASOS_AJUSTADOS` (Admin/Bodeguero 403, Solicitante 200)
+    y excluir el alta de `test_administrador_conserva_las_escrituras_institucionales`. En
+    `test_correlacion_024.py`, esperar 403 y conservar las aserciones del log.
+  - **AC:** AC-29, AC-33.
+  - **Hecho cuando:** las seis transcripciones reflejan el alta solo para Solicitante sin
+    borrar operaciones ni rebajar conteos; `test_permisos_008` conserva las demás operaciones
+    ajustadas; la suite de permisos y correlación pasa.
+  - **Comando:** `cd backend && .venv\Scripts\python.exe -m pytest tests/no_funcional/seguridad tests/funcional/integracion/test_ciclo_vida_autorizacion_013.py -q`.
+
+- [x] **E26N-5 — Suites de altas vivas con cliente Solicitante (AC-21, AC-30, AC-33).**
+  - **Archivos:** `humo/test_smoke.py`, `e2e/test_transaccion_ticket.py`,
+    `integracion/test_modal_ticket.py`, `integracion/test_tablero_kanban.py`,
+    `e2e/test_despacho_transaccional.py`, `integracion/test_ciclo_vida_alta_inicial_013.py`,
+    `integracion/test_ciclo_vida_historial_013.py`,
+    `e2e/test_flujo_aprobacion_entrega_013.py`, `integracion/test_ticket_proceso_013.py`,
+    `integracion/test_ticket_sede_011.py`, `integracion/test_historial_movimientos.py`,
+    `integracion/test_validacion_entradas_027.py`, `integracion/test_tickets_alcance.py`,
+    `integracion/test_tickets_institucional.py`.
+  - Cambiar solo las altas a `actuar_como("Solicitante")`/`cliente_solicitante`; conservar las
+    operaciones con Administrador/Bodeguero (aprobación, despacho, rechazo, `PATCH`) y las
+    aserciones de propiedad/ámbito. Añadir `asegurar_sede_de_departamento` donde falte.
+  - **AC:** AC-21, AC-30, AC-33.
+  - **Hecho cuando:** las 14 suites pasan sin que ninguna alta use Administrador/Bodeguero; la
+    cobertura de autoatribución queda en el Solicitante; no se borran casos de 404/409/422 ni de
+    propiedad.
+  - **Comando:** `cd backend && .venv\Scripts\python.exe -m pytest tests/funcional -q`.
+
+- [x] **E26N-6 — Fixtures históricos de autoría Admin/Bodeguero (AC-31, AC-33).**
+  - **Archivos:** `test_ciclo_vida_confirmacion_013.py` (referencia), suites que necesiten un
+    ticket histórico; `test_alta_solo_solicitante_007.py` para AC-31.
+  - Sembrar por ORM (`Ticket`, `DetalleTicket`, `HistorialTransicionTicket`) los tickets con
+    autor Administrador/Bodeguero que prueban AC-31/AC-43; no crearlos con el alta del
+    Solicitante ni reasignar autores.
+  - **AC:** AC-31, AC-33.
+  - **Hecho cuando:** los escenarios históricos conservan su autor y ciclo de vida; ningún
+    fixture se convirtió en alta de Solicitante; cobertura 021 y Compras no se tocaron.
+  - **Comando:** `cd backend && .venv\Scripts\python.exe -m pytest tests/funcional/integracion/test_ciclo_vida_confirmacion_013.py tests/funcional/integracion/test_alta_solo_solicitante_007.py -q`.
+
+- [x] **E26N-7 — Frontend: espejo y comentarios (AC-32, AC-34).**
+  - **Archivos:** `frontend/src/app/core/auth/roles.ts`, `roles.spec.ts`,
+    `frontend/src/app/features/tickets/tickets.component.ts`, `tickets.component.spec.ts`.
+  - Solo comentarios y títulos: dejar de decir «demo/presentación» o «la API sigue admitiendo a
+    los tres roles». **No** añadir guarda de apertura, no tocar template ni servicio.
+  - **AC:** AC-32, AC-34.
+  - **Hecho cuando:** el botón sigue visible solo al Solicitante, oculto a Admin/Bodeguero; el
+    modal y el body sin `usuario_id` no cambian; `ng test` verde.
+  - **Comando:** `$env:CHROME_BIN = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"; cd frontend; npx ng test --watch=false --browsers=ChromeHeadless`.
+
+- [x] **E26N-8 — Documentación y coherencia (AC-34).**
+  - **Archivos:** `docs/spec/features/012-gestion-administrativa/diseno-tecnico.md`,
+    `docs/spec/roadmap.md`, `MEMORY.md`; nota de la 003 ya presente.
+  - Anotar/superar la transcripción de la 012; registrar la enmienda en la fila/estado de la 007
+    sin anunciar la 028; sustituir en `MEMORY.md` la nota de demo y la mención «028–029».
+  - **AC:** AC-34.
+  - **Hecho cuando:** grep en `docs/`, `backend/` y `frontend/` sin afirmaciones vigentes de que
+    el alta admite tres roles o que la restricción es solo presentación; no hay feature 028.
+  - **Comando:** `rg -n "sigue admitiendo|tres roles|solo presentación|demo 25/Nov|028" docs backend frontend`.
+
+- [x] **E26N-9 — Cierre: suites, contrato y dos puertos (AC-21…AC-34).**
+  - **Hecho cuando:** `pytest` y `ng test` verdes; `/openapi.json` publica 75 operaciones v1/77
+    totales, la descripción del alta nombra al Solicitante y declara 201/401/403/404/422 (409
+    solo en descripción); 4200 con Solicitante creando y Admin/Bodeguero recibiendo 403 sin
+    perder tablero/detalle; 8080 reconstruido (`docker compose -f docker-compose.yml build frontend`
+    + `up -d frontend`) con humo de la vista; evidencia AC-21…AC-34 registrada sin inventar
+    observaciones; grep de coherencia ejecutado.
+  - **AC:** AC-21…AC-34.
+  - **Comando:** `cd backend && .venv\Scripts\python.exe -m pytest`; frontend con `CHROME_BIN` a
+    Edge y `npx ng test --watch=false --browsers=ChromeHeadless`; nunca `npm test`.
+  - **Corrección post-validación (26/Nov/2026, tras veredicto CAMBIOS NECESARIOS):**
+    (a) comentario de `backend/app/core/permisos.py` alineado con D-13/AC-24 —403 de matriz con
+    JSON **parseable** y posible 422 de JSON malformado antes de las dependencias—; la fila y el
+    comportamiento no cambian. (b) La imagen anterior era del **25/Nov 18:02 -03**, previa a los
+    archivos del 26/Nov 03:57: se reconstruyó **sin caché** (`build --no-cache frontend` +
+    `up -d --force-recreate frontend`); imagen nueva **2026-11-26T17:43:22Z = 14:43 -03**,
+    contenedor `healthy`, bundle **`main-GULMVWMA.js`** (mismo hash: el delta de UI eran solo
+    comentarios) y humo 8080: Admin/Bodeguero sin «+ Crear pedido» y POST real **403** con tablero
+    y detalle operativos; Solicitante con botón, modal «Solicitante (sesión)» sin `usuario_id` y
+    POST **201** (#12: autor 11/Paula Rojas, `Pendiente`, sede 2, 1 detalle y 1 historial).
+    (c) Suites de la corrección: focal `test_alta_solo_solicitante_007.py` **41 passed**,
+    `tests/no_funcional/seguridad` **463 passed** y `ng test` **639 SUCCESS**.
+
+### Trazabilidad de la enmienda AC ↔ tareas
+
+| AC | Tareas |
+|---|---|
+| AC-21 | E26N-1, E26N-2, E26N-5, E26N-9 |
+| AC-22 | E26N-1, E26N-2, E26N-9 |
+| AC-23 | E26N-1, E26N-2, E26N-9 |
+| AC-24 | E26N-2, E26N-9 |
+| AC-25 | E26N-2, E26N-9 |
+| AC-26 | E26N-3, E26N-9 |
+| AC-27 | E26N-3, E26N-9 |
+| AC-28 | E26N-2, E26N-9 |
+| AC-29 | E26N-2, E26N-4, E26N-9 |
+| AC-30 | E26N-5, E26N-9 |
+| AC-31 | E26N-2, E26N-6, E26N-9 |
+| AC-32 | E26N-7, E26N-9 |
+| AC-33 | E26N-1, E26N-4, E26N-5, E26N-6, E26N-9 |
+| AC-34 | E26N-7, E26N-8, E26N-9 |

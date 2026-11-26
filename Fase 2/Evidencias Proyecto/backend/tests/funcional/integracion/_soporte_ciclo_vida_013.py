@@ -28,12 +28,23 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app.api import dependencies
 from app.core import permisos
+from app.core.config import VERSION_ESQUEMA_OBJETIVO
 from app.main import app
-from app.models import DetalleTicket, EstadoTicket, Ticket
+from app.models import (
+    CAPACIDADES,
+    DetalleTicket,
+    EstadoTicket,
+    FuncionInstitucion,
+    InstitucionControl,
+    MapaUsuarioEsquema,
+    Ticket,
+    VersionEsquema,
+)
 
 from tests.funcional.integracion._soporte_sede_011 import (
     SIN_AUTENTICAR,
@@ -98,6 +109,10 @@ CAMPOS_HISTORIAL: frozenset[str] = frozenset(
 
 #: Detalle unico del 404 de ticket (inexistente y ajeno, ocultamiento D-8).
 DETALLE_TICKET_NO_ENCONTRADO = "Ticket no encontrado"
+
+#: Correo del contexto de capacidades del gating de la 013. Se conserva el
+#: literal historico que usa `test_ciclo_vida_confirmacion_013.py`.
+CORREO_GATING_013 = "gating013.confirmacion@compustock.cl"
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +276,56 @@ def payload_alta(datos: dict[str, Any], estado_id: int, *, asunto=None) -> dict:
     }
 
 
+def sembrar_contexto_capacidades(
+    motor,
+    datos: dict[str, Any],
+    capacidades_apagadas=frozenset(),
+    *,
+    correo: str = CORREO_GATING_013,
+) -> None:
+    """Control coherente para que `correo` resuelva a la institucion de `datos`.
+
+    Mismo patron que `test_ciclo_vida_aprobacion_013.py`: institucion canonica
+    activa, mapa `correo -> esquema`, version objetivo y las siete capacidades
+    con las apagadas explicitas (el resto habilitadas). Se promovio desde
+    `test_ciclo_vida_confirmacion_013.py` (enmienda 007 del 26/Nov/2026,
+    E26N-2) sin cambiar su comportamiento; `correo` permite que otra suite use
+    su propia identidad de contexto sin compartir el literal historico.
+    """
+    institucion_id = datos["inst_propia"]
+    with sesion(motor) as db:
+        if db.get(InstitucionControl, institucion_id) is None:
+            db.add(
+                InstitucionControl(
+                    institucion_id=institucion_id,
+                    nombre="Instituto de Prueba",
+                    activo=True,
+                )
+            )
+            db.flush()
+        if db.get(MapaUsuarioEsquema, correo) is None:
+            db.add(
+                MapaUsuarioEsquema(
+                    correo=correo,
+                    institucion_id=institucion_id,
+                    nombre_esquema="tenant_inst01",
+                    activo=True,
+                )
+            )
+            db.flush()
+        if db.execute(select(VersionEsquema)).scalars().first() is None:
+            db.add(VersionEsquema(version=VERSION_ESQUEMA_OBJETIVO))
+        for funcion in CAPACIDADES:
+            db.add(
+                FuncionInstitucion(
+                    institucion_id=institucion_id,
+                    funcion=funcion,
+                    habilitada=funcion not in capacidades_apagadas,
+                )
+            )
+        db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Observacion de lo persistido
 # ---------------------------------------------------------------------------
@@ -285,6 +350,7 @@ def abrir_ticket(cliente, ticket_id: int) -> dict:
 __all__ = [
     "CAMPOS_HISTORIAL",
     "CAPACIDADES_013",
+    "CORREO_GATING_013",
     "DETALLE_TICKET_NO_ENCONTRADO",
     "OPERACIONES_013",
     "RUTA_DETALLE",
@@ -305,6 +371,7 @@ __all__ = [
     "leer_historial",
     "leer_stock_sede",
     "payload_alta",
+    "sembrar_contexto_capacidades",
     "sembrar_mundo_013",
     "sembrar_ticket",
     "sesion",

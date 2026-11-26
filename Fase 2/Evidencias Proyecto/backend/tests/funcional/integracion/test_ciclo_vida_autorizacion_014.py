@@ -100,6 +100,8 @@ def test_matriz_conserva_las_operaciones_previas_intactas_ac_2():
     Ampliacion 25/Nov/2026 de la 013 (spec §9.10, AC-49): el `PATCH /estado`
     de la transcripcion historica se **restringe** a solo Administrador; la
     entrada no se retira y el resto de las filas previas conserva sus roles.
+    Enmienda 26/Nov/2026 de la 007 (D-11/AC-29/AC-33): el alta de tickets se
+    restringe a solo Solicitante; tampoco se retira ninguna fila.
     """
     for clave in OPERACIONES_014:
         exigir_operacion(*clave)
@@ -115,6 +117,11 @@ def test_matriz_conserva_las_operaciones_previas_intactas_ac_2():
         actual = permisos.MATRIZ_PERMISOS.get(clave)
         assert actual is not None, f"la operacion de la 013 {clave} desaparecio"
         assert set(actual) == roles, clave
+    # La restriccion documentada importada de la 013 incluye el alta: la 014 no
+    # la toca ni rebaja los conteos historicos de la matriz.
+    assert set(permisos.MATRIZ_PERMISOS[("POST", "/api/v1/tickets/")]) == {
+        "Solicitante"
+    }
 
 
 def test_matriz_tiene_exactamente_60_operaciones_tras_014():

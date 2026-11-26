@@ -63,10 +63,6 @@ _MOVIMIENTOS: frozenset[str] = frozenset({_ADMINISTRADOR, _BODEGUERO})
 _ESCRITURA_CATALOGO: frozenset[str] = frozenset({_ADMINISTRADOR})
 #: Escritura de stock/movimientos y operaciones de ticket (despacho, estado).
 _ESCRITURA_STOCK: frozenset[str] = frozenset({_ADMINISTRADOR, _BODEGUERO})
-#: Alta de ticket: los roles operativos de la institucion (incluye Solicitante).
-_ESCRITURA_TICKETS: frozenset[str] = frozenset(
-    {_ADMINISTRADOR, _BODEGUERO, _SOLICITANTE}
-)
 
 # --- Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.3/§9.10, AC-45/AC-49) --
 # La aprobacion del pedido es una decision de flujo del Administrador
@@ -144,14 +140,20 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
     ("GET", "/api/v1/inventario/movimientos"): _MOVIMIENTOS,
     # 008 D-3: movimientos de stock sin Superadmin (escritura institucional).
     ("POST", "/api/v1/inventario/movimientos"): _ESCRITURA_STOCK,
-    # Tickets: alta para los roles institucionales; estado y despacho sin
-    # Solicitante. Feature 017: Superadmin no lee tickets ni su detalle/historial.
+    # Tickets: estado y despacho sin Solicitante; desde la enmienda del
+    # 26/Nov/2026 (D-11) el **alta** queda reservada al Solicitante. Feature 017:
+    # Superadmin no lee tickets ni su detalle/historial.
     # T10 (D-9/AC-15): el catalogo del modal tambien es lectura de negocio
     # (productos, stock y solicitantes del tenant), no una superficie de control.
     ("GET", "/api/v1/tickets/catalogos"): _LECTURA_NEGOCIO,
     ("GET", "/api/v1/tickets/"): _LECTURA_NEGOCIO,
-    # 008 D-3: alta de ticket sin Superadmin (escritura institucional).
-    ("POST", "/api/v1/tickets/"): _ESCRITURA_TICKETS,
+    # Enmienda 26/Nov/2026 (spec D-11/D-12, AC-21…AC-25): el alta de ticket es
+    # **solo** del Solicitante. Administrador, Bodeguero y Superadmin reciben
+    # 403 por matriz con un cuerpo JSON **parseable** (válido o inválido), antes
+    # de validar el payload; un JSON malformado puede responder 422 antes de las
+    # dependencias. No se agrega ni se retira ninguna fila: la matriz conserva
+    # 75 operaciones.
+    ("POST", "/api/v1/tickets/"): frozenset({_SOLICITANTE}),
     # 008 D-3: despacho y cambio de estado sin Superadmin.
     ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
     # Ampliacion 25/Nov/2026 (spec §9.10, AC-49): el `PATCH /estado` de legado

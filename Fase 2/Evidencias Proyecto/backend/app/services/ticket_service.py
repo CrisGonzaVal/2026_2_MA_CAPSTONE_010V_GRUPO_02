@@ -868,12 +868,15 @@ def crear_ticket(
     tickets compartieran transaccion.
 
     Feature 007 (D-3/AC-6), enmendada el 22/Oct/2026 (003 D-33/D-35, 007
-    AC-18/AC-20, 008 D-7/AC-11): **todo rol autorizado** (Administrador,
-    Bodeguero, Solicitante) queda atribuido a `identidad.usuario.usuario_id`, sin
-    excepcion. El `usuario_id` del payload es opcional y se ignora por completo:
-    no se valida como referencia, de modo que un id propio, ajeno o inexistente
-    no produce 404/422. Superadmin no crea tickets (matriz 008), pero el servicio
-    conserva el mismo contrato si se le invocara directamente.
+    AC-18/AC-20, 008 D-7/AC-11) y el 26/Nov/2026 (007 D-11/D-12, AC-21…AC-25):
+    la matriz deja el alta **solo al Solicitante**, pero este servicio no repite
+    esa regla: es agnostico del rol por diseño. Cuando recibe una identidad, la
+    autoria queda en `identidad.usuario.usuario_id`, sin excepcion; el
+    `usuario_id` del payload es opcional y se ignora por completo: no se valida
+    como referencia, de modo que un id propio, ajeno o inexistente no produce
+    404/422. Administrador, Bodeguero y Superadmin reciben el 403 en la
+    dependencia del endpoint, antes de llegar aqui; la invocacion directa sin
+    identidad (ticket automatico de la 016) conserva el mismo contrato.
 
     Feature 008 (D-4/AC-11): el ticket se ancla a la institucion de la identidad
     autenticada y cada producto del detalle debe pertenecer a esa misma

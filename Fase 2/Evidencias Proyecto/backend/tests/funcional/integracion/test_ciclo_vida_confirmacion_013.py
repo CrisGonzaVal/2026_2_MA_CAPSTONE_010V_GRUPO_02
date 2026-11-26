@@ -21,18 +21,10 @@ import pytest
 from sqlalchemy import select
 
 from app.core import permisos
-from app.core.config import VERSION_ESQUEMA_OBJETIVO
-from app.models import (
-    CAPACIDADES,
-    FuncionInstitucion,
-    HistorialTransicionTicket,
-    InstitucionControl,
-    MapaUsuarioEsquema,
-    Ticket,
-    VersionEsquema,
-)
+from app.models import HistorialTransicionTicket, Ticket
 
 from tests.funcional.integracion._soporte_ciclo_vida_013 import (
+    CORREO_GATING_013 as _CORREO_GATING,
     DETALLE_TICKET_NO_ENCONTRADO,
     SIN_AUTENTICAR,
     abrir_ticket,
@@ -40,6 +32,7 @@ from tests.funcional.integracion._soporte_ciclo_vida_013 import (
     contar_en,
     leer_historial,
     leer_stock_sede,
+    sembrar_contexto_capacidades as _sembrar_contexto_capacidades,
     sembrar_mundo_013,
     sembrar_ticket,
     sesion,
@@ -322,47 +315,6 @@ def test_confirmacion_sin_sesion_responde_401_ac_43(motor, mundo):
         respuesta = _confirmar(cliente, ticket_id)
 
     assert respuesta.status_code == 401, respuesta.text
-
-
-def _sembrar_contexto_capacidades(motor, datos, capacidades_apagadas=frozenset()):
-    """Control coherente para que el correo del gating resuelva a INST01.
-
-    Mismo patron que `test_ciclo_vida_aprobacion_013.py`: institucion canonica
-    activa, mapa `correo -> esquema`, version objetivo y las siete capacidades
-    con las apagadas explicitas.
-    """
-    institucion_id = datos["inst_propia"]
-    with sesion(motor) as db:
-        if db.get(InstitucionControl, institucion_id) is None:
-            db.add(
-                InstitucionControl(
-                    institucion_id=institucion_id,
-                    nombre="Instituto de Prueba",
-                    activo=True,
-                )
-            )
-            db.flush()
-        if db.get(MapaUsuarioEsquema, _CORREO_GATING) is None:
-            db.add(
-                MapaUsuarioEsquema(
-                    correo=_CORREO_GATING,
-                    institucion_id=institucion_id,
-                    nombre_esquema="tenant_inst01",
-                    activo=True,
-                )
-            )
-            db.flush()
-        if db.execute(select(VersionEsquema)).scalars().first() is None:
-            db.add(VersionEsquema(version=VERSION_ESQUEMA_OBJETIVO))
-        for funcion in CAPACIDADES:
-            db.add(
-                FuncionInstitucion(
-                    institucion_id=institucion_id,
-                    funcion=funcion,
-                    habilitada=funcion not in capacidades_apagadas,
-                )
-            )
-        db.commit()
 
 
 def test_confirmacion_con_la_capacidad_tickets_apagada_responde_403_ac_43(

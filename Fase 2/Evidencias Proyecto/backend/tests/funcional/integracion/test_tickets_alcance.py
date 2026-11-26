@@ -13,10 +13,11 @@ una y se observa, por rol, que:
   * En una operacion permitida sobre un ticket de otra institucion (PATCH estado,
     despacho) el rol limitado recibe **404**, igual que para un id inexistente, sin
     mutar datos (D-5, AC-6).
-  * `POST /tickets/`: **todo rol autorizado** queda atribuido a su identidad de
-    sesion; `usuario_id` es opcional y su valor (propio, ajeno o inexistente) se
-    ignora sin 422/403/404 (enmienda D-33/D-35 de la 003, AC-18/AC-20 de la 007 y
-    AC-11 de la 008). La institucion del ticket y de sus detalles es la de sesion.
+  * `POST /tickets/`: **solo el Solicitante** crea y queda atribuido a su
+    identidad de sesion; `usuario_id` es opcional y su valor (propio, ajeno o
+    inexistente) se ignora sin 422/403/404 (enmienda D-33/D-35 de la 003, AC-21
+    de la 007 y AC-11 de la 008). La institucion del ticket y de sus detalles es
+    la de sesion. Administrador y Bodeguero reciben 403 por matriz.
   * El despacho del ticket propio sigue siendo una transaccion ACID (Feature 005).
 
 Fuera de alcance de T4: el 403 de rol (e.g. Solicitante en PATCH/despacho) ya lo fija
@@ -647,16 +648,19 @@ def test_solicitante_crea_y_se_atribuye_su_identidad(motor, ambito_tickets):
     assert persistido["detalles"] == ["INST01"]
 
 
-@pytest.mark.parametrize("rol", ["Administrador", "Bodeguero", "Solicitante"])
+@pytest.mark.parametrize(
+    ("rol", "esperado"),
+    [("Solicitante", 201), ("Administrador", 403), ("Bodeguero", 403)],
+)
 @pytest.mark.parametrize("variante", ["omitido", "propio", "ajeno", "inexistente"])
-def test_roles_autorizados_atienden_la_identidad_de_sesion(
-    motor, ambito_tickets, rol, variante
+def test_solo_el_solicitante_atiende_la_identidad_de_sesion(
+    motor, ambito_tickets, rol, esperado, variante
 ):
-    """AC-33/AC-18/AC-11: las cuatro variantes de payload dan 201 y autor de sesion.
+    """AC-21/AC-22/AC-23: la autoatribucion es del Solicitante y los demas 403.
 
-    La identidad de sesion es un usuario persistido de INST01 (la fila del
-    Solicitante) con el rol parametrizado: la autoria no depende del rol sino de
-    la sesion, y el valor enviado en `usuario_id` se ignora por completo.
+    Para el unico rol autorizado, las cuatro variantes de `usuario_id` (omitido,
+    propio, ajeno o inexistente) dan 201 y el autor es la identidad de sesion.
+    Administrador y Bodeguero reciben 403 por matriz sin escribir una fila.
     """
     enviado = {
         "omitido": None,
@@ -664,6 +668,7 @@ def test_roles_autorizados_atienden_la_identidad_de_sesion(
         "ajeno": ambito_tickets["usuario_ajeno_id"],
         "inexistente": 987654,
     }[variante]
+    inicio = _contar(motor, Ticket)
 
     with _cliente(
         motor,
@@ -675,10 +680,18 @@ def test_roles_autorizados_atienden_la_identidad_de_sesion(
             RUTA_TICKETS, json=_payload(ambito_tickets, enviado)
         )
 
-    assert respuesta.status_code == 201, (rol, variante, respuesta.text)
+    assert respuesta.status_code == esperado, (rol, variante, respuesta.text)
+    if esperado == 403:
+        assert respuesta.json() == {
+            "detail": "Permiso insuficiente para la operacion"
+        }
+        assert _contar(motor, Ticket) == inicio, "un 403 no puede escribir"
+        return
+
     cuerpo = respuesta.json()
     assert cuerpo["usuario_id"] == ambito_tickets["solicitante_id"]
     assert cuerpo["sede_id"] == ambito_tickets["sede_id"]
+    assert _contar(motor, Ticket) == inicio + 1
 
     persistido = _instituciones_persistidas(motor, cuerpo["ticket_id"])
     assert persistido["usuario_id"] == ambito_tickets["solicitante_id"]
@@ -686,10 +699,10 @@ def test_roles_autorizados_atienden_la_identidad_de_sesion(
     assert persistido["detalles"] == ["INST01"]
 
 
-def test_administrador_ignora_solicitante_de_otra_institucion_y_atribuye_a_sesion(
+def test_administrador_403_aunque_el_payload_nombre_un_solicitante_ajeno(
     motor, ambito_tickets
 ):
-    """AC-11: un `usuario_id` ajeno ya no produce 404; se ignora y no duplica."""
+    """AC-22: el Administrador no crea; el `usuario_id` ajeno ni se evalua."""
     inicio = _contar(motor, Ticket)
 
     with _cliente(
@@ -702,19 +715,17 @@ def test_administrador_ignora_solicitante_de_otra_institucion_y_atribuye_a_sesio
             RUTA_TICKETS, json=_payload(ambito_tickets, ambito_tickets["usuario_ajeno_id"])
         )
 
-    assert respuesta.status_code == 201, respuesta.text
-    assert respuesta.json()["usuario_id"] == ambito_tickets["usuario_id"]
-    assert _contar(motor, Ticket) == inicio + 1
-
-    persistido = _instituciones_persistidas(motor, respuesta.json()["ticket_id"])
-    assert persistido["usuario_id"] == ambito_tickets["usuario_id"]
-    assert persistido["ticket"] == "INST01"
-    assert persistido["detalles"] == ["INST01"]
+    assert respuesta.status_code == 403, respuesta.text
+    assert respuesta.json() == {"detail": "Permiso insuficiente para la operacion"}
+    assert _contar(motor, Ticket) == inicio, "un 403 no puede escribir"
 
 
-def test_administrador_crea_para_solicitante_propio_201(motor, ambito_tickets):
-    """Aunque el payload nombre al Solicitante, el autor es el Administrador."""
-    # Actor persistido: la creacion registra su fila de historial (013, AC-9).
+def test_administrador_no_crea_para_un_solicitante_propio_403(
+    motor, ambito_tickets
+):
+    """AC-22: el Administrador tampoco crea aunque el payload nombre al Solicitante."""
+    inicio = _contar(motor, Ticket)
+
     with _cliente(
         motor,
         "Administrador",
@@ -724,8 +735,10 @@ def test_administrador_crea_para_solicitante_propio_201(motor, ambito_tickets):
         respuesta = cliente.post(
             RUTA_TICKETS, json=_payload(ambito_tickets, ambito_tickets["solicitante_id"])
         )
-    assert respuesta.status_code == 201, respuesta.text
-    assert respuesta.json()["usuario_id"] == ambito_tickets["usuario_id"]
+
+    assert respuesta.status_code == 403, respuesta.text
+    assert respuesta.json() == {"detail": "Permiso insuficiente para la operacion"}
+    assert _contar(motor, Ticket) == inicio, "un 403 no puede escribir"
 
 
 def test_departamento_sin_sede_responde_409_sin_ticket_detalle_ni_historial(
@@ -743,9 +756,9 @@ def test_departamento_sin_sede_responde_409_sin_ticket_detalle_ni_historial(
 
     with _cliente(
         motor,
-        "Administrador",
+        "Solicitante",
         ambito_tickets["departamento_id"],
-        ambito_tickets["usuario_id"],
+        ambito_tickets["solicitante_id"],
     ) as cliente:
         respuesta = cliente.post(
             RUTA_TICKETS, json=_payload(ambito_tickets, ambito_tickets["solicitante_id"])
@@ -782,9 +795,9 @@ def test_departamento_sin_sede_ignora_usuario_sede_id_y_responde_409(
     # La identidad de sesion si tiene una sede valida: el fallback la usaria.
     with _cliente(
         motor,
-        "Administrador",
+        "Solicitante",
         ambito_tickets["departamento_id"],
-        ambito_tickets["usuario_id"],
+        ambito_tickets["solicitante_id"],
         sede_id=sede_valida,
     ) as cliente:
         respuesta = cliente.post(
@@ -820,9 +833,9 @@ def test_ticket_guarda_la_sede_del_departamento_no_la_del_usuario(
 
     with _cliente(
         motor,
-        "Administrador",
+        "Solicitante",
         ambito_tickets["departamento_id"],
-        ambito_tickets["usuario_id"],
+        ambito_tickets["solicitante_id"],
         sede_id=sede_usuario_id,
     ) as cliente:
         respuesta = cliente.post(

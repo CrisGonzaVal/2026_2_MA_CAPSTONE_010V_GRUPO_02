@@ -118,7 +118,9 @@ def test_registrar_movimiento_responde_201(cliente, datos_base, sede_base):
     assert respuesta.json()["nuevo_stock"] == 75
 
 
-def test_crear_ticket_responde_201(cliente, datos_base):
+def test_crear_ticket_responde_201(cliente, actuar_como, datos_base):
+    """Enmienda 26/Nov/2026: el alta es solo del Solicitante."""
+    actuar_como("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
         json={
@@ -137,7 +139,9 @@ def test_crear_ticket_responde_201(cliente, datos_base):
     assert cuerpo["detalles"][0]["cantidad_solicitada"] == 12
 
 
-def test_actualizar_estado_ticket_hacia_cerrado_responde_409(cliente, datos_base):
+def test_actualizar_estado_ticket_hacia_cerrado_responde_409(
+    cliente, actuar_como, datos_base
+):
     """Ajustado por la enmienda D-4 de la 013 (AC-26): el cierre por `PATCH`
     ya no existe en **ningun** catalogo.
 
@@ -147,6 +151,7 @@ def test_actualizar_estado_ticket_hacia_cerrado_responde_409(cliente, datos_base
     con su detalle literal y sin tocar el ticket. El flujo lineal entre
     estados operativos sigue respondiendo 200 (verificado en el modulo de la
     004)."""
+    actuar_como("Solicitante")
     creado = cliente.post(
         "/api/v1/tickets/",
         json={
@@ -158,6 +163,7 @@ def test_actualizar_estado_ticket_hacia_cerrado_responde_409(cliente, datos_base
         },
     ).json()
 
+    actuar_como("Administrador")
     respuesta = cliente.patch(
         f"/api/v1/tickets/{creado['ticket_id']}/estado",
         json={"estado_id": datos_base["estado_cerrado_id"]},
@@ -183,7 +189,9 @@ def test_actualizar_estado_de_ticket_inexistente_responde_404(cliente, datos_bas
     assert respuesta.status_code == 404, respuesta.text
 
 
-def test_ticket_con_producto_inexistente_responde_404(cliente_sin_excepcion, datos_base):
+def test_ticket_con_producto_inexistente_responde_404(
+    cliente_sin_excepcion, actuar_como, datos_base
+):
     """Regresion de un defecto PREEXISTENTE que la Feature 001 documento.
 
     `crear_ticket` no capturaba el `IntegrityError` de un `producto_id` que no
@@ -196,6 +204,7 @@ def test_ticket_con_producto_inexistente_responde_404(cliente_sin_excepcion, dat
     la asercion es la que vigila el defecto, y `cliente_sin_excepcion` sigue
     pniendo que si algo vuelve a reventar por debajo, se veria.
     """
+    actuar_como("Solicitante")
     respuesta = cliente_sin_excepcion.post(
         "/api/v1/tickets/",
         json={

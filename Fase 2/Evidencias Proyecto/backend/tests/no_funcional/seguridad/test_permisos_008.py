@@ -140,6 +140,13 @@ OPERACIONES_AJUSTADAS = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"),
 }
 
+#: Enmienda 26/Nov/2026 de la Feature 007 (spec D-11/AC-29/AC-33): el
+#: Administrador ya **no** conserva el alta de tickets, que pasa a ser exclusiva
+#: del Solicitante. Es la unica excepcion documentada a la regla de la 008
+#: ("el Administrador conserva las escrituras institucionales"); el alta sigue
+#: entre las cinco operaciones ajustadas y no se retira de la transcripcion.
+EXCEPCION_ALTA_026N: tuple[str, str] = ("POST", "/api/v1/tickets/")
+
 #: Matriz 007 (regresion): solo las operaciones NO ajustadas deben coincidir.
 MATRIZ_007: dict[tuple[str, str], set[str]] = {
     **MATRIZ_008,
@@ -241,6 +248,8 @@ def test_matriz_central_conserva_la_esperada_para_008():
     Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH /estado` de la
     transcripcion historica se **restringe** a solo Administrador; la entrada
     no se retira y el Bodeguero conserva despacho, rechazo y recepcion.
+    Enmienda 26/Nov/2026 de la 007 (D-11/AC-29/AC-33): el alta de tickets se
+    **restringe** a solo Solicitante; la entrada tampoco se retira.
     """
     vigente = {
         clave: set(roles) for clave, roles in permisos.MATRIZ_PERMISOS.items()
@@ -272,8 +281,16 @@ def test_superadmin_deja_de_escribir_catalogo_stock_y_tickets():
 
 
 def test_administrador_conserva_las_escrituras_institucionales():
-    for clave in OPERACIONES_AJUSTADAS:
+    """El Administrador conserva las escrituras institucionales de la 008.
+
+    Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29): `POST /tickets/` es la
+    unica excepcion documentada; el alta queda exclusiva del Solicitante y el
+    Administrador recibe 403. Las otras cuatro escrituras institucionales se
+    conservan sin cambios.
+    """
+    for clave in OPERACIONES_AJUSTADAS - {EXCEPCION_ALTA_026N}:
         assert "Administrador" in permisos.roles_de_operacion(*clave), clave
+    assert set(permisos.roles_de_operacion(*EXCEPCION_ALTA_026N)) == {"Solicitante"}
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +301,12 @@ def test_administrador_conserva_las_escrituras_institucionales():
 #: `PATCH /estado` de la transcripcion historica queda **solo** para el
 #: Administrador; es una restriccion documentada de la entrada, que no se
 #: retira, y el Bodeguero conserva despacho, rechazo y recepcion de compras.
+#: Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29/AC-33): el alta de tickets
+#: queda **solo** para el Solicitante (Administrador y Bodeguero reciben 403).
+#: Es la excepcion documentada de `test_administrador_conserva_las_escrituras_institucionales`.
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
+    ("POST", "/api/v1/tickets/"): {"Solicitante"},
 }
 
 CASOS_AJUSTADOS = [

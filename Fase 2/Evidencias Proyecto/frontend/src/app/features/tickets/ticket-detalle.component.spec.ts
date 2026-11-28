@@ -19,23 +19,25 @@ const RUTA_DETALLE = `${URL_API}/tickets/7`;
 const RUTA_HISTORIAL = `${URL_API}/tickets/7/historial`;
 const RUTA_CATALOGOS = `${URL_API}/tickets/catalogos`;
 const RUTA_APROBACION = `${URL_API}/tickets/7/aprobacion`;
-const RUTA_DESPACHO = `${URL_API}/tickets/7/despacho`;
+const RUTA_RETIRO = `${URL_API}/tickets/7/retiro`;
 const RUTA_CONFIRMACION_ENTREGA = `${URL_API}/tickets/7/confirmacion-entrega`;
 const RUTA_ANULACION = `${URL_API}/tickets/7/anulacion`;
 const RUTA_RECHAZO = `${URL_API}/tickets/7/rechazo`;
 
-/** Catálogo canónico de la 013: `Anulado` al final del orden del flujo. */
+/**
+ * Catálogo canónico de la enmienda 26/Nov/2026 (D-35): `EnRevision` es el único
+ * estado inicial y los terminales `Cerrado` y `Anulado` cierran el flujo.
+ */
 const CATALOGOS_013: CatalogosTicket = {
   prioridades: [
     { prioridad_id: 1, nombre: 'Alta', descripcion: 'Corto plazo' },
     { prioridad_id: 2, nombre: 'Media', descripcion: 'Reposición' },
   ],
   estados: [
-    { estado_id: 1, nombre: 'Pendiente', descripcion: 'Sin revisar' },
-    { estado_id: 2, nombre: 'EnRevision', descripcion: 'En revisión' },
-    { estado_id: 3, nombre: 'EnCurso', descripcion: 'En preparación' },
-    { estado_id: 4, nombre: 'Cerrado', descripcion: 'Despachado' },
-    { estado_id: 5, nombre: 'Anulado', descripcion: 'Anulado o rechazado' },
+    { estado_id: 1, nombre: 'EnRevision', descripcion: 'En revisión' },
+    { estado_id: 2, nombre: 'EnCurso', descripcion: 'En preparación' },
+    { estado_id: 3, nombre: 'Cerrado', descripcion: 'Retirado' },
+    { estado_id: 4, nombre: 'Anulado', descripcion: 'Anulado o rechazado' },
   ],
   productos: [
     {
@@ -86,6 +88,21 @@ const PRODUCTO_DETALLE = {
 };
 
 /**
+ * Enmienda 26/Nov/2026 (D-35/AC-62): catálogo de cuatro estados con
+ * `EnRevision` como único inicial. Los ids son solo los de la semilla; el
+ * componente resuelve por nombre.
+ */
+const CATALOGOS_RETIRO: CatalogosTicket = {
+  ...CATALOGOS_013,
+  estados: [
+    { estado_id: 1, nombre: 'EnRevision', descripcion: 'En revisión' },
+    { estado_id: 2, nombre: 'EnCurso', descripcion: 'En preparación' },
+    { estado_id: 3, nombre: 'Cerrado', descripcion: 'Retirado' },
+    { estado_id: 4, nombre: 'Anulado', descripcion: 'Anulado o rechazado' },
+  ],
+};
+
+/**
  * Producto retirado del catálogo (Feature 014): el backend ya no lo devuelve en
  * `GET /tickets/catalogos`, pero sigue resolviéndose en el detalle histórico del
  * ticket, que es justo lo que permite conservar el ítem (AC-9).
@@ -98,7 +115,7 @@ const CATALOGOS_SIN_PRODUCTO_1: CatalogosTicket = {
   productos: CATALOGOS_013.productos.filter((producto) => producto.producto_id !== 1),
 };
 
-/** Detalle base: `Pendiente`, del Solicitante dueño (usuario 5), con un ítem. */
+/** Detalle base: `EnRevision`, del Solicitante dueño (usuario 5), con un ítem. */
 function crearDetalle(estado_id = 1, usuario_id = 5): TicketDetalle {
   return {
     ticket_id: 7,
@@ -131,6 +148,14 @@ function crearDetalleConProductoInactivo(): TicketDetalle {
   return detalle;
 }
 
+/** Detalle del catálogo de la enmienda: `1 EnRevision`, `2 EnCurso`, `3 Cerrado`, `4 Anulado`. */
+function crearDetalleRetiro(estado_id = 1, usuario_id = 5): TicketDetalle {
+  const detalle = crearDetalle(1, usuario_id);
+  detalle.estado_id = estado_id;
+  detalle.estado_nombre = CATALOGOS_RETIRO.estados[estado_id - 1].nombre;
+  return detalle;
+}
+
 /** Historial base: creación (origen nulo) + transición a `EnRevision` con motivo. */
 function crearHistorial(): HistorialTransicion[] {
   return [
@@ -143,7 +168,7 @@ function crearHistorial(): HistorialTransicion[] {
       fecha_transicion: '2026-10-10T09:00:00',
       motivo: null,
       estado_origen_nombre: null,
-      estado_destino_nombre: 'Pendiente',
+      estado_destino_nombre: 'EnRevision',
       usuario_nombre: 'Isabel',
       usuario_apellido: 'Contreras',
     },
@@ -151,11 +176,11 @@ function crearHistorial(): HistorialTransicion[] {
       historial_transicion_id: 2,
       ticket_id: 7,
       estado_origen_id: 1,
-      estado_destino_id: 2,
+      estado_destino_id: 1,
       usuario_id: 9,
       fecha_transicion: '2026-10-11T10:00:00',
       motivo: 'Revisión inicial del requerimiento',
-      estado_origen_nombre: 'Pendiente',
+      estado_origen_nombre: 'EnRevision',
       estado_destino_nombre: 'EnRevision',
       usuario_nombre: 'Bruno',
       usuario_apellido: 'Soto',
@@ -211,7 +236,7 @@ describe('TicketDetalleComponent', () => {
 
   /** Responde la reconsulta silenciosa de detalle + historial tras una mutación. */
   function responderReconsulta(
-    detalle: TicketDetalle = crearDetalle(2),
+    detalle: TicketDetalle = crearDetalle(1),
     historial: HistorialTransicion[] = crearHistorial(),
   ) {
     httpMock.expectOne(RUTA_DETALLE).flush(detalle);
@@ -316,7 +341,7 @@ describe('TicketDetalleComponent', () => {
       const texto = textoRaiz();
       expect(texto).toContain('Falta de papel para el trimestre');
       expect(texto).toContain('Alta');
-      expect(texto).toContain('Pendiente');
+      expect(texto).toContain('En Revisión');
       expect(texto).toContain('Contreras, Isabel');
       expect(texto).toContain('isabel.contreras@losalpes.cl');
       expect(texto).toContain('Docencia');
@@ -350,7 +375,7 @@ describe('TicketDetalleComponent', () => {
       conStock.stock_disponible = true;
       responderCarga(conStock);
 
-      expect(textoRaiz()).toContain('Stock disponible — Listo para despacho');
+      expect(textoRaiz()).toContain('Stock disponible — Listo para el retiro');
     });
 
     it('AC-11: sin stock disponible no muestra el aviso', () => {
@@ -363,9 +388,9 @@ describe('TicketDetalleComponent', () => {
       responderCarga();
 
       const texto = textoRaiz();
-      expect(texto).toContain('Creación → Pendiente');
+      expect(texto).toContain('Creación → En Revisión');
       // Feature 021 (V-3): el historial separa las palabras del estado.
-      expect(texto).toContain('Pendiente → En Revisión');
+      expect(texto).toContain('En Revisión → En Revisión');
       expect(texto).toContain('Contreras, Isabel');
       expect(texto).toContain('Soto, Bruno');
       expect(texto).toContain('Revisión inicial del requerimiento');
@@ -389,7 +414,7 @@ describe('TicketDetalleComponent', () => {
     // --- Feature 021 (T11, AC-5/AC-6/AC-9): cobertura y OC ---------------
 
     it('AC-5: muestra la cobertura por producto y las OC que cubren el pedido', () => {
-      const detalle = crearDetalle(3);
+      const detalle = crearDetalle(2);
       detalle.asignaciones = [
         {
           orden_compra_ticket_id: 1,
@@ -427,7 +452,7 @@ describe('TicketDetalleComponent', () => {
     });
 
     it('AC-9: una OC cancelada se marca y no se presenta como cobertura activa', () => {
-      const detalle = crearDetalle(3);
+      const detalle = crearDetalle(2);
       detalle.asignaciones = [
         {
           orden_compra_ticket_id: 2,
@@ -458,7 +483,7 @@ describe('TicketDetalleComponent', () => {
         orden_compra_id: 21,
         numero_oc: 'OC-2026-000021',
       };
-      responderCarga(crearDetalle(3), historial);
+      responderCarga(crearDetalle(2), historial);
 
       expect(textoRaiz()).toContain('En Curso → En Curso');
       expect(textoRaiz()).toContain('OC-2026-000021');
@@ -490,27 +515,28 @@ describe('TicketDetalleComponent', () => {
   describe('read model de proceso', () => {
     it('muestra el estado canónico y, junto a él, la etiqueta de proceso con su frase', () => {
       const detalle = crearDetalle(1);
-      detalle.etiqueta_proceso = 'En aprobación';
+      detalle.etiqueta_proceso = 'En revisión';
       detalle.explicacion_proceso =
-        'En aprobación: pendiente de revisión por Bodega o Administración.';
+        'En revisión: pendiente de revisión por Bodega o Administración.';
       responderCarga(detalle);
 
       const visible = textoPagina();
       // Estado canónico con su badge actual y la etiqueta derivada, juntos.
-      expect(visible).toContain('Pendiente');
-      expect(componente.etiquetaEstado()).toBe('Pendiente');
-      expect(visible).toContain('En aprobación');
+      expect(visible).toContain('En Revisión');
+      expect(componente.nombreEstado()).toBe('EnRevision');
+      expect(componente.etiquetaEstado()).toBe('En Revisión');
+      expect(visible).toContain('En revisión');
       expect(visible).toContain(
-        'En aprobación: pendiente de revisión por Bodega o Administración.',
+        'En revisión: pendiente de revisión por Bodega o Administración.',
       );
     });
 
     it('respeta las palabras de la etiqueta de proceso sin aplicarles el helper de estados', () => {
-      const detalle = crearDetalle(3);
+      const detalle = crearDetalle(2);
       detalle.stock_disponible = true;
       detalle.etiqueta_proceso = 'En confirmación de stock local';
       detalle.explicacion_proceso =
-        'En confirmación de stock local: el stock local está disponible; falta que el Bodeguero lo confirme y despache.';
+        'En confirmación de stock local: el stock local está disponible; falta que el Bodeguero registre el retiro.';
       responderCarga(detalle);
 
       expect(componente.etiquetaEstado()).toBe('En Curso');
@@ -552,7 +578,7 @@ describe('TicketDetalleComponent', () => {
     });
 
     it('muestra «Entregado el … por …» cuando el Solicitante confirmó la entrega', () => {
-      const detalle = crearDetalle(4);
+      const detalle = crearDetalle(3);
       detalle.entrega_confirmada = true;
       detalle.entrega_confirmada_en = '2026-11-25T12:00:00';
       detalle.entrega_confirmada_por_nombre = 'Isabel';
@@ -565,7 +591,7 @@ describe('TicketDetalleComponent', () => {
     });
 
     it('sin confirmación no muestra la línea de entrega', () => {
-      responderCarga(crearDetalle(4));
+      responderCarga(crearDetalle(3));
 
       expect(textoPagina()).not.toContain('Entregado el');
     });
@@ -576,27 +602,27 @@ describe('TicketDetalleComponent', () => {
   // ---------------------------------------------------------------------------
 
   describe('acciones por estado y rol', () => {
-    it('Pendiente · Administrador: Aprobar, Editar, Rechazar y Anular', () => {
+    it('EnRevision · Administrador: Aprobar, Editar, Rechazar y Anular', () => {
       responderCarga(crearDetalle(1));
 
       expect(botonesAccion()).toEqual(['Aprobar', 'Editar', 'Rechazar', 'Anular']);
     });
 
-    it('Pendiente · Bodeguero: solo Rechazar (no aprueba, edita ni anula)', () => {
+    it('EnRevision · Bodeguero: solo Rechazar (no aprueba, edita ni anula)', () => {
       identidad.set(crearIdentidad('Bodeguero'));
       responderCarga(crearDetalle(1));
 
       expect(botonesAccion()).toEqual(['Rechazar']);
     });
 
-    it('Pendiente · Solicitante dueño: Editar y Anular', () => {
+    it('EnRevision · Solicitante dueño: Editar y Anular', () => {
       identidad.set(crearIdentidad('Solicitante', 5));
       responderCarga(crearDetalle(1));
 
       expect(botonesAccion()).toEqual(['Editar', 'Anular']);
     });
 
-    it('Pendiente · Solicitante no dueño: ninguna acción y la nota explica el rol', () => {
+    it('EnRevision · Solicitante no dueño: ninguna acción y la nota explica el rol', () => {
       identidad.set(crearIdentidad('Solicitante', 99));
       responderCarga(crearDetalle(1));
 
@@ -604,53 +630,45 @@ describe('TicketDetalleComponent', () => {
       expect(textoPagina()).toContain('Tu rol no puede operar el ciclo de vida');
     });
 
-    it('EnRevision (heredado) · Administrador: Aprobar, Rechazar y Anular; sin Editar', () => {
-      responderCarga(crearDetalle(2));
-
-      expect(botonesAccion()).toEqual(['Aprobar', 'Rechazar', 'Anular']);
-    });
-
-    it('EnRevision · Bodeguero: solo Rechazar', () => {
-      identidad.set(crearIdentidad('Bodeguero'));
-      responderCarga(crearDetalle(2));
-
-      expect(botonesAccion()).toEqual(['Rechazar']);
-    });
-
-    it('EnRevision · Solicitante dueño: solo Anular', () => {
-      identidad.set(crearIdentidad('Solicitante', 5));
-      responderCarga(crearDetalle(2));
-
-      expect(botonesAccion()).toEqual(['Anular']);
-    });
-
-    it('EnCurso · Administrador con stock: Confirmar stock local y despachar', () => {
-      const detalle = crearDetalle(3);
+    it('EnCurso · Administrador con stock: no ofrece el retiro (solo Bodeguero)', () => {
+      const detalle = crearDetalle(2);
       detalle.stock_disponible = true;
       responderCarga(detalle);
 
-      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
+      expect(botonesAccion()).toEqual([]);
     });
 
-    it('EnCurso · Bodeguero con stock: Confirmar stock local y despachar', () => {
-      identidad.set(crearIdentidad('Bodeguero'));
-      const detalle = crearDetalle(3);
+    it('EnCurso · Bodeguero de la sede con stock: Registrar retiro', () => {
+      identidad.set({
+        ...crearIdentidad('Bodeguero'),
+        sede: { sede_id: 3, nombre: 'Sede Central' },
+      });
+      const detalle = crearDetalle(2);
       detalle.stock_disponible = true;
       responderCarga(detalle);
 
-      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
+      expect(botonesAccion()).toEqual(['Registrar retiro']);
     });
 
-    it('EnCurso · sin stock_disponible: el despacho no se ofrece', () => {
-      responderCarga(crearDetalle(3));
+    it('EnCurso · Bodeguero sin sede: no ofrece el retiro', () => {
+      identidad.set(crearIdentidad('Bodeguero'));
+      const detalle = crearDetalle(2);
+      detalle.stock_disponible = true;
+      responderCarga(detalle);
+
+      expect(botonesAccion()).toEqual([]);
+    });
+
+    it('EnCurso · sin stock_disponible: el retiro no se ofrece', () => {
+      responderCarga(crearDetalle(2));
 
       expect(botonesAccion()).toEqual([]);
       expect(textoPagina()).toContain('stock local aún no está disponible');
     });
 
-    it('EnCurso · Solicitante dueño: no puede despachar', () => {
+    it('EnCurso · Solicitante dueño: no puede registrar el retiro', () => {
       identidad.set(crearIdentidad('Solicitante', 5));
-      const detalle = crearDetalle(3);
+      const detalle = crearDetalle(2);
       detalle.stock_disponible = true;
       responderCarga(detalle);
 
@@ -659,7 +677,7 @@ describe('TicketDetalleComponent', () => {
 
     it('Cerrado · Solicitante dueño sin confirmar: solo Confirmar entrega', () => {
       identidad.set(crearIdentidad('Solicitante', 5));
-      const detalle = crearDetalle(4);
+      const detalle = crearDetalle(3);
       detalle.entrega_confirmada = false;
       responderCarga(detalle);
 
@@ -668,22 +686,31 @@ describe('TicketDetalleComponent', () => {
 
     it('Cerrado · Solicitante no dueño: sin acciones y la nota pide la confirmación del dueño', () => {
       identidad.set(crearIdentidad('Solicitante', 99));
-      responderCarga(crearDetalle(4));
+      responderCarga(crearDetalle(3));
 
       expect(botonesAccion()).toEqual([]);
       expect(textoPagina()).toContain('pendiente de confirmación de entrega');
     });
 
-    it('Cerrado · Administrador: sin acciones; la entrega la confirma el Solicitante', () => {
-      responderCarga(crearDetalle(4));
+    it('Cerrado · Administrador sin confirmar: Anular el retiro', () => {
+      responderCarga(crearDetalle(3));
+
+      expect(botonesAccion()).toEqual(['Anular el retiro']);
+    });
+
+    it('Cerrado confirmado · Administrador: sin acciones; se presenta Entregado', () => {
+      const detalle = crearDetalle(3);
+      detalle.entrega_confirmada = true;
+      detalle.etiqueta_proceso = 'Entregado';
+      responderCarga(detalle);
 
       expect(botonesAccion()).toEqual([]);
-      expect(textoPagina()).toContain('pendiente de confirmación de entrega');
+      expect(textoPagina()).toContain('Entregado');
     });
 
     it('Cerrado entregado · Solicitante dueño: el botón desaparece y la nota lo explica', () => {
       identidad.set(crearIdentidad('Solicitante', 5));
-      const detalle = crearDetalle(4);
+      const detalle = crearDetalle(3);
       detalle.entrega_confirmada = true;
       detalle.entrega_confirmada_en = '2026-11-25T12:00:00';
       detalle.entrega_confirmada_por_nombre = 'Isabel';
@@ -695,7 +722,7 @@ describe('TicketDetalleComponent', () => {
     });
 
     it('Anulado · ningún rol ofrece acciones y la nota explica el terminal', () => {
-      responderCarga(crearDetalle(5));
+      responderCarga(crearDetalle(4));
 
       expect(botonesAccion()).toEqual([]);
       expect(textoPagina()).toContain('está Anulado');
@@ -739,13 +766,13 @@ describe('TicketDetalleComponent', () => {
       const peticion = httpMock.expectOne(RUTA_APROBACION);
       expect(peticion.request.method).toBe('POST');
       expect(peticion.request.body).toBeNull();
-      peticion.flush(crearDetalle(3));
+      peticion.flush(crearDetalle(2));
 
-      const aprobado = crearDetalle(3);
+      const aprobado = crearDetalle(2);
       aprobado.stock_disponible = true;
       aprobado.etiqueta_proceso = 'En confirmación de stock local';
       aprobado.explicacion_proceso =
-        'En confirmación de stock local: el stock local está disponible; falta que el Bodeguero lo confirme y despache.';
+        'En confirmación de stock local: el stock local está disponible; falta que el Bodeguero registre el retiro.';
       responderReconsulta(aprobado);
 
       expect(avisoExito('Pedido aprobado.')).toBe(true);
@@ -754,8 +781,8 @@ describe('TicketDetalleComponent', () => {
       expect(componente.nombreEstado()).toBe('EnCurso');
       expect(textoPagina()).toContain('En Curso');
       expect(textoPagina()).toContain('En confirmación de stock local');
-      // El pedido aprobado ya se puede despachar.
-      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
+      // El retiro es exclusivo del Bodeguero de la sede: el Administrador no lo ve.
+      expect(botonesAccion()).not.toContain('Registrar retiro');
     });
 
     it('un 409 se anuncia en role="alert" y reconsulta la verdad del backend', () => {
@@ -773,7 +800,7 @@ describe('TicketDetalleComponent', () => {
       expect(alertas().length).toBeGreaterThan(0);
       expect(alertas()[0]).toContain('El pedido ya esta EnCurso');
       expect(componente.enOperacion()).toBe(false);
-      expect(componente.nombreEstado()).toBe('Pendiente');
+      expect(componente.nombreEstado()).toBe('EnRevision');
     });
 
     it('un 403 se anuncia en role="alert" y reconsulta', () => {
@@ -801,78 +828,85 @@ describe('TicketDetalleComponent', () => {
       componente.aprobar();
 
       const peticion = httpMock.expectOne(RUTA_APROBACION);
-      peticion.flush(crearDetalle(3));
-      responderReconsulta(crearDetalle(3));
+      peticion.flush(crearDetalle(2));
+      responderReconsulta(crearDetalle(2));
       httpMock.expectNone(RUTA_APROBACION);
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Despacho desde el detalle (AC-33, AC-34): diálogo sin motivo
+  // Retiro desde el detalle (D-29/AC-55/AC-63): diálogo sin motivo, solo Bodeguero
   // ---------------------------------------------------------------------------
 
-  describe('despacho', () => {
+  describe('retiro', () => {
     function detalleEnCurso(): TicketDetalle {
-      const detalle = crearDetalle(3);
+      const detalle = crearDetalleRetiro(2);
       detalle.stock_disponible = true;
       return detalle;
     }
 
-    it('abre un diálogo sin motivo y envía el despacho con el usuario_id de la sesión', () => {
-      responderCarga(detalleEnCurso());
+    beforeEach(() => {
+      identidad.set({
+        ...crearIdentidad('Bodeguero'),
+        sede: { sede_id: 3, nombre: 'Sede Central' },
+      });
+    });
 
-      boton('Confirmar stock local y despachar')!.click();
+    it('abre un diálogo sin motivo y envía el retiro con el usuario_id de la sesión', () => {
+      responderCarga(detalleEnCurso(), crearHistorial(), CATALOGOS_RETIRO);
+
+      boton('Registrar retiro')!.click();
       fixture.detectChanges();
 
-      expect(componente.confirmando()).toBe('despacho');
+      expect(componente.confirmando()).toBe('retiro');
       const dialogo = dialogoConfirmacion();
       expect(dialogo.open).toBe(true);
       expect(dialogo.querySelector('textarea')).toBeNull();
       expect((dialogo.textContent ?? '').replace(/\s+/g, ' ')).toContain('descontará');
-      expect((dialogo.textContent ?? '').replace(/\s+/g, ' ')).toContain('Cerrado');
+      expect((dialogo.textContent ?? '').replace(/\s+/g, ' ')).toContain('Retirado');
 
       dialogo.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
-      const peticion = httpMock.expectOne(RUTA_DESPACHO);
+      const peticion = httpMock.expectOne(RUTA_RETIRO);
       expect(peticion.request.method).toBe('POST');
       expect(peticion.request.body).toEqual({ usuario_id: 9 });
-      peticion.flush(crearDetalle(4));
+      peticion.flush(crearDetalleRetiro(3));
 
-      const despachado = crearDetalle(4);
-      despachado.fecha_cierre = '2026-11-25T10:00:00';
-      despachado.etiqueta_proceso = 'Despachado';
-      despachado.explicacion_proceso = 'Despachado: pendiente de confirmación de entrega.';
-      responderReconsulta(despachado);
+      const retirado = crearDetalleRetiro(3);
+      retirado.fecha_cierre = '2026-11-25T10:00:00';
+      retirado.etiqueta_proceso = 'Retirado';
+      retirado.explicacion_proceso = 'Retirado: pendiente de confirmación de entrega.';
+      responderReconsulta(retirado);
 
       expect(componente.confirmando()).toBeNull();
-      expect(avisoExito('Pedido despachado.')).toBe(true);
+      expect(avisoExito('Pedido retirado.')).toBe(true);
       expect(alertas()).toEqual([]);
       expect(componente.nombreEstado()).toBe('Cerrado');
-      expect(textoPagina()).toContain('Despachado');
+      expect(textoPagina()).toContain('Retirado');
       // El badge de stock y la acción desaparecen; queda la nota del terminal.
       expect(textoPagina()).not.toContain('Stock disponible');
       expect(botonesAccion()).toEqual([]);
     });
 
-    it('un 409 de stock se anuncia en role="alert" y retira la acción tras la reconsulta', () => {
-      responderCarga(detalleEnCurso());
+    it('un 409 del retiro se anuncia en role="alert" y retira la acción tras la reconsulta', () => {
+      responderCarga(detalleEnCurso(), crearHistorial(), CATALOGOS_RETIRO);
 
-      boton('Confirmar stock local y despachar')!.click();
+      boton('Registrar retiro')!.click();
       fixture.detectChanges();
       dialogoConfirmacion().querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
 
       httpMock
-        .expectOne(RUTA_DESPACHO)
+        .expectOne(RUTA_RETIRO)
         .flush(
           { detail: 'Stock insuficiente para el producto Cuaderno rayado' },
           { status: 409, statusText: 'Conflict' },
         );
 
-      const sinStock = crearDetalle(3);
+      const sinStock = crearDetalleRetiro(2);
       sinStock.stock_disponible = false;
       sinStock.etiqueta_proceso = 'Por comprar';
       sinStock.explicacion_proceso = 'Por comprar: no hay stock suficiente ni compra vigente.';
-      responderReconsulta(sinStock);
+      responderReconsulta(sinStock, crearHistorial());
 
       expect(alertas()[0]).toContain('Stock insuficiente para el producto Cuaderno rayado');
       expect(componente.confirmando()).toBeNull();
@@ -880,10 +914,10 @@ describe('TicketDetalleComponent', () => {
       expect(textoPagina()).toContain('Por comprar');
     });
 
-    it('no permite doble envío mientras el despacho está en vuelo', () => {
-      responderCarga(detalleEnCurso());
+    it('no permite doble envío mientras el retiro está en vuelo', () => {
+      responderCarga(detalleEnCurso(), crearHistorial(), CATALOGOS_RETIRO);
 
-      boton('Confirmar stock local y despachar')!.click();
+      boton('Registrar retiro')!.click();
       fixture.detectChanges();
       const submit = dialogoConfirmacion().querySelector<HTMLButtonElement>(
         'button[type="submit"]',
@@ -894,10 +928,10 @@ describe('TicketDetalleComponent', () => {
       expect(submit.disabled).toBe(true);
       componente.confirmar();
 
-      const peticion = httpMock.expectOne(RUTA_DESPACHO);
-      peticion.flush(crearDetalle(4));
-      responderReconsulta(crearDetalle(4));
-      httpMock.expectNone(RUTA_DESPACHO);
+      const peticion = httpMock.expectOne(RUTA_RETIRO);
+      peticion.flush(crearDetalleRetiro(3));
+      responderReconsulta(crearDetalleRetiro(3), crearHistorial());
+      httpMock.expectNone(RUTA_RETIRO);
     });
   });
 
@@ -907,7 +941,7 @@ describe('TicketDetalleComponent', () => {
 
   describe('confirmación de entrega', () => {
     function detalleCerrado(): TicketDetalle {
-      const detalle = crearDetalle(4);
+      const detalle = crearDetalle(3);
       detalle.entrega_confirmada = false;
       return detalle;
     }
@@ -929,9 +963,9 @@ describe('TicketDetalleComponent', () => {
       const peticion = httpMock.expectOne(RUTA_CONFIRMACION_ENTREGA);
       expect(peticion.request.method).toBe('POST');
       expect(peticion.request.body).toBeNull();
-      peticion.flush(crearDetalle(4));
+      peticion.flush(crearDetalle(3));
 
-      const entregado = crearDetalle(4);
+      const entregado = crearDetalle(3);
       entregado.entrega_confirmada = true;
       entregado.entrega_confirmada_en = '2026-11-25T12:00:00';
       entregado.entrega_confirmada_por_nombre = 'Isabel';
@@ -989,8 +1023,8 @@ describe('TicketDetalleComponent', () => {
       componente.confirmar();
 
       const peticion = httpMock.expectOne(RUTA_CONFIRMACION_ENTREGA);
-      peticion.flush(crearDetalle(4));
-      responderReconsulta(crearDetalle(4));
+      peticion.flush(crearDetalle(3));
+      responderReconsulta(crearDetalle(3));
       httpMock.expectNone(RUTA_CONFIRMACION_ENTREGA);
     });
   });
@@ -1033,8 +1067,8 @@ describe('TicketDetalleComponent', () => {
       const peticion = httpMock.expectOne(RUTA_ANULACION);
       expect(peticion.request.method).toBe('POST');
       expect(peticion.request.body).toEqual({ motivo: 'Ya no hace falta' });
-      peticion.flush(crearDetalle(5));
-      responderReconsulta(crearDetalle(5));
+      peticion.flush(crearDetalle(4));
+      responderReconsulta(crearDetalle(4));
 
       expect(componente.confirmando()).toBeNull();
       expect(textoRaiz()).toContain('Pedido anulado.');
@@ -1063,7 +1097,7 @@ describe('TicketDetalleComponent', () => {
 
     it('el Bodeguero rechaza vía POST /rechazo con su motivo', () => {
       identidad.set(crearIdentidad('Bodeguero'));
-      responderCarga(crearDetalle(2));
+      responderCarga(crearDetalle(1));
 
       boton('Rechazar')!.click();
       fixture.detectChanges();
@@ -1073,15 +1107,15 @@ describe('TicketDetalleComponent', () => {
       const peticion = httpMock.expectOne(RUTA_RECHAZO);
       expect(peticion.request.method).toBe('POST');
       expect(peticion.request.body).toEqual({ motivo: 'Sin stock en la sede' });
-      peticion.flush(crearDetalle(5));
-      responderReconsulta(crearDetalle(5));
+      peticion.flush(crearDetalle(4));
+      responderReconsulta(crearDetalle(4));
 
       expect(textoRaiz()).toContain('Pedido rechazado.');
     });
 
     it('muestra el 409 del servidor al rechazar en un role="alert" y reconsulta', () => {
       identidad.set(crearIdentidad('Bodeguero'));
-      responderCarga(crearDetalle(2));
+      responderCarga(crearDetalle(1));
 
       boton('Rechazar')!.click();
       fixture.detectChanges();
@@ -1105,10 +1139,10 @@ describe('TicketDetalleComponent', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Edición en Pendiente (PUT, D-9)
+  // Edición en EnRevision (PUT, D-9)
   // ---------------------------------------------------------------------------
 
-  describe('edición en Pendiente', () => {
+  describe('edición en EnRevision', () => {
     it('abre el formulario precargado y envía PUT con la cabecera y los ítems completos', () => {
       responderCarga(crearDetalle(1));
 
@@ -1136,7 +1170,7 @@ describe('TicketDetalleComponent', () => {
       expect(textoRaiz()).toContain('Pedido editado.');
     });
 
-    it('un 409 del servidor (fuera de Pendiente) queda accesible en role="alert"', () => {
+    it('un 409 del servidor (fuera de EnRevision) queda accesible en role="alert"', () => {
       responderCarga(crearDetalle(1));
 
       boton('Editar')!.click();
@@ -1146,13 +1180,15 @@ describe('TicketDetalleComponent', () => {
       httpMock
         .expectOne(RUTA_DETALLE)
         .flush(
-          { detail: 'Solo un ticket en Pendiente puede editarse' },
+          { detail: "La edicion solo se aplica a tickets en estado 'EnRevision'" },
           { status: 409, statusText: 'Conflict' },
         );
       responderReconsulta();
 
       expect(alertas().length).toBeGreaterThan(0);
-      expect(alertas()[0]).toContain('Solo un ticket en Pendiente puede editarse');
+      expect(alertas()[0]).toContain(
+        "La edicion solo se aplica a tickets en estado 'EnRevision'",
+      );
       expect(componente.editando()).toBe(true);
     });
 
@@ -1332,13 +1368,168 @@ describe('TicketDetalleComponent', () => {
     });
 
     it('las acciones del detalle no invocan PATCH /estado', () => {
-      const detalle = crearDetalle(3);
+      identidad.set({
+        ...crearIdentidad('Bodeguero'),
+        sede: { sede_id: 3, nombre: 'Sede Central' },
+      });
+      const detalle = crearDetalle(2);
       detalle.stock_disponible = true;
       responderCarga(detalle);
 
       // Cualquier mutación visible usa su propia ruta; `afterEach` falla si
       // apareciera una petición inesperada (el PATCH de legado no se usa).
-      expect(botonesAccion()).toEqual(['Confirmar stock local y despachar']);
+      expect(botonesAccion()).toEqual(['Registrar retiro']);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Enmienda 26/Nov/2026: retiro y anulación del retiro (AC-55…AC-63)
+  // ---------------------------------------------------------------------------
+
+  describe('enmienda 26/Nov/2026: retiro y anulación del retiro', () => {
+    function identidadConSede(rol: string, sede_id: number, usuario_id = 9) {
+      return {
+        ...crearIdentidad(rol, usuario_id),
+        sede: { sede_id, nombre: 'Sede Central' },
+      };
+    }
+
+    it('expone la acción registrarRetiro y retira el vocabulario de despacho (D-29)', () => {
+      identidad.set(identidadConSede('Bodeguero', 3));
+      const detalle = crearDetalleRetiro(2);
+      detalle.stock_disponible = true;
+      responderCarga(detalle, crearHistorial(), CATALOGOS_RETIRO);
+
+      const acciones = componente.acciones() as unknown as Record<
+        string,
+        boolean
+      >;
+      expect(acciones['despachar']).toBeUndefined();
+      expect(acciones['registrarRetiro']).toBe(true);
+
+      const api = componente as unknown as Record<string, unknown>;
+      expect(api['solicitarDespacho']).toBeUndefined();
+      expect(typeof api['solicitarRetiro']).toBe('function');
+    });
+
+    it('titula «Registrar retiro»/«Confirmar retiro» y no pide motivo (AC-63)', () => {
+      responderCarga(crearDetalleRetiro(2), crearHistorial(), CATALOGOS_RETIRO);
+      const confirmando = componente.confirmando as unknown as {
+        set: (tipo: string | null) => void;
+      };
+      confirmando.set('retiro');
+      fixture.detectChanges();
+
+      expect(componente.tituloConfirmacion()).toBe('Registrar retiro');
+      expect(componente.textoBotonConfirmar()).toBe('Confirmar retiro');
+      expect(componente.exigeMotivo()).toBe(false);
+    });
+
+    it('ofrece «Registrar retiro» solo al Bodeguero de la sede con EnCurso y stock (AC-63)', () => {
+      identidad.set(identidadConSede('Bodeguero', 3));
+      const detalle = crearDetalleRetiro(2);
+      detalle.stock_disponible = true;
+      responderCarga(detalle, crearHistorial(), CATALOGOS_RETIRO);
+
+      const botones = botonesAccion();
+      expect(botones).toContain('Registrar retiro');
+      expect(botones).not.toContain('Confirmar stock local y despachar');
+    });
+
+    it('no ofrece el retiro al Administrador (AC-63)', () => {
+      identidad.set(crearIdentidad('Administrador'));
+      const detalle = crearDetalleRetiro(2);
+      detalle.stock_disponible = true;
+      responderCarga(detalle, crearHistorial(), CATALOGOS_RETIRO);
+
+      expect(botonesAccion()).not.toContain('Registrar retiro');
+    });
+
+    it('no ofrece el retiro al Bodeguero de otra sede (AC-63)', () => {
+      identidad.set(identidadConSede('Bodeguero', 9));
+      const detalle = crearDetalleRetiro(2);
+      detalle.stock_disponible = true;
+      responderCarga(detalle, crearHistorial(), CATALOGOS_RETIRO);
+
+      expect(botonesAccion()).not.toContain('Registrar retiro');
+    });
+
+    it('muestra «Anular el retiro» solo al Administrador de un Cerrado sin confirmar (AC-63)', () => {
+      responderCarga(crearDetalleRetiro(3), crearHistorial(), CATALOGOS_RETIRO);
+
+      expect(botonesAccion()).toContain('Anular el retiro');
+    });
+
+    it('oculta toda acción tras la confirmación y presenta «Entregado» (AC-63)', () => {
+      identidad.set(crearIdentidad('Solicitante', 5));
+      const detalle = crearDetalleRetiro(3);
+      detalle.entrega_confirmada = true;
+      detalle.etiqueta_proceso = 'Entregado';
+      responderCarga(detalle, crearHistorial(), CATALOGOS_RETIRO);
+
+      expect(botonesAccion()).not.toContain('Confirmar entrega');
+      expect(botonesAccion()).not.toContain('Anular el retiro');
+      expect(textoPagina()).toContain('Entregado');
+    });
+
+    it('solicita el retiro, envía POST /retiro y anuncia «Retirado» (AC-55/AC-63)', () => {
+      identidad.set(identidadConSede('Bodeguero', 3));
+      const detalle = crearDetalleRetiro(2);
+      detalle.stock_disponible = true;
+      responderCarga(detalle, crearHistorial(), CATALOGOS_RETIRO);
+
+      const api = componente as unknown as Record<string, unknown>;
+      const solicitar = api['solicitarRetiro'];
+      expect(typeof solicitar).toBe('function');
+      if (typeof solicitar !== 'function') {
+        return;
+      }
+
+      (solicitar as () => void).call(componente);
+      fixture.detectChanges();
+      expect(componente.confirmando() as string | null).toBe('retiro');
+
+      componente.confirmar();
+
+      const peticion = httpMock.expectOne(RUTA_RETIRO);
+      expect(peticion.request.method).toBe('POST');
+      expect(peticion.request.body).toEqual({ usuario_id: 9 });
+      peticion.flush(crearDetalleRetiro(3));
+      responderReconsulta(crearDetalleRetiro(3));
+      fixture.detectChanges();
+
+      const avisos = Array.from(
+        raiz.querySelectorAll('[role="status"]'),
+      ).map((nodo) => (nodo.textContent ?? '').toLowerCase());
+      expect(avisos.some((texto) => texto.includes('retirado'))).toBe(true);
+    });
+
+    it('un 409 del retiro se anuncia en role="alert" y reconsulta (AC-63)', () => {
+      identidad.set(identidadConSede('Bodeguero', 3));
+      const detalle = crearDetalleRetiro(2);
+      detalle.stock_disponible = true;
+      responderCarga(detalle, crearHistorial(), CATALOGOS_RETIRO);
+
+      const api = componente as unknown as Record<string, unknown>;
+      const solicitar = api['solicitarRetiro'];
+      expect(typeof solicitar).toBe('function');
+      if (typeof solicitar !== 'function') {
+        return;
+      }
+
+      (solicitar as () => void).call(componente);
+      componente.confirmar();
+      httpMock
+        .expectOne(RUTA_RETIRO)
+        .flush(
+          { detail: 'El pedido ya no esta en EnCurso' },
+          { status: 409, statusText: 'Conflict' },
+        );
+      responderReconsulta(crearDetalleRetiro(2));
+      fixture.detectChanges();
+
+      expect(alertas().some((texto) => texto.includes('EnCurso'))).toBe(true);
+      expect(componente.enOperacion()).toBe(false);
     });
   });
 });

@@ -140,11 +140,12 @@ def test_matriz_tiene_exactamente_60_operaciones_tras_014():
     No es una reescritura silenciosa del contrato, es una ampliacion documentada.
     """
     total = len(permisos.MATRIZ_PERMISOS)
-    assert total == 75, (
-        "la matriz debe tener 75 operaciones (55 previas + 5 de la 014 + la de "
+    assert total == 72, (
+        "la matriz debe tener 72 operaciones (55 previas + 5 de la 014 + la de "
         f"ambito de la 018 + el detalle de producto de la 019 + las 10 de compras "
         f"de la 020 + el preview de la 021 + la aprobacion y la confirmacion de "
-        f"entrega de la ampliacion de la 013); tiene {total}"
+        f"entrega de la ampliacion de la 013, menos las tres que retira la "
+        f"enmienda 27/Nov/2026 de la 012); tiene {total}"
     )
 
 
@@ -195,7 +196,7 @@ def test_openapi_tiene_60_operaciones_tras_014(cliente):
         for metodo in operaciones
         if metodo in _METODOS_OPENAPI
     )
-    assert total == 75, f"/openapi.json debe publicar 75 operaciones v1; publica {total}"
+    assert total == 72, f"/openapi.json debe publicar 72 operaciones v1; publica {total}"
 
 
 @pytest.mark.parametrize(

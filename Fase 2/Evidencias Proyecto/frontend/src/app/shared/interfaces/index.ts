@@ -290,6 +290,12 @@ export interface Ticket {
   descripcion: string | null;
   fecha_creacion: string;
   fecha_cierre: string | null;
+  /**
+   * Instantánea de la sede del pedido (Feature 011, D-5/AC-9). El backend la
+   * envía en `TicketRespuesta` porque el retiro se acota a la sede del Bodeguero
+   * (enmienda 26/Nov/2026, D-30/AC-56); un ticket legado puede traerla nula.
+   */
+  sede_id?: number | null;
   detalles: DetalleTicket[];
   /**
    * Feature 013 (ampliación 25/Nov/2026, §9.8): campos de lectura derivados
@@ -512,7 +518,7 @@ export interface TicketDetalle {
 
 /**
  * Payload de `PUT /tickets/{ticket_id}` (`TicketEditar`, T8): edición del
- * ticket en `Pendiente` con el **conjunto completo** de ítems (reemplazo
+ * ticket en `EnRevision` con el **conjunto completo** de ítems (reemplazo
  * atómico, D-9). No viajan estado, solicitante, sede ni institución: no son
  * editables.
  */
@@ -992,31 +998,17 @@ export interface DepartamentoEstadoRespuesta {
   activo: boolean;
 }
 
-/**
- * Encargado vigente y compatible de un departamento (Feature 011, spec D-4).
- *
- * Refleja 1:1 el `EncargadoRespuesta`: la asociación solo es visible si el
- * usuario existe, es Solicitante y pertenece al mismo departamento.
- */
-export interface Encargado {
-  usuario_id: number;
-  departamento_id: number;
-  nombre: string;
-  apellido: string;
-  correo: string;
-}
-
-/** Entrada de `POST /organizacion/departamentos/{id}/encargados`. */
-export interface EncargadoCrear {
-  usuario_id: number;
-}
-
 /** Entrada de `PUT /usuarios/{id}` (sin correo: clave de identidad local). */
 export interface UsuarioEdicion {
   nombre: string;
   apellido: string;
-  departamento_id: number;
   rol_id: number;
+  /**
+   * Opcional en la entrada (enmienda 012, D-12): el servicio exige el
+   * departamento para todo rol distinto de Bodeguero y resuelve «Suministros»
+   * para el Bodeguero. Cuando viaja, es `>= 1`.
+   */
+  departamento_id?: number | null;
 }
 
 /**
@@ -1050,13 +1042,15 @@ export interface UsuarioEstadoConMotivo extends UsuarioEstado {
  * El cliente aporta solo el correo (que debe existir ya en Clerk) y el ámbito
  * del tenant; la institución y el esquema los resuelve el servidor. La sede del
  * Bodeguero no forma parte del alta: se asigna después con
- * `PUT /organizacion/usuarios/{id}/sede`.
+ * `PUT /organizacion/usuarios/{id}/sede`. Desde la enmienda 012 (D-12)
+ * `departamento_id` es **opcional**: el Bodeguero lo omite porque el servidor
+ * resuelve «Suministros», y cualquier otro rol lo envía.
  */
 export interface UsuarioCrear {
   nombre: string;
   apellido: string;
   correo: string;
-  departamento_id: number;
+  departamento_id?: number | null;
   rol_id: number;
 }
 

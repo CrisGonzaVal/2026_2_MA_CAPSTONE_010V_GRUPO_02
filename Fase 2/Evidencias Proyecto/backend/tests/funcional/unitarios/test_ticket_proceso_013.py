@@ -1,10 +1,13 @@
 """Pruebas unitarias de la etiqueta de proceso y del read model (Feature 013).
 
-Ampliacion del 25/Nov/2026, spec §9.8. Cubren:
+Ampliacion del 25/Nov/2026, spec §9.8, con la enmienda 26/Nov/2026 (D-37):
+`EnRevision` es el estado inicial y `Cerrado` se etiqueta «Retirado» hasta la
+confirmacion. Cubren:
 
-- **AC-37**: etiqueta y frase de `Pendiente`, `EnRevision`, `Anulado` y
-  `Cerrado` (con y sin confirmacion de entrega), y degradacion de un estado
-  fuera del conjunto canonico sin lanzar excepcion.
+- **AC-37/AC-63**: etiqueta y frase de `EnRevision`, `Anulado` y `Cerrado`
+  (con y sin confirmacion de entrega), y degradacion de un estado fuera del
+  conjunto canonico sin lanzar excepcion. `Pendiente` ya no tiene etiqueta
+  propia.
 - **AC-38**: en `EnCurso`, la OC activa mas avanzada que cubre el pedido decide
   la etiqueta con la escala `Recibida` > `Facturada` > `Emitida`; una OC
   `Cancelada` (o `None`) no cuenta y el stock solo decide sin cobertura.
@@ -27,11 +30,8 @@ from app.schemas.ticket_schema import (
 from app.services.ticket_proceso import derivar_etiqueta, rango_estado_orden
 
 #: Frases cortas literales de la spec §9.8 (fuente independiente del modulo).
-FRASE_EN_APROBACION = (
-    "En aprobación: pendiente de revisión por Bodega o Administración."
-)
 FRASE_EN_REVISION = (
-    "En revisión: estado heredado; se aprueba con la acción Aprobar."
+    "En revisión: estado inicial; se aprueba con la acción Aprobar."
 )
 FRASE_EN_COMPRA = (
     "En compra: la orden está emitida y pendiente de facturación."
@@ -41,12 +41,12 @@ FRASE_FACTURADO = (
 )
 FRASE_EN_CONFIRMACION_STOCK = (
     "En confirmación de stock local: el stock local está disponible; falta que "
-    "el Bodeguero lo confirme y despache."
+    "el Bodeguero lo confirme y retire."
 )
 FRASE_POR_COMPRAR = "Por comprar: no hay stock suficiente ni compra vigente."
-FRASE_DESPACHADO = "Despachado: pendiente de confirmación de entrega."
+FRASE_RETIRADO = "Retirado: pendiente de confirmación de entrega."
 FRASE_ENTREGADO = "Entregado: confirmado por el solicitante."
-FRASE_RECHAZADO = "Rechazado: el pedido no se despachará."
+FRASE_RECHAZADO = "Rechazado: el pedido no se retirará."
 FRASE_DESCONOCIDO = "Estado no reconocido por la etiqueta de proceso"
 
 
@@ -74,10 +74,9 @@ def _derivar(
 @pytest.mark.parametrize(
     ("estado", "entrega_confirmada", "etiqueta", "frase"),
     [
-        ("Pendiente", False, "En aprobación", FRASE_EN_APROBACION),
         ("EnRevision", False, "En revisión", FRASE_EN_REVISION),
         ("Anulado", False, "Rechazado", FRASE_RECHAZADO),
-        ("Cerrado", False, "Despachado", FRASE_DESPACHADO),
+        ("Cerrado", False, "Retirado", FRASE_RETIRADO),
         ("Cerrado", True, "Entregado", FRASE_ENTREGADO),
     ],
 )
@@ -88,6 +87,11 @@ def test_ac_37_etiqueta_y_frase_de_los_estados_fuera_de_encurso(
         etiqueta,
         frase,
     )
+
+
+def test_ac_37_pendiente_ya_no_tiene_etiqueta_propia():
+    """D-27/D-37: el estado derogado degrada a su nombre, no a «En aprobación»."""
+    assert _derivar("Pendiente") == ("Pendiente", FRASE_DESCONOCIDO)
 
 
 def test_ac_37_estado_desconocido_degrada_a_su_nombre_sin_lanzar():

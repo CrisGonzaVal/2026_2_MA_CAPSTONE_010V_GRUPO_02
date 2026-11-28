@@ -11,8 +11,8 @@ import {
  * Layout del área administrativa institucional (Feature 012, T10; panel de
  * pestañas en la enmienda T-17).
  *
- * Contiene la navegación entre las vistas de sedes, departamentos, usuarios y
- * encargados mediante `AdministracionNavComponent` y el `RouterOutlet`, envuelto
+ * Contiene la navegación entre las vistas de sedes, departamentos y usuarios
+ * mediante `AdministracionNavComponent` y el `RouterOutlet`, envuelto
  * en el `tabpanel` que lo asocia con la pestaña activa. La sección activa se
  * deriva de la **misma** resolución de `Router.url` que usa la barra, para que
  * `aria-labelledby` nunca apunte a una pestaña distinta de la seleccionada. Es

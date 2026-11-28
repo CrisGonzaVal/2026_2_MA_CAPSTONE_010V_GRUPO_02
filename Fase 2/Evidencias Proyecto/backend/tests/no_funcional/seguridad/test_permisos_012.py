@@ -35,8 +35,10 @@ _ESCRITURA_TICKETS = {"Administrador", "Bodeguero", "Solicitante"}
 _ALTA_INSTITUCION = {"Superadmin"}
 _ORGANIZACION = {"Administrador"}
 
-#: Las 28 operaciones vigentes tras las Features 007..011 (referencia exacta de
-#: no-modificacion). La 012 no cambia ninguna.
+#: Las 25 operaciones de la transcripcion 007..011 vigentes tras la enmienda
+#: 27/Nov/2026 de la 012 (referencia exacta de no-modificacion): las 28 historicas
+#: menos las tres de la tabla puente auxiliar. La 012 no cambia ninguna de las
+#: restantes.
 MATRIZ_010: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/auth/me"): _TODOS,
     ("GET", "/api/v1/usuarios/"): _ORGANIZACION,
@@ -56,25 +58,15 @@ MATRIZ_010: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/tickets/catalogos"): _TODOS,
     ("GET", "/api/v1/tickets/"): _TODOS,
     ("POST", "/api/v1/tickets/"): _ESCRITURA_TICKETS,
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): _ESCRITURA_STOCK,
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _ESCRITURA_STOCK,
     ("GET", "/api/v1/dashboard/"): _TODOS,
     ("POST", "/api/v1/control/instituciones/"): _ALTA_INSTITUCION,
     ("GET", "/api/v1/organizacion/sedes"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/departamentos/{departamento_id}/sede"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/usuarios/{usuario_id}/sede"): _ORGANIZACION,
-    (
-        "GET",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "DELETE",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}",
-    ): _ORGANIZACION,
+    # Enmienda 27/Nov/2026 de la 012 (AC-35): las tres operaciones de la tabla
+    # puente auxiliar se retiran con ella.
 }
 
 #: Operaciones nuevas de control SaaS (Superadmin), diseno-tecnico.md §1.
@@ -131,12 +123,12 @@ def _exigir_nuevas() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_baseline_010_tiene_28_operaciones():
-    assert len(MATRIZ_010) == 28
+def test_baseline_010_tiene_25_operaciones():
+    assert len(MATRIZ_010) == 25
 
 
 def test_matriz_012_transcrita_es_aditiva():
-    assert len(MATRIZ_012) == 28 + len(_OPERACIONES_NUEVAS)
+    assert len(MATRIZ_012) == 25 + len(_OPERACIONES_NUEVAS)
     assert set(MATRIZ_012) - set(MATRIZ_010) == _OPERACIONES_NUEVAS
     for clave, roles in MATRIZ_010.items():
         assert MATRIZ_012[clave] == roles, clave
@@ -176,6 +168,9 @@ RETIRADAS_017: frozenset[tuple[str, str]] = frozenset(
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
     ("POST", "/api/v1/tickets/"): {"Solicitante"},
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): {"Bodeguero"},
+    # Enmienda 26/Nov/2026 de la 013 (D-31/AC-64): movimientos manuales de bodega.
+    ("POST", "/api/v1/inventario/movimientos"): {"Bodeguero"},
 }
 
 

@@ -11,11 +11,11 @@ El informe que los integra está en [`docs/informes/Informe_Flujos_Actores.docx`
 | 1 | `00-acceso-comun` | Todos | Login Clerk, identidad, rol y ruta inicial. |
 | 2 | `01-superadmin-gobierno-saas` | Superadmin | Portal SaaS, instituciones, capacidades y administradores. |
 | 3 | `02-superadmin-alta-institucion` | Superadmin | Alta de tenant, sede inicial, Administrador y módulos. |
-| 4 | `03-administrador-administracion` | Administrador | Sedes, departamentos, usuarios y encargados. |
+| 4 | `03-administrador-administracion` | Administrador | Sedes, departamentos y usuarios. |
 | 5 | `04-administrador-inventario-catalogo` | Administrador | Existencias, filtros, detalle y ciclo de vida del catálogo. |
 | 6 | `05-administrador-compras` | Administrador | Necesidades, OC, emisión, factura y cobertura. |
 | 7 | `06-administrador-pedidos` | Administrador | Kanban, estados, edición, rechazo y anulación. |
-| 8 | `07-bodeguero-pedidos-despacho` | Bodeguero | Preparación del despacho y cierre del pedido. |
+| 8 | `07-bodeguero-pedidos-despacho` | Bodeguero | Preparación del retiro y cierre del pedido. |
 | 9 | `08-bodeguero-inventario` | Bodeguero | Stock de la sede, filtros y alertas. |
 | 10 | `09-bodeguero-recepcion-compras` | Bodeguero | Recepción de OC facturadas y desbloqueo. |
 | 11 | `10-solicitante-crear-pedido` | Solicitante | Consulta, creación y justificación del pedido. |
@@ -41,12 +41,18 @@ Desde esta carpeta:
 
 ```powershell
 python _generar.py
-powershell -NoProfile -ExecutionPolicy Bypass -File .\_exportar.ps1
+# PNG 2x de cada flujo: captura la ventana de 1200 × 560 (el SVG ocupa la
+# primera pantalla; la nota queda fuera del encuadre).
+$edge = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+& $edge --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 `
+  --window-size=1200,560 --screenshot="$PWD\03-administrador-administracion.png" `
+  "file:///$($PWD.Path.Replace('\','/'))/03-administrador-administracion.html"
 ```
 
-`_generar.py` define los 12 flujos en una sola estructura de datos y escribe los HTML. `_exportar.ps1` copia cada HTML a un directorio temporal, ejecuta Edge headless y espera a que el PNG termine de escribirse antes de copiarlo de vuelta.
-
-Si Edge está en otra ruta, ajusta `$edge` al inicio de `_exportar.ps1`. El script usa `C:\Users\ricar\AppData\Local\Temp\opencode\flujos-export` como directorio de trabajo.
+`_generar.py` define los 12 flujos en una sola estructura de datos y escribe los HTML. La
+exportación a PNG se hace con Edge headless (`--force-device-scale-factor=2`), que rasteriza
+la ventana completa de 1200 × 560 px a 2400 × 1120 px. No hay script `_exportar.ps1` en el
+repo: el comando de arriba es el procedimiento vigente.
 
 ## Validación
 
@@ -68,6 +74,6 @@ Resultado esperado: 12/12 sin fallos. Los PNG se verificaron a 2400 × 1120 px.
 
 ## Límites conocidos
 
-- El despacho de pedidos (`POST /api/v1/tickets/{id}/despacho`), el registro de movimientos (`POST /api/v1/inventario/movimientos`) y el catálogo global de proveedores del Superadmin existen en la API, pero no tienen una pantalla dedicada en el frontend.
-- El informe los marca como `API` para no prometer una interfaz que no existe.
-- Los diagramas reflejan el estado del código en la rama `ricardo`, publicada en GitHub; no se generaron capturas nuevas ni se modificó el producto.
+- El retiro de pedidos (`POST /api/v1/tickets/{id}/retiro`) se ejecuta desde el detalle («Registrar retiro») y no tiene una pantalla dedicada; el registro de movimientos (`POST /api/v1/inventario/movimientos`) y el catálogo global de proveedores del Superadmin existen en la API, sin pantalla en el frontend.
+- El informe marca los movimientos y el catálogo de proveedores como `API`; el retiro se documenta en el flujo 07 y en la matriz como acción del Bodeguero de la sede.
+- Los diagramas se regeneraron el 27/Nov/2026 con el contrato vigente (catálogo de cuatro estados y retiro). El flujo 07 conserva el slug histórico `07-bodeguero-pedidos-despacho`; su título y contenido usan «retiro».

@@ -55,8 +55,8 @@ export const ROLES_CONTROL = ['Superadmin'] as const;
  * Desde la ampliación de la Feature 013 (25/Nov/2026) el tablero es **solo
  * lectura**: no hay «Avanzar» ni «Retroceder» y ninguna pantalla invoca
  * `PATCH /estado`. Las operaciones semánticas tienen sus propios helpers
- * (`puedeAprobarTicket` —solo Administrador—, `puedeDespacharTicket`,
- * `puedeRechazarTicket`) y el `PATCH` de legado quedó restringido al
+ * (`puedeAprobarTicket` —solo Administrador—, `puedeRegistrarRetiro` —solo
+ * Bodeguero—, `puedeRechazarTicket`) y el `PATCH` de legado quedó restringido al
  * Administrador en la matriz del backend (AC-48/AC-49).
  *
  * **No** es la lista de acceso a la vista de tickets: el Superadmin opera por
@@ -130,11 +130,14 @@ export const ROLES_CREACION_TICKETS = ['Solicitante'] as const;
 export const ROLES_APROBACION_TICKETS = ['Administrador'] as const;
 
 /**
- * Roles que despachan pedidos `EnCurso` con stock disponible (Feature 005,
- * reutilizado en el detalle por D-19/AC-33). No es el `PATCH /estado`: es
- * `POST /tickets/{id}/despacho`.
+ * Roles que registran el retiro de pedidos `EnCurso` con stock disponible
+ * (enmienda 26/Nov/2026, D-29/AC-55/AC-64). No es el `PATCH /estado`: es
+ * `POST /tickets/{id}/retiro` y solo el **Bodeguero** de la sede del pedido.
+ * Administrador, Solicitante y Superadmin reciben 403 en la API.
+ *
+ * Es presentación pura: la matriz del backend es la frontera de seguridad (D-2).
  */
-export const ROLES_DESPACHO_TICKETS = ['Administrador', 'Bodeguero'] as const;
+export const ROLES_RETIRO_TICKETS = ['Bodeguero'] as const;
 
 /**
  * Roles que confirman la entrega de un pedido despachado (ampliación
@@ -304,12 +307,12 @@ export function puedeAprobarTicket(rol: string | null): boolean {
 }
 
 /**
- * `true` si el rol puede despachar tickets (Feature 013, ampliación
- * 25/Nov/2026, D-19/AC-33). Espejo de la matriz: Administrador y Bodeguero; el
- * detalle exige además `EnCurso` y `stock_disponible`.
+ * `true` si el rol puede registrar el retiro de un pedido (enmienda
+ * 26/Nov/2026, D-29/AC-55/AC-64). Espejo de la matriz: solo Bodeguero; el
+ * detalle exige además `EnCurso`, `stock_disponible` y la sede del pedido.
  */
-export function puedeDespacharTicket(rol: string | null): boolean {
-  return contiene(ROLES_DESPACHO_TICKETS, rol);
+export function puedeRegistrarRetiro(rol: string | null): boolean {
+  return contiene(ROLES_RETIRO_TICKETS, rol);
 }
 
 /**

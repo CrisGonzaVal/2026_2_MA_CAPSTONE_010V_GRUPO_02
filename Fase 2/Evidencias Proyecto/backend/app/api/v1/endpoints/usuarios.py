@@ -66,7 +66,11 @@ def listar_usuarios(
             )
         },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
-            "description": "Cuerpo invalido; no se crea una fila local."
+            "description": (
+                "Cuerpo invalido, `departamento_id` ausente o `null` para un rol "
+                "distinto de Bodeguero, o un departamento Suministros elegido para "
+                "otro rol; no se crea una fila local."
+            )
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "description": (
@@ -134,8 +138,10 @@ def crear_usuario(
         **dependencies.respuesta_recurso_oculto(),
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": (
-                "Cuerpo invalido o con campos no permitidos (p. ej. `correo`); no "
-                "se aplica ningun cambio."
+                "Cuerpo invalido o con campos no permitidos (p. ej. `correo`); "
+                "`departamento_id` ausente o `null` para un rol distinto de "
+                "Bodeguero, o un departamento Suministros elegido para otro rol; "
+                "no se aplica ningun cambio."
             )
         },
     },
@@ -166,8 +172,9 @@ def editar_usuario(
         "Persiste el estado local en `mapa_usuario_esquema.activo` (idempotente, "
         "D-3/AC-8/AC-11): desactivar impide que el correo resuelva al tenant sin "
         "borrar la identidad de Clerk; reactivar es el mismo endpoint con `true`. "
-        "Si el usuario es encargado de algun departamento responde **409** con el "
-        "motivo concreto; un usuario inexistente o ajeno, **404**."
+        "Si la desactivacion dejaria la institucion sin Administrador activo "
+        "responde **409** con el motivo concreto; un usuario inexistente o ajeno, "
+        "**404**."
     ),
     responses={
         **dependencies.respuestas_de_autorizacion(),

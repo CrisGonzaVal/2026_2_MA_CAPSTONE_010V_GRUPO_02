@@ -32,7 +32,6 @@ export const ENLACES_ADMINISTRACION: readonly EnlaceAdministracion[] = [
     etiqueta: 'Departamentos',
   },
   { ruta: '/administracion/usuarios', seccion: 'usuarios', etiqueta: 'Usuarios' },
-  { ruta: '/administracion/encargados', seccion: 'encargados', etiqueta: 'Encargados' },
 ];
 
 /** `id` estable de la pestaña (y valor de `aria-labelledby` del panel). */
@@ -87,9 +86,9 @@ export function urlActivaDelRouter(router: Router): Signal<string> {
  * Navegación interna del área administrativa institucional (Feature 012, T10;
  * pestañas ARIA en la enmienda T-17).
  *
- * Barra de secciones para el Administrador Institucional: sedes, departamentos,
- * usuarios y encargados. La fuente de verdad es el Router (D-1): de `Router.url`
- * se derivan `aria-selected`, el `tabindex` roving y el panel asociado. Sigue
+ * Barra de secciones para el Administrador Institucional: sedes, departamentos
+ * y usuarios. La fuente de verdad es el Router (D-1): de `Router.url` se
+ * derivan `aria-selected`, el `tabindex` roving y el panel asociado. Sigue
  * siendo solo navegación: la autorización real la resuelve el `RolGuard` de la
  * ruta y la matriz central del backend.
  */

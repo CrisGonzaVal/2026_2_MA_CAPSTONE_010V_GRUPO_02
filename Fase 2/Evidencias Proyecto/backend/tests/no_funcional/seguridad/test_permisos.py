@@ -48,6 +48,8 @@ _ORGANIZACION = {"Administrador"}
 _ANULACION_Y_EDICION = {"Administrador", "Solicitante"}
 #: Ciclo de vida del ticket (Feature 013, AC-17): rechazo, operativo de bodega.
 _RECHAZO = {"Administrador", "Bodeguero"}
+#: Enmienda 26/Nov/2026 (D-30): el retiro queda solo para el Bodeguero.
+_RETIRO = {"Bodeguero"}
 
 #: Las operaciones de negocio -> roles permitidos (matriz vigente de 55 filas:
 #: 49 de la 013, las cinco de gobierno de Administradores de la 017 y el reenvio
@@ -72,7 +74,7 @@ MATRIZ_ESPERADA: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/tickets/catalogos"): _LECTURA_NEGOCIO,
     ("GET", "/api/v1/tickets/"): _LECTURA_NEGOCIO,
     ("POST", "/api/v1/tickets/"): _ESCRITURA_TICKETS,
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): _RETIRO,
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _ESCRITURA_STOCK,
     # Feature 009 (D-3/AC-13/AC-14): lectura consolidada para los cuatro roles.
     ("GET", "/api/v1/dashboard/"): _LECTURA_NEGOCIO,
@@ -82,18 +84,8 @@ MATRIZ_ESPERADA: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/organizacion/sedes"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/departamentos/{departamento_id}/sede"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/usuarios/{usuario_id}/sede"): _ORGANIZACION,
-    (
-        "GET",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "DELETE",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}",
-    ): _ORGANIZACION,
+    # Enmienda 27/Nov/2026 de la 012: la tabla puente auxiliar y sus tres
+    # operaciones se retiran; las asignaciones de sede siguen vigentes.
     # Feature 012 (T6, D-1/D-2/D-5/D-6/AC-1…AC-5): gestion administrativa de
     # control SaaS (registro institucional, estado, dashboard y capacidades),
     # exclusiva del Superadmin. Operaciones nuevas y aditivas.
@@ -186,9 +178,13 @@ MATRIZ_018_ADITIVA: dict[tuple[str, str], set[str]] = {
 #: historica del alta (`_ESCRITURA_TICKETS`, tres roles) se conserva intacta y
 #: encima se aplica la restriccion **solo Solicitante**. Administrador y
 #: Bodeguero pasan a recibir 403; el servicio de alta no cambia (D-12).
+#: Enmienda 26/Nov/2026 de la 013 (D-30/D-31/AC-64): el retiro y el registro
+#: manual de movimientos se restringen al Bodeguero; la fila historica de
+#: movimientos (`_ESCRITURA_STOCK`) se conserva y el Administrador recibe 403.
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
     ("POST", "/api/v1/tickets/"): {"Solicitante"},
+    ("POST", "/api/v1/inventario/movimientos"): {"Bodeguero"},
 }
 
 _ROLES = ("Superadmin", "Administrador", "Bodeguero", "Solicitante")
@@ -266,25 +262,22 @@ def test_cuatro_roles_exactos_sin_alias_admin():
 
 
 # ---------------------------------------------------------------------------
-# AC-9: la matriz central conserva la transcripcion de D-3 (55 operaciones
-# vigentes tras las Features 008, 009, 010, 011, 012, 013 y 017: las 18 de 007
-# mas los dos GET por objeto de catalogo de la 008, el GET consolidado del
-# dashboard de la 009, el alta de institucion de la 010, las seis asignaciones
-# organizacionales de la 011, las dieciseis de la 012, las cinco de ciclo de vida
-# de la 013 y las once de gobierno de la 017). La 014 agrega cinco operaciones
-# mas sin tocar estas filas.
+# AC-9: la matriz central conserva la transcripcion de D-3 (52 operaciones
+# vigentes: las 55 de las Features 008, 009, 010, 011, 012, 013 y 017 menos las
+# tres de la tabla puente auxiliar que retira la enmienda 27/Nov/2026 de la 012).
+# La 014 agrega cinco operaciones mas sin tocar estas filas.
 # ---------------------------------------------------------------------------
 
 
 def test_matriz_conserva_las_operaciones_de_d3_y_solo_agrega():
-    """La matriz conserva las 55 filas transcritas y solo admite adiciones.
+    """La matriz conserva las 52 filas transcritas y solo admite adiciones.
 
     La transcripcion es una fase de la cadena: cada una de sus filas debe seguir
     con los mismos roles y la matriz viva no puede retirar ninguna. Las features
     posteriores (014 en adelante) agregan operaciones nuevas sin tocar las
     existentes, por eso el total se compara como cota inferior.
     """
-    assert len(MATRIZ_ESPERADA) == 55
+    assert len(MATRIZ_ESPERADA) == 52
     vigente = {
         clave: set(roles) for clave, roles in permisos.MATRIZ_PERMISOS.items()
     }
@@ -294,12 +287,13 @@ def test_matriz_conserva_las_operaciones_de_d3_y_solo_agrega():
 
 
 def test_permisos_018_solo_agrega_la_operacion_de_ambito():
-    """AC-8: la 018 suma una fila de ambito y no toca la transcripcion de 55.
+    """AC-8: la 018 suma una fila de ambito y no toca la transcripcion de 52.
 
-    El baseline historico `MATRIZ_ESPERADA` (55 filas) y su `len == 55` quedan
-    inmutables; la operacion nueva se comprueba aqui como suma independiente.
+    El baseline `MATRIZ_ESPERADA` (52 filas tras la enmienda de la 012) y su
+    `len == 52` quedan inmutables; la operacion nueva se comprueba aqui como suma
+    independiente.
     """
-    assert len(MATRIZ_ESPERADA) == 55
+    assert len(MATRIZ_ESPERADA) == 52
     for clave, roles in MATRIZ_018_ADITIVA.items():
         vigente = permisos.MATRIZ_PERMISOS.get(clave)
         assert vigente is not None, f"la Feature 018 debe declarar {clave}"
@@ -380,8 +374,9 @@ CASOS_HTTP = [
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado", "Administrador", 200),
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado", "Bodeguero", 403),
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado", "Solicitante", 403),
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho", "Administrador", 200),
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho", "Solicitante", 403),
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro", "Bodeguero", 200),
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro", "Administrador", 403),
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro", "Solicitante", 403),
 ]
 
 

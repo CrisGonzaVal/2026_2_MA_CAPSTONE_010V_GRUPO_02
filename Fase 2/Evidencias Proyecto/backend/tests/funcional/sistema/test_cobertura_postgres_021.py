@@ -2,8 +2,8 @@
 
 La suite SQLite no puede acreditar lo que la Feature 021 exige del motor:
 
-  * **AC-11** - el DDL instala 26 tablas en `control` y 23 por tenant, con la
-    version `026.0`, la tabla `orden_compra_ticket` y la columna
+  * **AC-11** - el DDL instala 25 tablas en `control` y 22 por tenant, con la
+    version `026.1`, la tabla `orden_compra_ticket` y la columna
     `historial_transicion_ticket.orden_compra_id`;
   * **AC-11** - las FK compuestas de `orden_compra_ticket` rechazan una OC,
     pedido, producto o detalle de otra institucion, y el `UNIQUE` rechaza
@@ -57,9 +57,9 @@ RAIZ = Path(__file__).resolve().parents[4]
 ESQUEMA_SQL = RAIZ / "database" / "01_esquema.sql"
 SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 
-_VERSION_ESPERADA = "026.0"
-_TABLAS_CONTROL = 26
-_TABLAS_TENANT = 23
+_VERSION_ESPERADA = "026.1"
+_TABLAS_CONTROL = 25
+_TABLAS_TENANT = 22
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +169,8 @@ def _restricciones(conexion, esquema: str, tabla: str) -> list[tuple[str, str, s
 # ---------------------------------------------------------------------------
 
 
-def test_ddl_instala_26_tablas_en_control_y_23_por_tenant():
-    """AC-11/DT-9: la 026 retira `inventario` y deja 26/23 tablas."""
+def test_ddl_instala_25_tablas_en_control_y_22_por_tenant():
+    """AC-11/AC-33: la 026 retira `inventario` y la enmienda de la 012 la auxiliar."""
     with _base_temporal() as conexion:
         _ejecutar_script(conexion, ESQUEMA_SQL)
 
@@ -208,8 +208,8 @@ def _esquema_instituciones(conexion) -> list[str]:
     ]
 
 
-def test_semilla_fija_version_026_0_en_control_y_tenants():
-    """AC-11/DT-9: `VERSION_ESQUEMA_OBJETIVO` y la semilla suben a `026.0`."""
+def test_semilla_fija_version_026_1_en_control_y_tenants():
+    """AC-11/AC-34: `VERSION_ESQUEMA_OBJETIVO` y la semilla valen `026.1`."""
     with _base_temporal() as conexion:
         _instalar(conexion)
 

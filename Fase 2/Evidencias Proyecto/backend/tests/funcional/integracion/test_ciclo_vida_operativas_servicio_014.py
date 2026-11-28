@@ -11,7 +11,7 @@ routers consumen (D-7, AC-4, AC-9, AC-10):
 * un movimiento nuevo sobre producto inactivo responde 409 sin mutar saldo ni
   dejar auditoria;
 * un alta de ticket sobre producto inactivo responde 409 sin escritura;
-* la edicion de un ticket `Pendiente` conserva (y permite cambiar cantidad de)
+* la edicion de un ticket `EnRevision` conserva (y permite cambiar cantidad de)
   un producto inactivo que ya figura en los detalles actuales, y rechaza con
   409 uno que no figura, sin reemplazar el conjunto previo;
 * las referencias historicas (tickets cerrados y movimientos previos) siguen
@@ -304,7 +304,7 @@ def test_alta_de_ticket_con_producto_inactivo_responde_409_sin_escritura(motor, 
                 TicketCrear(
                     usuario_id=mundo["usuarios_inst01"]["Solicitante"],
                     prioridad_id=mundo["prioridad_id"],
-                    estado_id=mundo["estados"]["Pendiente"],
+                    estado_id=mundo["estados"]["EnRevision"],
                     asunto="Solicitud de producto inactivo",
                     descripcion="No debe crearse.",
                     detalles=[
@@ -346,7 +346,7 @@ def test_alta_de_ticket_con_producto_de_categoria_inactiva_responde_409(motor, m
                 TicketCrear(
                     usuario_id=mundo["usuarios_inst01"]["Solicitante"],
                     prioridad_id=mundo["prioridad_id"],
-                    estado_id=mundo["estados"]["Pendiente"],
+                    estado_id=mundo["estados"]["EnRevision"],
                     asunto="Solicitud de categoria inactiva",
                     descripcion="No debe crearse.",
                     detalles=[

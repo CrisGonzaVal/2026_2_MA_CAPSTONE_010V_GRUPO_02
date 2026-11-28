@@ -128,16 +128,16 @@ CAPACIDADES_019: dict[tuple[str, str], str] = {
     clave: "inventario" for clave in OPERACIONES_019
 }
 
-#: Cardinalidad de la matriz tras las ampliaciones documentadas de la 019
-#: (61 -> 62), de la 020 (62 -> 72, diez rutas de compras), de la 021
-#: (72 -> 73, preview de cobertura) y de la ampliacion 25/Nov/2026 de la 013
-#: (73 -> 75: aprobacion del pedido en T21 y confirmacion de entrega en T22).
-TOTAL_OPERACIONES_019 = 75
+#: Cardinalidad vigente de la matriz: 75 tras las ampliaciones documentadas de la
+#: 019, la 020, la 021 y la 013, menos las tres que retira la enmienda 27/Nov/2026
+#: de la 012.
+TOTAL_OPERACIONES_019 = 72
 #: Las operaciones vigentes antes de la 019: baseline de las Features 014 y 018,
 #: ampliado por las diez rutas de compras de la 020, el preview de la 021 y la
-#: aprobacion y la confirmacion de entrega de la ampliacion de la 013; el
-#: conjunto previo a la propia 019 pasa de 61 a 74.
-TOTAL_PREVIO_019 = 74
+#: aprobacion y la confirmacion de entrega de la ampliacion de la 013, menos las
+#: tres de la enmienda 27/Nov/2026 de la 012; el conjunto previo a la propia 019
+#: pasa de 61 a 71.
+TOTAL_PREVIO_019 = 71
 
 #: Respuestas que el contrato debe documentar para la lectura nueva (spec §8).
 RESPUESTAS_DETALLE = frozenset({"200", "401", "403", "404", "409", "422"})
@@ -987,8 +987,9 @@ def test_matriz_tiene_exactamente_62_operaciones_tras_019():
     total = len(permisos.MATRIZ_PERMISOS)
     previas = set(permisos.MATRIZ_PERMISOS) - set(OPERACIONES_019)
     assert total == TOTAL_OPERACIONES_019, (
-        f"la matriz debe tener {TOTAL_OPERACIONES_019} operaciones tras la 020 "
-        f"({TOTAL_PREVIO_019} previas + la de detalle); tiene {total}"
+        f"la matriz debe tener {TOTAL_OPERACIONES_019} operaciones tras el retiro "
+        f"de la enmienda 27/Nov/2026 de la 012 ({TOTAL_PREVIO_019} previas + la de "
+        f"detalle); tiene {total}"
     )
     assert len(previas) == TOTAL_PREVIO_019, (
         "la operacion nueva no puede sustituir a ninguna previa; "

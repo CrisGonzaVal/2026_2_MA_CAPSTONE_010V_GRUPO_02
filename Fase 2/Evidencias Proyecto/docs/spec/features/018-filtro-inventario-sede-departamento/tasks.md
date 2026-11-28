@@ -102,6 +102,127 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
   - **Hecho cuando:** cada AC enlaza evidencia real; stack/roadmap/memoria están sincronizados; grep no descubre referencias obsoletas; todas las tareas anteriores verificadas y ambos puertos recorridos. **[cierre documental]**
   - **Nota de fase:** cierre **documental**, sin tocar `backend/` ni `frontend/`. (1) `spec.md` §10 queda con evidencia concreta por AC-1…AC-9 (nombres de test reales de `test_filtros_inventario_018.py`, `test_dto_ambito_018.py`, `test_filtros_inventario_postgres_018.py`, `roles.spec.ts`, `inventario.service.spec.ts` e `inventario.component.spec.ts`, más el contrato OpenAPI y las capturas de 4200/8080 con mención explícita de dónde la evidencia es un recorrido y no un test); el estado pasa a **Cerrada (21/Oct/2026)**. No existe `backend/tests/funcional/integracion/test_filtros_inventario_018.py`: el filtrado y los agregados se ejercen por `TestClient` (ruta→servicio), y así se documenta. (2) `stack.md` gana la subsección «Filtros organizacionales de existencias y lectura de ámbito (Feature 018)» tras la 014: matriz 60→61, capacidad `inventario` reutilizada, `sede_id` aditivo dentro de `condicion_stock`/INNER efectivo, 200/`[]` vs. 404 de recurso, y ausencia de cambios de modelo (`014.1`, 22/19). (3) `roadmap.md`: fila 018 en el índice, línea de «Siguiente feature» y cierre en el listado de Sprint 6. (4) `MEMORY.md` (49 líneas) con estado a 018, bloque «Feature 018 — decisiones clave» y el aprendizaje «filtro de lista ≠ recurso»; se retiró el bullet de estado de la 013 porque sus decisiones siguen en «Otras decisiones vigentes». (5) **Grep de coherencia** sobre `AGENTS.md`, `MEMORY.md` y `.agents/skills/`: no queda ninguna afirmación obsoleta por la 018 (AGENTS §7 cita la matriz/roles sin conteo; las skills solo nombran `permisos.py`, `ambito_service.py`, `inventario_service.py` e `inventario.component.ts`/`inventario.service.ts`, rutas que siguen vigentes; ningún archivo citado se movió ni se borró). El único matiz es la evidencia indirecta del 403 por capacidad en existencias (ver T9), documentado en §10 y no un defecto de la feature. **No se modificó ningún archivo fuera de los autorizados.**
 
+## Enmienda post-cierre (27/Nov/2026): checkbox «Solo con stock»
+
+> Tareas de la **§11 aprobada** (AC-10…AC-13). Solo frontend: sin backend, DDL, permisos, matriz,
+> capacidades ni `stack.md`. Ejecutar en orden, una por incremento y con pruebas primero. Si el
+> código contradice la §11, detenerse y elevar la duda al coordinator. Marcas: **[ng test]**,
+> **[build + 4200 + 8080 + cierre documental]**.
+
+- [x] **T14 — Frontend: control «Solo con stock», cadena de filtros y estado vacío.**
+  - **Archivos:** `frontend/src/app/features/inventario/inventario.component.ts`,
+    `frontend/src/app/features/inventario/inventario.component.html`,
+    `frontend/src/app/features/inventario/inventario.component.spec.ts`. Sin cambios en
+    `inventario.service.ts`, backend, DDL, permisos, matriz ni `stack.md`.
+  - **Prueba primero (AC-10…AC-13):** visible, desmarcado y accesible para Administrador,
+    Bodeguero y Solicitante; sin persistencia al remontar; marcar oculta `stock_total <= 0` sin
+    refetch y sin mover la franja; desmarcar recupera; combinación con texto, categoría, críticos
+    y filtros organizacionales; conteos del panel de categorías; «Limpiar filtros» desmarca y
+    conserva la regla de no refetch; vacío propio con precedencia catálogo vacío > sin stock >
+    genérico. Usar un fixture local `INSUMOS_CON_CERO` sin mutar `INSUMOS` ni las aserciones de
+    AC-1…AC-9.
+  - **Implementación:** signal `soloConStock`; predicado `stock_total > 0` dentro de
+    `insumosCoincidentes` (antes de `conteoPorCategoria`); `hayFiltros` y `limpiarFiltros`;
+    checkbox nativo en la plantilla con `id="solo-con-stock"`, `name`, `<label for>`,
+    `focus-visible` y Tailwind; `mensajeVacio` con la precedencia de la §11. **No tocar**
+    `totalCatalogo`, `totalConStock` ni `totalCriticos`.
+  - **AC:** AC-10, AC-11, AC-12, AC-13.
+  - **Depende de:** — (baseline `ng test` 671 SUCCESS / 44 specs).
+  - **Hecho cuando:** las pruebas nuevas pasan, las 671 previas siguen verdes sin reescribir sus
+    aserciones y no hay peticiones HTTP por el checkbox (`httpMock.verify` sin pendientes).
+    **[ng test]**
+  - **Nota de fase:** solo se tocaron los tres archivos de la tarea (`inventario.component.ts`,
+    `.html`, `.spec.ts`); `inventario.service.ts`, `backend/`, `database/`, `app/core/`,
+    `app/shared/` y `stack.md` quedaron intactos, y la franja sigue calculándose sobre
+    `insumos()` sin cambios. **Rojas curadas:** el primer intento de `ng test` sobre el spec
+    abortó el bundle con **7 TS2339** por el signal `soloConStock` aún inexistente (el
+    compilador estricto no ejecuta pruebas con superficie de componente ausente, como ya
+    documentó T6). Al implementar, la plantilla usó primero el snippet literal de
+    `plan.md` §7.4 (`@else if (mensajeVacio(); as mensaje)`) y **Angular 18 lo rechazó en JIT**
+    (*«"as" expression is only allowed on the primary @if block»*), con 56 FAILED transitorios;
+    se corrigió a `@else if (mensajeVacio())` + `{{ mensajeVacio() }}`, conservando la decisión
+    centralizada en el computed. **Conteos:** `npx ng test --watch=false --browsers=ChromeHeadless
+    --include=…inventario.component.spec.ts` → **56/56 SUCCESS**; suite completa →
+    **683 SUCCESS / 0 FAILED** (671 del baseline 013 + **12** nuevas: 3 de visibilidad por rol,
+    1 de contrato/remontaje, 2 de marcar/desmarcar, 4 de combinación/panel/limpieza y 2 de vacío).
+    `httpMock.match(() => true)` se afirma en 0 tras cada toggle de cliente y el `afterEach` con
+    `verify({ ignoreCancelled: true })` no deja pendientes. **Decisiones no cubiertas por el plan:**
+    (1) se añadió un segundo fixture local `INSUMOS_SEDE_CENTRAL_CON_CERO` además del
+    `INSUMOS_CON_CERO` pedido, porque con filtro organizacional el servidor devuelve el producto
+    **con fila de stock en 0** (D-9) y ese caso no es el `sedes: []` del fixture agregado;
+    (2) se añadió la prueba *«Limpiar filtros» con un filtro organizacional activo desmarca «Solo
+    con stock» y pide el agregado*, para cubrir la rama de refetch de AC-12 sin tocar la prueba
+    existente de AC-7; (3) la prueba de no persistencia compara las claves de `localStorage`
+    antes/después del toggle y remonta una instancia nueva (la URL de Karma no es la ruta de la
+    app, así que no se afirma); (4) no se forzaron eventos de teclado en los specs: la activación
+    por teclado del checkbox nativo se verifica en el recorrido 4200 de T15.
+
+- [x] **T15 — Verificación, evidencia y cierre documental de la enmienda.**
+  - **Archivos:** `docs/spec/features/018-filtro-inventario-sede-departamento/evidencia/README.md`
+    (sección 12 nueva), `docs/spec/features/018-filtro-inventario-sede-departamento/spec.md`
+    (§11.7 con la evidencia de AC-10…AC-13 y §11.8/estado de la enmienda),
+    `docs/spec/roadmap.md` (solo la fila 018), `MEMORY.md` y este `tasks.md`. Sin tocar
+    `plan.md`, `stack.md`, `AGENTS.md`, `.agents/skills/`, la 013, la §10 de la 018 ni
+    AC-1…AC-9.
+  - **Verificación:** `npx ng test --watch=false --browsers=ChromeHeadless` (0 FAILED) y
+    `npx ng build`; recorrido funcional en **4200** (servidor ya levantado, **PID 22204: no
+    reiniciar**) con un producto en cero visible y oculto al marcar, combinación y limpieza;
+    humo en **8080** tras `docker compose -f docker-compose.yml build frontend` +
+    `up -d --force-recreate frontend`; grep de coherencia sobre `AGENTS.md`, `MEMORY.md` y
+    `.agents/skills/`.
+  - **AC:** AC-10, AC-11, AC-12, AC-13 (verificación y cierre).
+  - **Depende de:** T14.
+  - **Hecho cuando:** `ng test` y `ng build` en verde, ambos puertos registrados con su evidencia
+    (un producto en cero que desaparece al marcar), cada AC-10…AC-13 enlaza evidencia real en
+    `evidencia/README.md`, la fila 018 de `roadmap.md` menciona la enmienda sin crear fila ni
+    feature nueva, `MEMORY.md` queda actualizado y el grep no descubre referencias obsoletas. La
+    018 conserva su cierre histórico del 21/Oct/2026.
+    **[build + 4200 + 8080 + cierre documental]**
+  - **Nota de fase:** cierre de verificación y documental. **Suites:** `npx ng test
+    --watch=false --browsers=ChromeHeadless` → **683 SUCCESS / 0 FAILED**; `npx ng build` →
+    **limpio**, `main-72C5Q3DY.js`, `styles-CEN4FPRR.css`, Initial **339,98 kB** crudo /
+    **94,03 kB** transferido, lazy `inventario-component` **35,43 kB**. **4200:** el PID 22204
+    estaba vivo y no se reinició por la tarea. Administrador (`admin020…`): checkbox desmarcado
+    con `id`/`name`/`<label>`, **Tab+Espacio** con `:focus-visible` y anillo azul, combinación
+    texto `toner` + categoría + críticos + «Solo con stock» → **1 fila** con panel «1 insumo» y
+    sin petición nueva, vacío propio de stock («Ningún insumo con stock coincide…») y «Limpiar
+    filtros» sin lectura nueva. Solicitante (`solicitante…`): **10 filas con 5 ceros → 5 filas /
+    0 ceros** al marcar, franja **10 / 5 / 6** intacta y una sola `GET
+    /inventario/existencias`; categoría «Limpieza» → vacío propio; recarga con el checkbox
+    desmarcado. **8080:** imagen previa `8c7ca2dcee41` → build local `8b92a5b83857` →
+    `up -d --force-recreate frontend`, contenedor **healthy** usando `sha256:837e4f90…`,
+    `index.html` sirve `main-72C5Q3DY.js` (el bundle previo `main-7QF7T5XQ.js` da **404**) y
+    humo Solicitante 10→5 con franja intacta. **Capturas:** `t15-01`…`t15-06` en `evidencia/`.
+    **Incidente de entorno:** tras las capturas, el reinicio del servidor de trabajo detuvo el
+    `ng serve` (PID 22204) y Docker; **no se reiniciaron** (regla de la tarea) y no hubo
+    re-verificación posterior, pero las evidencias ya estaban capturadas. **Datos:** sin
+    escrituras de negocio ni SQL de escritura; sin reset. **Grep:** «Solo con stock» coherente en
+    spec/plan/tasks/evidencia; sin «Evidencia prevista», «en borrador» ni «ahora no se
+    escriben»; la fila 92 (013) del `roadmap.md` quedó intacta. **Decisiones no cubiertas por el
+    plan:** (1) el catálogo del Administrador no tiene productos en cero con los datos vigentes,
+    así que el caso «en cero visible → oculto» se demuestra con el Solicitante (5 ceros en su
+    ámbito) y el Administrador aporta combinación/vacío; (2) el chequeo visual opcional del
+    Bodeguero quedó interrumpido por el reinicio del entorno y se acredita por los 3 casos del
+    spec; (3) el caso «catálogo vacío + checkbox» solo se verifica en el spec, porque provocarlo
+    en vivo exigiría vaciar el tenant; (4) se actualizó el estado de la enmienda en la cabecera
+    de `spec.md` y en §11.8 para no dejar «en borrador» ni «ahora no se escriben» al cerrar.
+  - **Nota de corrección post-validación (27/Nov/2026) — `VEREDICTO: APROBADO` del reviewer.**
+    Se corrigieron cinco observaciones menores sin reabrir la implementación: (1) AC-10 de
+    `spec.md` cita el bucle `inventario.component.spec.ts:1615-1631` y sus **3 casos** por rol, no
+    un único test; (2) `plan.md` §7.4 muestra la forma válida de Angular 18
+    `@else if (mensajeVacio())` + `{{ mensajeVacio() }}` (el alias `as` no se admite en
+    `@else if`; ver T14); (3) `evidencia/README.md` §12.4 atribuye el **clic en la etiqueta** al
+    spec (`spec.ts:1648-1656`) y deja R2 como conmutación **por teclado**; (4) §12.2 declara
+    **pendiente** la verificación visual del Bodeguero por el reinicio del entorno, cubierta por
+    los 3 casos del spec, sin presentarla como realizada; (5) §12.3 registra la imagen final
+    **`sha256:837e4f90a775`** (creada 27/11 18:36), usada por el contenedor y sirviendo
+    `main-72C5Q3DY.js`, y deja `8b92a5b83857` como **build intermedio**. Además, la fila 92 del
+    `roadmap.md` (013) recibió la nota de la **enmienda 26/Nov/2026** (4 estados y retiro,
+    AC-50…AC-68, cierre 27/Nov/2026; suites **2163/2287/671** con **683** vigente tras la 018;
+    **`main-IRJLFDU6.js`** con **`main-72C5Q3DY.js`** vigente; delta 012 **72/74**, **25/22**,
+    **`026.1`** frente a 75/77, 26/23, `026.0`), sin crear fila 028 ni alterar la evidencia
+    histórica del 19/Oct y del 25/Nov.
+
 ## Matriz de trazabilidad AC ↔ tareas
 
 | AC | Tareas |
@@ -115,3 +236,7 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
 | AC-7 | T6, T8, T10, T11 |
 | AC-8 | T1, T2, T3, T4, T6, T7, T9, T10, T11 |
 | AC-9 | T1…T13 |
+| AC-10 | T14, T15 |
+| AC-11 | T14, T15 |
+| AC-12 | T14, T15 |
+| AC-13 | T14, T15 |

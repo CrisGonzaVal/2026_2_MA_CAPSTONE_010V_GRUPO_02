@@ -54,9 +54,9 @@ class TicketCrear(BaseModel):
     estado_id: int = Field(
         ge=1,
         description=(
-            "Estado inicial. Obligatorio: debe ser el id del estado `Pendiente` "
-            "del catalogo —el ticket nace siempre ahi (AC-27)—; cualquier otro "
-            "estado existente responde **409**."
+            "Estado inicial. Obligatorio: debe ser el id del estado `EnRevision` "
+            "del catalogo —el ticket nace siempre ahi (D-27/AC-51)—; cualquier "
+            "otro estado existente responde **409**."
         ),
     )
     asunto: Annotated[
@@ -79,18 +79,18 @@ class TicketActualizarEstado(BaseModel):
     estado_id: int = Field(ge=1)
 
 
-class TicketDespacho(BaseModel):
-    """Payload minimo de `POST /tickets/{ticket_id}/despacho`.
+class TicketRetiro(BaseModel):
+    """Payload minimo de `POST /tickets/{ticket_id}/retiro` (D-29/AC-55).
 
     La sesion Clerk y el permiso de rol se resuelven en la ruta. El actor del
-    despacho viaja explicito en el cuerpo y solo se valida su existencia: no se
+    retiro viaja explicito en el cuerpo y solo se valida su existencia: no se
     persiste en `movimiento_inventario` ni se le atribuye el historial.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     usuario_id: int = Field(
-        ge=1, description="Actor que despacha. Debe existir en `usuario`."
+        ge=1, description="Actor que retira. Debe existir en `usuario`."
     )
 
 
@@ -117,7 +117,7 @@ class TicketEditar(BaseModel):
     """Payload de `PUT /tickets/{ticket_id}` (Feature 013, spec D-9).
 
     Equivalente al del alta, menos la autoría: no lleva `usuario_id` (el
-    solicitante no cambia), ni `estado_id` (solo se edita en `Pendiente`), ni
+    solicitante no cambia), ni `estado_id` (solo se edita en `EnRevision`), ni
     sede ni institucion (intactas). El **conjunto completo** de detalles
     reemplaza al previo (plan decision 7). La forma se valida aqui (422) y
     las referencias en el servicio (404), que escribe cabecera y detalles en
@@ -184,7 +184,7 @@ class TicketRespuesta(BaseModel):
     etiqueta_proceso: str = Field(
         default="",
         description=(
-            "Etiqueta de proceso derivada (p. ej. «En aprobación»). No es un "
+            "Etiqueta de proceso derivada (p. ej. «En revisión»). No es un "
             "estado canónico ni se persiste."
         ),
     )

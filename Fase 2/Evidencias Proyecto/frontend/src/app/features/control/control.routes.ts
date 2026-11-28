@@ -12,8 +12,8 @@ import { ControlSuperadminGuard } from '../../core/guards/control-superadmin.gua
  * funcionales por institución (`'instituciones/:institucionId/capacidades'`).
  * Todas las rutas de gestión exigen el rol exacto `Superadmin` mediante
  * `ControlSuperadminGuard`. No monta el layout operativo de tenant ni permite
- * escoger esquema. La gestión administrativa institucional (sedes, departamentos,
- * usuarios y encargados) vive en `/administracion` (Feature 012, T10).
+ * escoger esquema. La gestión administrativa institucional (sedes, departamentos
+ * y usuarios) vive en `/administracion` (Feature 012, T10).
  */
 export const controlRoutes: Routes = [
   {

@@ -108,6 +108,26 @@ describe('AppComponent', () => {
     );
   });
 
+  it('el shell no scrollea la página y el sidebar scrollea internamente', () => {
+    const compilado = crearYRenderizar();
+    const shell = compilado.querySelector('.flex.h-screen') as HTMLElement | null;
+    const navegacion = compilado.querySelector(
+      'nav[aria-label="Navegacion principal"]'
+    ) as HTMLElement | null;
+    const principal = compilado.querySelector('main') as HTMLElement | null;
+
+    expect(shell).not.toBeNull();
+    expect(navegacion).not.toBeNull();
+    expect(principal).not.toBeNull();
+    expect(shell!.classList.contains('overflow-hidden')).toBe(true);
+    // El scroll interno del main no debe contribuir al documento.
+    expect(shell!.classList.contains('[contain:paint]')).toBe(true);
+    expect(navegacion!.classList.contains('overflow-y-auto')).toBe(true);
+    expect(navegacion!.classList.contains('min-h-0')).toBe(true);
+    // El main conserva su scroll interno; no se toca en esta corrección.
+    expect(principal!.classList.contains('overflow-y-auto')).toBe(true);
+  });
+
   it('debe alternar el menu lateral', () => {
     const fixture = TestBed.createComponent(AppComponent);
     const app = fixture.componentInstance;

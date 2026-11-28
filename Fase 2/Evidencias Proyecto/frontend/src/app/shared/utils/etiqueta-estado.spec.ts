@@ -3,10 +3,10 @@ import { etiquetaEstado } from './etiqueta-estado';
 /**
  * Feature 021 (V-3): el helper centraliza la presentación de estados.
  *
- * Los estados canónicos (`EnCurso`, `EnRevision`, `Pendiente`, `Cerrado`,
- * `Anulado`) no cambian: la lógica por nombre canónico sigue intacta. El helper
- * es solo de presentación y se aplica al tablero, al detalle, al historial y a
- * las listas de la 021.
+ * Los estados canónicos (`EnCurso`, `EnRevision`, `Cerrado`, `Anulado`) no
+ * cambian: la lógica por nombre canónico sigue intacta. El helper es solo de
+ * presentación y se aplica al tablero, al detalle, al historial y a las listas
+ * de la 021.
  */
 describe('etiquetaEstado', () => {
   it('separa las palabras de EnCurso y EnRevision', () => {
@@ -15,7 +15,7 @@ describe('etiquetaEstado', () => {
   });
 
   it('conserva igual cualquier otro estado canónico', () => {
-    expect(etiquetaEstado('Pendiente')).toBe('Pendiente');
+    expect(etiquetaEstado('Archivado')).toBe('Archivado');
     expect(etiquetaEstado('Cerrado')).toBe('Cerrado');
     expect(etiquetaEstado('Anulado')).toBe('Anulado');
   });

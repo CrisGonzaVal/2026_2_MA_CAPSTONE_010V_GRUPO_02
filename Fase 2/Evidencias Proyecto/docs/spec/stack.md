@@ -92,19 +92,20 @@ aplicación, con estado en Redis y **fail-open**. Norma desde la Feature 025:
 
 > **Nota de migración**: el código actual está en fase de migración a esta estructura, que es la normativa desde hoy (AGENTS.md describe la nueva estructura).
 
-> **Nota de vigencia — base consolidada (18/Nov/2026, Feature 026):** `database/` se
-> mantiene en dos scripts puros. `01_esquema.sql` crea `control` (26 tablas) y un esquema
-> `tenant_<slug>_<hash>` por institución (23 tablas de negocio) y siembra la
-> topología; `02_datos_semilla.sql` llena la semilla QA, la reparte a los tenants,
-> puebla `control.mapa_usuario_esquema` y fija la versión `026.0` con guardia
-> fail-closed. **No hay migraciones**: los cambios de esquema se resuelven
-> recreando el volumen (`docker compose down -v` + `up -d`), nunca actualizando in
-> situ. La tabla `inventario` se retiró: el saldo vigente es `stock_sede` y la
-> auditoría es `movimiento_inventario`, cuyo destino es `stock_sede_id` (obligatorio).
-> Las menciones a migraciones, constructores de tenants, a los conteos
-> anteriores (27/24 y 22/19 tablas) y al «modelo de 12 entidades» que aparecen más abajo son
-> **históricas** de las features 008–021 y quedan superadas por esta nota y por las
-> secciones de las Features 020, 021 y 026.
+> **Nota de vigencia — base consolidada (27/Nov/2026, enmienda 012 implementada):** `database/`
+> se mantiene en dos scripts puros. El estado **actual** del repo es `control` con **25
+> tablas** y **22 tablas de negocio** por tenant, token **`026.1`**, y `departamento_encargado`
+> ya **no existe**: la **enmienda funcional de la Feature 012** la retiró de `control` y de la
+> plantilla tenant, junto con sus 5 filas de semilla, su modelo, sus 3 operaciones y su vista.
+> La capacidad `gestion_organizacional` se conserva para sedes, departamentos y usuarios, y el
+> modelo sigue en **21 entidades de dominio**, ahora **sin tabla auxiliar**. **No hay
+> migraciones**: los cambios de esquema se resuelven recreando el volumen (`docker compose
+> down -v` + `up -d`), nunca actualizando in situ. La tabla `inventario` se retiró en la 026
+> (el saldo vigente es `stock_sede` y la auditoría es `movimiento_inventario`, cuyo destino es
+> `stock_sede_id` obligatorio). Las menciones a migraciones, constructores de tenants, a los
+> conteos anteriores (27/24, 26/23, 22/19 tablas), al «modelo de 12 entidades» y a
+> `departamento_encargado` como «única tabla auxiliar» que aparecen más abajo son
+> **históricas** de las features 008–026 y quedan superadas por esta nota.
 
 Para lograr un proyecto verdaderamente modular, escalable y mantenible, la estructura de carpetas debe seguir principios de arquitectura limpia (Clean Architecture) en el backend y diseño guiado por el dominio (Domain-Driven Design - DDD) en el frontend.
 
@@ -286,7 +287,9 @@ el patrón anterior se abre en dos:
   *Enmienda 05/Nov/2026 (013, AC-27):* el **estado inicial del alta ya no se deriva de
   `estados[0]`**. Backend y frontend lo resuelven por **nombre canónico** (`Pendiente`) y el
   backend responde **409** si el `estado_id` recibido no es ese; el orden del catálogo
-  conserva su papel de presentación, no de regla.
+  conserva su papel de presentación, no de regla. *Enmienda 26/Nov/2026 (013, §10.7):* el
+  nombre canónico vigente es **`EnRevision`**; `Pendiente` deja de existir y la resolución por
+  nombre se conserva.
 
 #### Variante: dashboard consolidado con secciones por rol (Feature 009)
 
@@ -572,7 +575,8 @@ institucionales independientes.
 
 El modelo de dominio pasa de doce a catorce entidades: se incorporan `sede` y `stock_sede`.
 `departamento_encargado` es una tabla puente auxiliar de asociación, comparable a
-`mapa_usuario_esquema`, y no se cuenta como entidad de dominio. Se agregan
+`mapa_usuario_esquema`, y no se cuenta como entidad de dominio (retirada por la enmienda 012
+del 27/Nov/2026; ver la sección correspondiente de este documento). Se agregan
 `departamento.sede_id` y `usuario.sede_id` como referencias nullable con precondiciones
 operativas; `ticket.sede_id` nullable conserva la instantánea de sede de tickets nuevos y
 permite representar tickets legados; y `movimiento_inventario.stock_sede_id` nullable
@@ -583,7 +587,7 @@ locales deben impedir asociaciones incoherentes dentro del tenant, sin FK cross-
 justificaciones de las Features 008 y 010 (§2 de este documento) y en el comentario del árbol
 de `database/` (§1) son **históricas**: describen el estado vigente hasta la Feature 010 y
 quedan **superadas** por esta sección, que fija el modelo de dominio en **14 entidades** (más
-`departamento_encargado` auxiliar). Se conservan sin reescribir por trazabilidad de las
+`departamento_encargado` auxiliar, hoy retirada). Se conservan sin reescribir por trazabilidad de las
 justificaciones aprobadas.
 
 Las filas legadas de `inventario` referenciadas por `movimiento_inventario.inventario_id` se
@@ -610,7 +614,7 @@ ni exponen las filas legadas de `inventario`.
 La asignación departamento-sede y usuario Bodeguero-sede se almacena en referencias
 nullable; la obligatoriedad es operativa, no `NOT NULL`: las operaciones que dependan de una
 asignación faltante se rechazan. Cada ticket nuevo almacena en `ticket.sede_id` una
-instantánea al crearse y el despacho usa esa sede aun si el departamento cambia luego.
+instantánea al crearse y el retiro usa esa sede aun si el departamento cambia luego.
 Tickets y movimientos históricos no se redirigen. Un tenant recién aprovisionado recibe
 automáticamente “Sede Central”; el CRUD administrativo de sedes permanece en Feature 012.
 
@@ -658,6 +662,10 @@ La Feature 013 crea además `historial_transicion_ticket`, una tabla de historia
 **Compatibilidad y migración:** el DDL de instalación nueva (`database/01_esquema.sql` y el constructor de tenants vigente) crea `historial_transicion_ticket` y siembra `Anulado`; las bases existentes reciben ambos por una migración operacional explícita e idempotente bajo `database/migraciones/` (token `013.1`), transaccional, sin semilla destructiva y sin pérdida de datos. Las transiciones ocurridas antes de esta feature **no se migran ni reconstruyen**: la 005 declaró que no persiste autoría y fabricar filas inventaría trazabilidad; las instalaciones existentes quedan con el historial de cada ticket vacío o desde su primera transición posterior. La suite SQLite funciona pero no acredita replicación por esquema ni el token de versión; esas semánticas se verifican contra PostgreSQL 16 en los tests gated.
 
 **Por qué:** el negocio necesita responder "¿quién movió este ticket, cuándo y por qué?" y hoy solo existe el estado actual; un único estado terminal `Anulado` con motivo en el historial absorbe anulación y rechazo sin partir el vocabulario del tablero, y el historial inmutable cumple la Trazabilidad Absoluta sin deformar `fecha_cierre` ni la auditoría de inventario (la anulación no mueve stock). Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL, semilla, constructor o migraciones, y la aprobación de este apartado es el prerrequisito de implementación de la Feature 013. La aprobación eleva el conteo de `AGENTS.md` §7 a **15 entidades de dominio**; actualizar esa cifra y `MEMORY.md` corresponde al cierre de la feature (grep de coherencia, `AGENTS.md` §8.7).
+
+**Enmienda 26/Nov/2026 (catálogo de cuatro estados y retiro).** El catálogo `estado_ticket` replicado por tenant pasa a **cuatro filas** —`EnRevision`, `EnCurso`, `Cerrado` y `Anulado`—: `Pendiente` desaparece y su nombre canónico es `EnRevision`, que es el estado inicial del alta (`POST /tickets/` con ese `estado_id`, resuelto por nombre; cualquier otro responde **409**). La secuencia lineal es `EnRevision → EnCurso → Cerrado`; `Anulado` queda fuera y sigue siendo terminal. El **retiro** (antes «despacho») lo registra solo el **Bodeguero de la sede del pedido**: rebaja `stock_sede` con una `SALIDA` por detalle, fija `cantidad_entregada`, sella `fecha_cierre` y escribe la fila `EnCurso → Cerrado`, todo en una transacción ACID; la observación de cada `SALIDA` es «Salida por retiro del ticket #…». `Cerrado` deja de ser terminal absoluto: solo el **Administrador** puede anularlo (`Cerrado → Anulado`) **mientras el Solicitante no haya confirmado la entrega**, devolviendo el stock con una `ENTRADA` por detalle con `cantidad_entregada > 0`, reseteando las cantidades entregadas, dejando `fecha_cierre` nula y escribiendo la fila del historial con actor y motivo, en una sola transacción con bloqueo del ticket y de las filas `stock_sede`. La confirmación del Solicitante dueño sigue siendo el acuse `Cerrado → Cerrado` (sin cambiar estado, `fecha_cierre`, stock ni movimientos) y es **final**: una vez confirmada, la anulación responde **409** sin efectos. `Anulado` no tiene salida y el `PATCH /estado` de legado sigue bloqueando entrar o salir de `Cerrado` y de `Anulado`; el retiro y el registro manual de movimientos (`POST /inventario/movimientos`) son solo del Bodeguero. Sin DDL ni migración: siguen **26/23** tablas, **21** entidades y el token `026.0` en el momento de esta enmienda (la enmienda posterior de la 012, ya implementada, los llevó a 25/22 y `026.1`). La 021 conserva su regla: solo `EnCurso` participa en la simulación, no se crea un estado «recibido» y la devolución es stock, no demanda. La base se reconstruye con `down -v` + `up -d`.
+
+**Superación (26/Nov/2026).** Quedan superadas, en lo que contradicen esta enmienda: las menciones a `Pendiente` como estado existente (incluida la enmienda del 05/Nov/2026 de esta sección), la «quinta fila» del catálogo y su token `013.1`, la terminalidad absoluta de `Cerrado` (incluida la ausencia de salida administrativa), la ruta `/despacho` y los nombres `TicketDespacho`/`despachar_ticket` como contrato vigente, y la etiqueta «Despachado». La historia de la 004/005/013 se conserva como registro; el contrato vigente es el de la §10 de la 013.
 
 #### Proyección del ciclo de invitaciones y evidencia administrativa (Feature 017)
 
@@ -726,7 +734,7 @@ El DDL pasa de **22 a 26 tablas en `control`** y de **19 a 23 tablas por tenant*
 
 **Séptima capacidad `compras` y matriz 62 → 72.** La Feature 020 amplía explícitamente el conjunto cerrado de capacidades de la Feature 012 de seis a siete identificadores: se agrega `compras` al `CHECK` de `control.funcion_institucion`, a `CAPACIDADES` y a la semilla (28 filas = 4 instituciones × 7). La capacidad se aplica como gating 403 adicional a las **diez** operaciones nuevas de la matriz central (`backend/app/core/permisos.py`), que pasa de **62 a 72**; las 62 previas conservan exactamente sus roles y ninguna se retira. El Superadmin no se gatea por capacidad porque no tiene tenant, y su acceso a compras se limita a listar y crear proveedores en `control`: no crea, edita, emite, factura, recepciona ni consulta necesidades de una institución (403 por matriz).
 
-**`stock_disponible` calculado, sin columna ni estado nuevo.** La disponibilidad de stock de un ticket es una **propiedad calculada** de `TicketDetalleRespuesta` en `GET /api/v1/tickets/{ticket_id}`; no se agrega columna al DDL ni se cambia el estado del ticket. El cálculo es una **asignación greedy determinista por producto**: solo participan tickets en estado `EnCurso` de la sede del ticket —`Pendiente` y `EnRevision` aún no están aprobados y los terminales `Cerrado`/`Anulado` quedan fuera—, ordenados por `prioridad_id` ascendente (Alta=1, Media=2, Baja=3), luego `fecha_creacion` ascendente y `ticket_id` ascendente (FIFO). Un ticket se considera cubierto solo si **todos** sus detalles caben en el saldo remanente; si no cabe, no consume stock y se evalúa el siguiente. La simulación no reserva stock. La recepción reutiliza exactamente la misma función: compara cobertura antes y después del incremento y, por cada ticket que pasa de no cubierto a cubierto, inserta una fila en `historial_transicion_ticket` con `estado_origen_id = estado_destino_id = EnCurso`, actor el Bodeguero y motivo de desbloqueo. El estado del ticket y `fecha_cierre` no se tocan, y no se crea tabla de notificaciones: el aviso al Solicitante es el badge derivado de `stock_disponible`.
+**`stock_disponible` calculado, sin columna ni estado nuevo.** La disponibilidad de stock de un ticket es una **propiedad calculada** de `TicketDetalleRespuesta` en `GET /api/v1/tickets/{ticket_id}`; no se agrega columna al DDL ni se cambia el estado del ticket. El cálculo es una **asignación greedy determinista por producto**: solo participan tickets en estado `EnCurso` de la sede del ticket —`EnRevision` aún no está aprobado y los terminales `Cerrado`/`Anulado` quedan fuera—, ordenados por `prioridad_id` ascendente (Alta=1, Media=2, Baja=3), luego `fecha_creacion` ascendente y `ticket_id` ascendente (FIFO). Un ticket se considera cubierto solo si **todos** sus detalles caben en el saldo remanente; si no cabe, no consume stock y se evalúa el siguiente. La simulación no reserva stock. La recepción reutiliza exactamente la misma función: compara cobertura antes y después del incremento y, por cada ticket que pasa de no cubierto a cubierto, inserta una fila en `historial_transicion_ticket` con `estado_origen_id = estado_destino_id = EnCurso`, actor el Bodeguero y motivo de desbloqueo. El estado del ticket y `fecha_cierre` no se tocan, y no se crea tabla de notificaciones: el aviso al Solicitante es el badge derivado de `stock_disponible`.
 
 **Recepción y excepción acotada de producto inactivo.** La recepción es una confirmación simple sin cantidades en el cuerpo: el backend usa `detalle_orden_compra.cantidad_solicitada`. En una única transacción bloquea la OC (`SELECT FOR UPDATE`), ordena los detalles por `producto_id`, bloquea producto y `stock_sede`, incrementa o crea la fila de stock y escribe un `movimiento_inventario` tipo `ENTRADA` con `stock_sede_id` y una glosa no vacía que cita OC, factura y Bodeguero. `movimiento_inventario` **no** recibe columna de autor: el actor viaja en `observacion` y el DDL de esa tabla no cambia. La creación, edición y emisión de una OC exigen productos activos; si un producto se desactiva **después** de la emisión y antes de la recepción, la recepción **sí** se registra, porque la mercadería ya fue despachada y la Trazabilidad Absoluta exige reflejarla. El producto sigue inactivo y el endpoint genérico `POST /inventario/movimientos` conserva su **409** para productos inactivos: la excepción vive solo en `compra_service`.
 
@@ -734,7 +742,7 @@ El DDL pasa de **22 a 26 tablas en `control`** y de **19 a 23 tablas por tenant*
 
 La versión objetivo sube de `014.1` a **`020.1`** porque el DDL cambia de forma observable en `control` y en cada tenant (cuatro tablas nuevas y una séptima fila de capacidad). La comparación de enrutamiento sigue siendo de igualdad exacta y deniega cerrado ante versión ausente, distinta, duplicada o ilegible. La instalación limpia materializa todo en `database/01_esquema.sql` y `database/02_datos_semilla.sql`; conforme a AGENTS.md §8.8 la base se reconstruye recreando el volumen y no se crean migraciones. Las pruebas gated de PostgreSQL 16 verifican los conteos 26/23, las 28 filas de capacidad, los tres proveedores por esquema, la versión `020.1`, las FK compuestas y la concurrencia de la recepción; la suite SQLite no acredita esquemas ni concurrencia.
 
-**Por qué:** el flujo de compras cierra el ciclo que hoy termina en el despacho y que no tenía forma de reponer stock, y lo hace sin romper el aislamiento multi-tenant ni el modelo canónico. El proveedor es un catálogo realmente global —una institución no debe duplicar RUT ni datos de contacto— y la réplica con el mismo ID evita una FK cross-schema prohibida sin inventar una segunda identidad. `stock_disponible` como propiedad calculada evita una columna derivada que se desincronice y un estado nuevo que rompa el tablero Kanban de la 004/005; la fila de historial con el mismo estado origen y destino es el único registro posible del desbloqueo sin deformar el ciclo de vida. La excepción de producto inactivo es deliberadamente estrecha: la mercadería ya recibida no puede desaparecer de la auditoría, pero el endpoint genérico conserva la regla de la 014. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y la aprobación de este apartado es el prerrequisito de implementación de la Feature 020. La aprobación eleva el conteo de `AGENTS.md` §7 a **21 entidades de dominio**, el DDL a **26/23 tablas** y el token a **`020.1`**; sincronizar esas cifras en `AGENTS.md` y `MEMORY.md` corresponde al cierre de la feature (AGENTS.md §8.7).
+**Por qué:** el flujo de compras cierra el ciclo que hoy termina en el retiro y que no tenía forma de reponer stock, y lo hace sin romper el aislamiento multi-tenant ni el modelo canónico. El proveedor es un catálogo realmente global —una institución no debe duplicar RUT ni datos de contacto— y la réplica con el mismo ID evita una FK cross-schema prohibida sin inventar una segunda identidad. `stock_disponible` como propiedad calculada evita una columna derivada que se desincronice y un estado nuevo que rompa el tablero Kanban de la 004/005; la fila de historial con el mismo estado origen y destino es el único registro posible del desbloqueo sin deformar el ciclo de vida. La excepción de producto inactivo es deliberadamente estrecha: la mercadería ya recibida no puede desaparecer de la auditoría, pero el endpoint genérico conserva la regla de la 014. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y la aprobación de este apartado es el prerrequisito de implementación de la Feature 020. La aprobación eleva el conteo de `AGENTS.md` §7 a **21 entidades de dominio**, el DDL a **26/23 tablas** y el token a **`020.1`**; sincronizar esas cifras en `AGENTS.md` y `MEMORY.md` corresponde al cierre de la feature (AGENTS.md §8.7).
 
 #### Cobertura automática de pedidos por órdenes de compra (Feature 021)
 
@@ -761,7 +769,7 @@ El stock físico se reparte **parcialmente** entre pedidos, a diferencia de la s
 
 **Matriz 72 → 73, sin capacidad nueva.** Se añade una sola operación, `POST /api/v1/compras/cobertura/preview`, autorizada solo al Administrador Institucional y gateada por la capacidad `compras` ya existente; el conjunto cerrado de siete capacidades de la 012/020 no cambia. El preview simula la asignación sin persistir ni reservar, responde 404 para sede o producto ajeno, 409 para producto inactivo o repetido y 422 para cuerpo inválido, y con el mismo estado devuelve exactamente las cantidades que persistiría la emisión. La matriz central (`backend/app/core/permisos.py`) pasa de **72 a 73**; las 72 previas conservan sus roles.
 
-**Auditoría de la recepción sin estado nuevo.** La recepción de la 020 conserva su lógica ACID: incrementa `stock_sede`, escribe movimientos `ENTRADA` y, por cada pedido que pasa a cubierto, inserta una fila `EnCurso → EnCurso`. La Feature 021 llena `orden_compra_id` **solo** en esas filas de desbloqueo y lo expone junto con `numero_oc` en el historial. El pedido sigue en `EnCurso` con su badge de stock; `Cerrado` sigue siendo el estado del despacho y no se agrega un estado de «recibido». La cadena por producto del detalle (`Solicitado → Comprado → Recibido → Entregado → Faltante`) es una lectura derivada, no una tabla nueva.
+**Auditoría de la recepción sin estado nuevo.** La recepción de la 020 conserva su lógica ACID: incrementa `stock_sede`, escribe movimientos `ENTRADA` y, por cada pedido que pasa a cubierto, inserta una fila `EnCurso → EnCurso`. La Feature 021 llena `orden_compra_id` **solo** en esas filas de desbloqueo y lo expone junto con `numero_oc` en el historial. El pedido sigue en `EnCurso` con su badge de stock; `Cerrado` sigue siendo el estado del retiro y no se agrega un estado de «recibido». La cadena por producto del detalle (`Solicitado → Comprado → Recibido → Entregado → Faltante`) es una lectura derivada, no una tabla nueva.
 
 **Una sede por OC.** Cada orden de compra pertenece a una sola sede y solo cubre pedidos `EnCurso` de esa sede; los traspasos entre sedes quedan fuera de alcance. Un pedido sin sede o de otra sede no participa en la simulación y no recibe filas de plan.
 
@@ -770,6 +778,8 @@ El stock físico se reparte **parcialmente** entre pedidos, a diferencia de la s
 **Por qué:** el Administrador no puede decidir una compra mirando solo la demanda agregada; necesita saber qué pedidos la componen, asignarlos al emitir y seguir el avance por producto sin inventar un estado nuevo que rompa el Kanban. Una sola tabla puente con la cantidad asignada y el faltante congela la intención para auditar «planificado vs real», permite cobertura parcial y conserva la cancelación como historia sin replanificar en silencio. Reutilizar la capacidad `compras` y una única operación de lectura mantiene el contrato acotado, y el renombrado visible alinea el lenguaje del negocio con «pedido» sin romper ninguna ruta ni identificador. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y su aprobación eleva el conteo de `AGENTS.md` §7 a **22 entidades de dominio**, el DDL a **27/24 tablas** y el token a **`021.1`**; sincronizar esas cifras en `AGENTS.md` y `MEMORY.md` corresponde al cierre de la feature (AGENTS.md §8.7).
 
 **Enmienda 18/Nov/2026 (Feature 026): salud del esquema BD.** El modelo canónico pasa de 22 a **21 entidades de dominio** al retirar la tabla `inventario`; se conservan `stock_sede` (saldo vigente) y `movimiento_inventario` (auditoría, con `stock_sede_id NOT NULL` y sin `inventario_id`). El DDL pasa de **27 a 26 tablas en `control`** y de **24 a 23 tablas por tenant**. Se agregan **15 índices P0** por esquema (más los 2 P0 heredados de la 021) y **6 unicidades B2**: checks K-01…K-04, la unicidad parcial U-06 y las unicidades funcionales U-01…U-05 con normalización y respuesta **409**; U-07 (`UNIQUE ((true))` sobre `version_esquema`) es un helper **solo de PostgreSQL**, aplicado en caliente por `control_service`. La semilla conserva **14 `stock_sede`** (10 en INST-001 + 4 en INST-002) y **3 `movimiento_inventario`** coherentes, con saldos 45 (producto 5, stock 8) y 12 (producto 9, stock 9). El token de versión sube de `021.1` a **`026.0`**. Se mantienen todas las FKs y joins del modelo vigente —la única FK retirada es la de `movimiento_inventario` hacia `inventario`, que muere con la tabla—; no hay triggers, stored procedures ni cursores. Esta es la justificación que exige `AGENTS.md` §7 antes de tocar modelos, DDL o semilla, y su aprobación deja `AGENTS.md` §7 en **21 entidades de dominio**, el DDL en **26/23 tablas** y el token en `026.0`.
+
+**Enmienda 27/Nov/2026 (Feature 012, implementada): retiro de `departamento_encargado`.** La enmienda funcional de la Feature 012 **retiró** por completo el concepto de encargado de departamento: elimina `control.departamento_encargado` y su `CREATE` en el template tenant, sus **5** filas de semilla, el modelo, los DTO `EncargadoCrear`/`EncargadoRespuesta`, las funciones de servicio (`_consulta_encargados`, `listar_encargados`, `asociar_encargado`, `retirar_encargado`), las **3** operaciones de API (`GET`/`POST`/`DELETE` de `/organizacion/departamentos/{departamento_id}/encargados`), sus entradas de matriz y de capacidad, la vista `Encargados`, su ruta, su pestaña, sus tipos y sus pruebas. No se conserva tabla de archivo ni histórico: los datos son semilla QA y la base se reconstruye. La capacidad `gestion_organizacional` se conserva para sedes, departamentos y usuarios; la matriz pasa de **75 a 72** operaciones v1 y `/openapi.json` de **77 a 74** totales (72 v1 + `GET /` + `/health`). La baja de usuario deja de responder **409** por ser encargado y conserva las demás dependencias (último Administrador activo, etc.). El DDL **pasó de 26 a 25 tablas en `control`** y **de 23 a 22 por tenant**, el modelo se mantiene en **21 entidades de dominio** (la tabla auxiliar no era entidad) y el token **subió de `026.0` a `026.1`**. La revisión `026.1` sigue la convención `NNN.x` de la feature que cambió el esquema por última vez (026); la 027 no lo cambió y `028.0` exigiría una Feature 028 que esta enmienda no crea. No hay migración: el volumen se recrea (`down -v` + `up -d`). `departamento_encargado` **dejó de ser** la única tabla auxiliar; las menciones históricas a esa condición, a 26/23 y a `026.0` quedan superadas por esta enmienda. La aprobación de esta justificación fue el prerrequisito de implementación conforme a `AGENTS.md` §7; sincronizar `AGENTS.md` §4/§7, `MEMORY.md`, `database/README.md`, las skills, los diagramas y el informe corresponde al cierre. **Estado (27/Nov/2026): implementada y verificada** — `control` con **25** tablas, cada tenant con **22**, token **`026.1`**, `departamento_encargado` ausente (tabla, secuencia e índices), matriz **72** y `/openapi.json` **74**; evidencia en `docs/spec/features/012-gestion-administrativa/evidencia/README.md`.
 
 ### 3. Estructura del Frontend (Angular 18 Standalone)
 En Angular moderno (sin NgModules), la clave es el agrupamiento por Características (Features). Esto facilita el Lazy Loading (carga perezosa) y hace que la aplicación escale sin que el código se enrede.
@@ -825,7 +835,6 @@ frontend/
             │   ├── usuarios.component.ts
             │   ├── sedes.component.ts
             │   ├── departamentos.component.ts
-            │   ├── encargados.component.ts
             │   └── administracion.routes.ts
             │
             ├── compras/
@@ -903,7 +912,7 @@ Frontend     obtenerTickets()     listaStock       AutenticacionService
 - APIs de terceros y de framework.
 - Sufijos estructurales de Angular (`Component`, `Service`, `Guard`, `Interceptor`, `Pipe`, `Routes`): se traduce el dominio, no el sufijo. Por eso `auth.service.ts` exporta `AutenticacionService`.
 
-**Los 14 modelos de dominio ya cumplen** la regla: `Institucion`, `Departamento`, `Rol`, `Usuario`, `Categoria`, `Producto`, `Prioridad`, `EstadoTicket`, `Ticket`, `DetalleTicket`, `Sede`, `DepartamentoEncargado`, `StockSede`, `VersionEsquema`.
+**Los modelos de dominio (21 entidades) ya cumplen** la regla; por ejemplo: `Institucion`, `Departamento`, `Rol`, `Usuario`, `Categoria`, `Producto`, `Prioridad`, `EstadoTicket`, `Ticket`, `DetalleTicket`, `HistorialTransicionTicket`, `HistorialProducto`, `HistorialCategoria`, `Sede`, `StockSede`, `MovimientoInventario`, `Proveedor`, `OrdenCompra`, `DetalleOrdenCompra`, `FacturaCompra`, `OrdenCompraTicket`. `VersionEsquema` es la marca de versión, no una entidad. La tabla auxiliar `DepartamentoEncargado` se retiró con la enmienda 012 (implementada el 27/Nov/2026); el modelo queda sin tabla auxiliar.
   *Nota: `MovimientoInventario` persiste como tipo de dato de auditoria (no como tabla operativa de entidad de dominio), referenciado por `stock_sede_id` y con la versión esquema `version_esquema` como catálogo global. La tabla `inventario` se retiró en la Feature 026.*
 
 **Los DTO de lectura también, y en las dos capas.** La Feature 002 agregó un par de

@@ -10,7 +10,7 @@
 > conservan solo las pruebas de instalación limpia y del token de versión; los
 > casos de migración se retiraron junto con los scripts.
 
-**Estado:** aprobada y cerrada (19/Oct/2026; enmienda del 25/Nov/2026 verificada y cerrada) — con las enmiendas incorporadas: D-4/AC-26 (terminalidad por nombre en cualquier catálogo), AC-18 (403 de matriz vs 404 de ocultamiento), AC-27 (05/Nov/2026: alta fija en `Pendiente` y prioridad `Media`) y AC-28…AC-49 (25/Nov/2026: aprobación del Administrador, etiqueta de proceso, responsables, «Terminados» y confirmación de entrega).  
+**Estado:** aprobada y cerrada (19/Oct/2026; enmienda del 25/Nov/2026 verificada y cerrada) — con las enmiendas incorporadas: D-4/AC-26 (terminalidad por nombre en cualquier catálogo), AC-18 (403 de matriz vs 404 de ocultamiento), AC-27 (05/Nov/2026: alta fija en `Pendiente` y prioridad `Media`) y AC-28…AC-49 (25/Nov/2026: aprobación del Administrador, etiqueta de proceso, responsables, «Terminados» y confirmación de entrega). **Enmienda post-cierre del 26/Nov/2026** —catálogo de tres estados y retiro, AC-50…AC-68—: **verificada y cerrada (27/Nov/2026)**; ver §10 y `evidencia/README.md` §11.  
 **Release:** 2.0 — Sprint 6
 **Tipo:** Evolución del ciclo de vida del ticket y auditoría
 
@@ -1421,3 +1421,789 @@ entrega) y humo en 8080 con la imagen reconstruida.
   reescriben, salvo las derogaciones expresas de §9.10. La matriz gana **dos** operaciones
   (aprobación y confirmación de entrega), el `PATCH` cambia de rol y el resto del contrato se
   conserva.
+
+## 10. Enmienda post-cierre (26/Nov/2026): catálogo de tres estados y retiro
+
+> **Qué enmienda.** No crea una Feature 028 ni reescribe la historia ni el cierre de la 013:
+> añade reglas, contrato, interfaz y AC nuevos (AC-50…AC-68) sobre lo ya cerrado. Sustituye el
+> catálogo de cinco nombres (`Pendiente`, `EnRevision`, `EnCurso`, `Cerrado`, `Anulado`) por
+> **cuatro** (`EnRevision`, `EnCurso`, `Cerrado`, `Anulado`): `Pendiente` desaparece y
+> `EnRevision` pasa a ser el estado inicial y el único estado de revisión. Renombra el
+> **despacho** a **retiro** en la ruta, el DTO, el servicio y la copia visible, y reserva el
+> retiro al **Bodeguero de la sede del pedido**. Convierte `Cerrado` en un estado con **una
+> única salida**: la anulación administrativa del retiro por el Administrador —solo mientras el
+> Solicitante no haya confirmado la entrega—, con devolución de stock auditada. Una vez
+> confirmado, el pedido no se anula. No añade DDL, tablas, columnas, migraciones ni versión de
+> esquema: la base se reconstruye con `down -v` + `up -d` y el token sigue en `026.0`. La matriz
+> conserva **75** operaciones: cambia la clave de una entrada y los roles de dos, no su número.
+
+### 10.1 Problema y estado actual
+
+**El catálogo tiene dos nombres para la misma etapa.** La semilla siembra cinco filas
+(`Pendiente`, `EnRevision`, `EnCurso`, `Cerrado`, `Anulado`) y la enmienda del 25/Nov/2026
+declaró `EnRevision` un estado **heredado** que el flujo nuevo ya no produce (AC-47): solo el
+`PATCH /estado` de legado podía devolver un pedido a él. La consecuencia es que un pedido recién
+creado vive en `Pendiente` y la etapa de revisión tiene dos nombres que el tablero, los conteos
+y la etiqueta de proceso tratan por separado. El negocio quiere **un solo** estado de revisión y
+que sea el inicial.
+
+**«Despacho» ya no nombra lo que ocurre.** El acto que cierra el pedido es la entrega física de
+los insumos en bodega, que el Bodeguero registra al retirarlos el solicitante; «despacho»
+describe un envío. La ruta, el DTO, el servicio y la copia visible siguen usando el término
+histórico de la 005 y la interfaz dice «Despachar».
+
+**El Administrador opera stock y el Bodeguero no es el único que retira.** Hoy
+`POST /tickets/{id}/despacho` se concede a `Administrador` y `Bodeguero`, y
+`POST /inventario/movimientos` también. El Administrador aprueba, anula, rechaza, compra y
+administra; que además rebaje stock difumina la segregación de funciones que el resto del
+sistema ya aplica (la recepción de una OC es solo del Bodeguero). El retiro debe ser del
+Bodeguero y de **su sede**: un Bodeguero no puede cerrar un pedido cuyo stock vive en otra
+bodega.
+
+**`Cerrado` es definitivo y un retiro equivocado no se puede corregir.** La 013 declaró
+`Cerrado` terminal sin salida en cualquier catálogo (AC-26). Si el Bodeguero retira el pedido
+equivocado, o lo retira con cantidades que no corresponden, hoy no existe una operación para
+devolver el stock y corregir el cierre: solo se corrige tocando la base. Falta una **anulación
+administrativa del retiro** que devuelva exactamente lo entregado y lo audite.
+
+**El catálogo del aprovisionamiento está incompleto.** El catálogo que replica el
+aprovisionamiento de un tenant nuevo (`_ESTADOS_TICKET_TENANT`) tiene cuatro filas y **no
+incluye `Anulado`**: un tenant creado por la aplicación nacería sin el estado terminal negativo
+y sus anulaciones responderían 409. Es una carencia preexistente que esta enmienda corrige
+porque el catálogo es el mismo contrato.
+
+**Contradicción detectada y resuelta.** La semilla no tiene hoy una fila `EnRevision`
+duplicada: tiene cinco nombres distintos y la fila 2 ya se llama `EnRevision`. El duplicado
+aparecería al **renombrar** `Pendiente` a `EnRevision`. Por eso esta enmienda no renombra in
+situ ni agrega una quinta fila: fija un catálogo de cuatro ids (1 `EnRevision`, 2 `EnCurso`,
+3 `Cerrado`, 4 `Anulado`) y reenumera los tickets semilla. El nombre canónico es el contrato;
+los ids son solo la semilla.
+
+### 10.2 Objetivo
+
+1. Dejar **un solo** estado de revisión: `EnRevision` es el nombre canónico del estado inicial y
+   `Pendiente` deja de existir. El catálogo queda en cuatro filas y la secuencia lineal es
+   `EnRevision → EnCurso → Cerrado`, con `Anulado` fuera.
+2. Renombrar el **despacho** a **retiro** en la ruta pública, el DTO, el servicio y la copia
+   visible, conservando el resto del contrato transaccional de la 005.
+3. Reservar el retiro al **Bodeguero** y acotarlo a la sede del pedido; sacar al Administrador
+   del retiro y de los movimientos manuales de inventario.
+4. Permitir al **Administrador** anular un retiro (`Cerrado → Anulado`) **solo si el pedido no
+   está confirmado**, devolviendo el stock con una `ENTRADA` por detalle, reseteando las
+   cantidades entregadas, limpiando `fecha_cierre` y registrando actor y motivo, todo en una
+   transacción ACID. La confirmación del Solicitante es final y bloquea la anulación.
+5. Alinear la semilla, el catálogo del aprovisionamiento de tenants y `stack.md` con el catálogo
+   de cuatro estados y el retiro.
+6. Ajustar el tablero a **tres columnas** y la etiqueta de proceso a «Retirado», sin cambiar la
+   regla del KPI de tickets activos ni el algoritmo de Compras.
+
+### 10.3 Decisiones
+
+#### D-27 — `EnRevision` es el único nombre del estado inicial; `Pendiente` desaparece
+
+El catálogo replicado por tenant queda en **cuatro** filas: 1 `EnRevision`, 2 `EnCurso`,
+3 `Cerrado`, 4 `Anulado`. `Pendiente` deja de existir como nombre canónico y la fila 2 actual
+—que también se llama `EnRevision`— se elimina, de modo que no hay dos filas homónimas. El alta
+nace en `EnRevision`, resuelto **por nombre** (normalizado, menor `estado_id` ante duplicados).
+Los ids no son contrato: ningún servicio los usa como regla.
+
+**Por qué:** dos estados consecutivos con el mismo significado operativo («creado» y «en
+revisión») parten la cola, los conteos y la etiqueta; un único estado de revisión elimina la
+ambigüedad y hace innecesario el estado heredado. Se renombra en lugar de agregar un quinto
+nombre para no dejar dos sinónimos de la misma etapa.
+
+#### D-28 — La secuencia es de tres pasos; `Cerrado` sale solo por la anulación administrativa
+
+La secuencia lineal es `EnRevision → EnCurso → Cerrado`; `Anulado` queda fuera. `Cerrado` deja
+de ser **terminal absoluto**: su única salida es la **anulación administrativa del retiro**, que
+es una operación distinta del cambio de estado. `Anulado` sigue siendo terminal y no tiene
+salida. El `PATCH /estado` de legado sigue respondiendo **409** a toda petición que intente
+**entrar o salir** de `Cerrado` o de `Anulado`: la única vía a `Cerrado` es el retiro y la única
+salida es la anulación administrativa.
+
+**Por qué:** sin `Pendiente`, la regla ordinal de la 004 habilitaría `EnRevision → EnCurso` y
+también `EnCurso → Cerrado`; el segundo debe seguir reservado al retiro para que no exista un
+cierre sin salida de stock (`constitucion.md` §3). Al mismo tiempo, un retiro equivocado debe
+poder corregirse sin tocar la base: la anulación administrativa devuelve el stock y deja rastro,
+y no reabre el pedido ni permite re-despacharlo. El `PATCH` conserva un camino único por estado
+y la terminalidad de `Anulado`.
+
+#### D-29 — «Retiro» es el término vigente; «despacho» queda como nombre histórico
+
+La superficie renombrada es la **pública y la visible**: ruta
+`POST /api/v1/tickets/{ticket_id}/retiro` (sustituye `/despacho`), DTO `TicketRetiro` (sustituye
+`TicketDespacho`), servicio `registrar_retiro_ticket` (sustituye `despachar_ticket`), claves de
+OpenAPI/matriz/capacidad y copia visible. En el **frontend** se renombran también los helpers y
+constantes de la operación: `ROLES_DESPACHO_TICKETS` → `ROLES_RETIRO_TICKETS`,
+`puedeDespacharTicket` → `puedeRegistrarRetiro`, `despacharTicket` → `registrarRetiro`, la acción
+`despachar` → `registrarRetiro`, el tipo de confirmación `'despacho'` → `'retiro'` y los títulos
+«Despachar pedido»/«Confirmar despacho» → «Registrar retiro»/«Confirmar retiro». La copia visible
+dice «Registrar retiro», «Retirado» y «Confirmar retiro». La etiqueta de proceso «Despachado» pasa
+a «Retirado»; «Entregado» se conserva para el confirmado. El payload no se redefine: conserva el
+`usuario_id` de la 005 y el actor del historial y de la observación es la identidad de la sesión.
+
+**Identificadores que NO se renombran.** Los del backend que no son superficie pública (nombres
+internos, módulos de test históricos, la plantilla histórica de la 005) y las specs históricas
+005/013, que conservan «despacho» como término de su release. Tampoco se renombran tablas,
+columnas ni carpetas. La enmienda del 25/Nov/2026 usó `despacharTicket` y `puedeDespacharTicket`
+en el frontend; esta enmienda los sustituye por `registrarRetiro` y `puedeRegistrarRetiro`, y
+`ROLES_DESPACHO_TICKETS` por `ROLES_RETIRO_TICKETS`.
+
+**Por qué:** la opción elegida renombra OpenAPI, permisos y **helpers del frontend** para que no
+queden dos vocabularios en la capa visible; dejar `despacharTicket`/`puedeDespacharTicket` en la
+SPA mantendría «despacho» en el código que el equipo lee a diario. Se limita el rename a la
+superficie pública y visible: renombrar tablas, carpetas o todos los identificadores internos del
+backend rompería contratos y pruebas sin ganancia observable, y la 005 conserva «despacho» como
+nombre histórico.
+
+#### D-30 — El retiro lo registra solo el Bodeguero, acotado a su sede
+
+`POST /tickets/{id}/retiro` se concede **solo** al `Bodeguero`. El servicio exige
+`ticket.sede_id == usuario.sede_id`; un pedido de otra sede responde **404 idéntico** al
+inexistente y un Bodeguero **sin sede** responde **409** (misma regla que
+`sede_del_alcance_por_rol` del inventario). El Administrador recibe **403** por matriz.
+
+**Por qué:** el Administrador decide que el pedido se atiende; el Bodeguero ejecuta la entrega
+física de su bodega. El ámbito de sede impide que un Bodeguero cierre un pedido cuyo stock vive
+en otra sede y que la rebaja ocurra en una bodega que no entregó; el 404 no revela la existencia
+de un pedido ajeno y el 409 replica la precondición operativa ya vigente en inventario. Se elige
+404 —y no 403— porque el rol sí tiene la operación: lo que falla es el recurso, como en el
+ocultamiento 404 de la 013.
+
+#### D-31 — El Administrador deja de retirar y de registrar movimientos manuales
+
+`POST /inventario/movimientos` queda **solo** para el `Bodeguero`; el Administrador recibe
+**403**. El Administrador conserva aprobación, anulación (incluida la del retiro), rechazo,
+compras, catálogo, usuarios y `PATCH /estado`. El Bodeguero conserva la recepción de OC y el
+rechazo.
+
+**Por qué:** el movimiento manual de stock es un acto operativo de bodega, igual que la
+recepción física de una OC, que ya es exclusiva del Bodeguero. Mantener al Administrador
+escribiendo stock deja dos perfiles con la misma capacidad y anula la segregación que el resto
+del sistema aplica; separar responsabilidades es el objetivo declarado de esta enmienda.
+
+#### D-32 — La anulación administrativa del retiro devuelve el stock con una `ENTRADA` por detalle
+
+Desde `Cerrado`, **solo el Administrador** puede anular. Por cada detalle con
+`cantidad_entregada > 0` se crea un movimiento `ENTRADA` por la cantidad entregada, enlazado a
+la fila `stock_sede` de la sede del pedido y el producto; si la fila no existe, se crea con
+`stock_actual = cantidad devuelta` (precedente de la recepción de la 020). Se incrementa
+`stock_sede.stock_actual`, se resetea `detalle_ticket.cantidad_entregada = 0`, se limpia
+`ticket.fecha_cierre` (el estado `Anulado` debe quedar con fecha nula), se pasa a `Anulado` y se
+escribe la fila `Cerrado → Anulado` del historial con actor y **motivo obligatorio**. Todo en una
+sola transacción, con bloqueo del ticket y de las filas `stock_sede`.
+
+**Precondición de confirmación.** La anulación desde `Cerrado` exige que el pedido **no esté
+confirmado**. Si existe la fila `Cerrado → Cerrado` con el motivo canónico `Entrega confirmada
+por el solicitante`, responde **409** sin tocar stock, cantidades, `fecha_cierre`, estado ni
+historial. La confirmación es la aceptación del Solicitante de que recibió los insumos; una
+corrección posterior no es una anulación y no puede deshacer un hecho que el solicitante ya
+atestiguó.
+
+**Por qué:** el retiro ya rebajó el stock; deshacerlo debe devolver exactamente lo que salió y
+dejarlo auditado (`constitucion.md` §2). Resetear `cantidad_entregada` conserva el significado de
+«entregado» como lo que sigue en manos del solicitante. Limpiar `fecha_cierre` mantiene la regla
+«todo `Cerrado` tiene fecha y ningún `Anulado` la tiene»; la fecha del retiro no se pierde,
+porque queda en la fila `EnCurso → Cerrado` del historial. Crear la fila de stock faltante es
+obligatorio porque `movimiento_inventario.stock_sede_id` no admite nulos y la recepción de la 020
+ya estableció ese precedente; sin él, un ticket cerrado por datos históricos no podría anularse.
+La precondición de confirmación cierra la ventana de corrección: una vez que el Solicitante
+aceptó la entrega, el retiro es definitivo y el stock que salió ya no se devuelve por esta vía.
+
+#### D-33 — La anulación del retiro reutiliza `POST /tickets/{id}/anulacion`
+
+No se crea una operación nueva: la matriz conserva la entrada `POST /tickets/{id}/anulacion`
+con `{Administrador, Solicitante}` y sigue en **75** operaciones. El servicio distingue por
+estado: desde `EnRevision` se conserva la anulación actual (sin stock; dueño Solicitante o
+Administrador); desde `Cerrado` solo el Administrador, con devolución y **sin confirmación
+previa**; el Solicitante sobre un `Cerrado` responde **409**; `EnCurso` y `Anulado` siguen
+respondiendo **409**.
+
+**Por qué:** es la misma operación de negocio —anular el pedido— con un efecto distinto según el
+estado; una segunda ruta duplicaría semántica y agregaría una fila de matriz que esta enmienda no
+necesita. La restricción de rol por estado vive en el servicio, igual que la propiedad del
+Solicitante, y el 409 le dice al dueño que su anulación no aplica a ese estado.
+
+#### D-34 — La confirmación es final y bloquea la anulación del retiro
+
+La confirmación sigue siendo un **acuse** `Cerrado → Cerrado` que no cambia estado, stock,
+`fecha_cierre` ni `cantidad_entregada`: solo el Solicitante dueño, solo desde `Cerrado`, con el
+motivo canónico existente `Entrega confirmada por el solicitante`, y **409** si el pedido no está
+`Cerrado` (incluido `Anulado`) o si ya está confirmado. **Una vez confirmada, la confirmación es
+definitiva y bloquea la anulación administrativa del retiro**: el pedido se queda en `Cerrado`,
+se presenta «Entregado» y cualquier intento de anulación responde **409** sin escribir ni borrar
+la fila. El historial es inmutable: la confirmación no se borra ni se reescribe. Si después de la
+confirmación hace falta corregir stock, no se usa la anulación; el Bodeguero registra una
+`ENTRADA` manual auditada y el pedido sigue `Cerrado`. No se crea una operación nueva.
+
+**Por qué:** la confirmación es la aceptación del Solicitante de que recibió los insumos; a
+partir de ahí el retiro es un hecho consumado y una anulación con devolución de stock
+contradiría la recepción. Bloquearla convierte la confirmación en el punto final del retiro y
+mantiene una sola explicación del stock: lo que salió se devuelve solo mientras nadie haya
+confirmado. La corrección de stock posterior sigue disponible por la vía manual auditada del
+Bodeguero, sin crear una operación nueva ni tocar la historia.
+
+#### D-35 — El tablero pasa a tres columnas
+
+El Kanban deja de tener una columna por nombre del catálogo: muestra **`EnRevision`**
+(«En Revisión»), **`EnCurso`** («En Curso») y **«Terminados»** (agrupa `Cerrado` y `Anulado`).
+La columna `EnRevision` sustituye a las dos columnas actuales (`Pendiente` y `EnRevision`). El
+tablero sigue siendo de solo lectura y cada tarjeta sigue siendo el enlace al detalle.
+
+**Por qué:** con un solo estado de revisión, dos columnas para la misma etapa mostrarían una
+división que ya no existe en los datos; la columna terminal agrupada conserva la lectura de los
+dos desenlaces sin renombrar ningún estado.
+
+#### D-36 — Semilla y aprovisionamiento comparten el catálogo de cuatro estados
+
+`02_datos_semilla.sql` siembra cuatro filas (1 `EnRevision`, 2 `EnCurso`, 3 `Cerrado`,
+4 `Anulado`) y reenumera los tickets: 1–4 y 9 a `EnRevision`, 5–6 a `EnCurso`, 7–8 y 10 a
+`Cerrado`; ninguno en `Anulado`. Los `Cerrado` conservan `fecha_cierre` y
+`cantidad_entregada = cantidad_solicitada`. El catálogo que replica el aprovisionamiento de un
+tenant nuevo (`_ESTADOS_TICKET_TENANT`) pasa a las mismas cuatro filas, **con `Anulado`**, que
+hoy falta. Las descripciones dejan de decir «despacho» y describen la revisión y el retiro. No
+hay DDL, migración ni token nuevos: 26 tablas en control, 23 por tenant y `026.0`.
+
+**Por qué:** la semilla y el catálogo del aprovisionamiento son dos fuentes del mismo contrato;
+si un tenant nuevo nace sin `Anulado`, sus anulaciones fallan con 409 y la instalación no es
+equivalente a la semilla. El cambio es de datos, no de estructura, así que el token y los
+conteos no se mueven y la base se reconstruye con `down -v` + `up -d`.
+
+#### D-37 — Etiqueta de proceso: «Retirado» sustituye a «Despachado»
+
+Con el pedido en `Cerrado`, la etiqueta es «Retirado» si no está confirmado y «Entregado» si lo
+está. `EnRevision` conserva «En revisión» (la etiqueta que ya tenía ese nombre y que coincide con
+el título de su columna), `Anulado` conserva «Rechazado» y `EnCurso` conserva su precedencia de
+OC y stock. La etiqueta «En aprobación», que era la de `Pendiente`, desaparece con el nombre.
+
+**Por qué:** «Retirado» nombra la operación vigente y «Entregado» conserva la distinción entre
+retirado y recibido por el solicitante. «En revisión» es la etiqueta ya asociada a `EnRevision`
+y no obliga a inventar una tercera; mantener «En aprobación» para un estado que ya no existe
+dejaría una etiqueta huérfana.
+
+#### D-38 — Compras y cobertura no cambian de lógica
+
+`GET /compras/necesidades` y `stock_disponible` siguen considerando **solo** pedidos `EnCurso`.
+La devolución de una anulación incrementa `stock_actual` y puede volver a cubrir un pedido en la
+siguiente lectura, sin filas de desbloqueo nuevas ni cambios en la simulación ni en el plan de
+`orden_compra_ticket`.
+
+**Por qué:** el algoritmo de la 020/021 es contrato y la devolución es stock, no demanda. El
+incremento se refleja solo en las lecturas derivadas; escribir filas `EnCurso → EnCurso` desde la
+anulación sería lógica nueva que el usuario excluyó expresamente.
+
+#### D-39 — El KPI de tickets activos no cambia de regla
+
+«Tickets activos» sigue excluyendo por **nombre exacto** `Cerrado` y `Anulado`; `EnRevision` y
+`EnCurso` son activos. No cambia la fórmula, el ámbito por rol ni el resto del dashboard.
+
+**Por qué:** el renombre no altera qué pedidos están activos; la exclusión por nombre vigente ya
+cubre el catálogo nuevo y no hay que tocar el indicador.
+
+#### D-40 — Tres consecuencias observables del cierre administrativo
+
+1. **El rechazo no devuelve stock.** `POST /tickets/{id}/rechazo` sobre un `Cerrado` responde
+   **409** y **nunca** escribe una `ENTRADA`. La devolución solo la abre
+   `POST /tickets/{id}/anulacion` y solo el Administrador. El rechazo conserva sus actores
+   (Bodeguero/Administrador) y su comportamiento desde `EnRevision`.
+2. **Un `Cerrado` sin sede no se anula con devolución.** Si `ticket.sede_id` es nulo, la anulación
+   responde **409** sin escribir: no hay sede a la que devolver el stock, mismo criterio que el
+   retiro de la 011. El ticket sigue `Cerrado` y no se toca su historial.
+3. **El choque de unicidad de `stock_sede` es un 409.** Si al crear la fila `stock_sede` faltante
+   otra transacción inserta la misma `(sede, producto)` y la unicidad rechaza, la operación se
+   traduce a **409** con `X-Request-ID` (patrón de la 026), nunca a 500. No se duplica la fila ni
+   se deja stock parcial.
+
+**Por qué:** el rechazo y la anulación son operaciones distintas; permitir que el rechazo devuelva
+stock abriría una segunda vía de devolución que la matriz no autoriza. La sede nula es la misma
+imposibilidad que impide retirar con una instantánea ausente. Y la creación de la fila es una
+carrera real entre dos pedidos del mismo producto sin saldo: el 409 conserva el patrón de errores
+de la base y permite reintentar sin un 500 ni una fila duplicada.
+
+### 10.4 Reglas del flujo
+
+| Acción | Origen | Destino | Quién | Stock | Historial |
+|---|---|---|---|---|---|
+| **Aprobar** | `EnRevision` | `EnCurso` | Administrador | — | 1: origen → `EnCurso`, motivo `Aprobación del pedido` |
+| **Editar** | `EnRevision` | `EnRevision` | Solicitante dueño / Administrador | — | — (no es transición) |
+| **Rechazar** | `EnRevision` | `Anulado` | Bodeguero / Administrador | — | 1: `EnRevision` → `Anulado`, motivo obligatorio |
+| **Anular** | `EnRevision` | `Anulado` | Solicitante dueño / Administrador | — | 1: `EnRevision` → `Anulado`, motivo obligatorio |
+| **Registrar retiro** | `EnCurso` | `Cerrado` | **Bodeguero de la sede del pedido** | −`SALIDA` por detalle | 1: `EnCurso` → `Cerrado`, motivo nulo |
+| **Anular el retiro** | `Cerrado` **sin confirmar** | `Anulado` | **Solo Administrador** | +`ENTRADA` por detalle con `cantidad_entregada > 0` | 1: `Cerrado` → `Anulado`, motivo obligatorio |
+| **Anular un `Cerrado` confirmado** | `Cerrado` confirmado | — (**409**, sin efectos) | Administrador | — | — |
+| **Confirmar entrega** | `Cerrado` | `Cerrado` (acuse) | Solicitante dueño | — | 1: `Cerrado` → `Cerrado`, motivo canónico |
+| **PATCH /estado** (legado) | contiguos | un paso | Administrador | — | 1: origen → destino, motivo nulo |
+
+La anulación del retiro solo procede mientras el pedido **no esté confirmado**; la confirmación
+del Solicitante es final y convierte el retiro en definitivo.
+
+**Invariantes.**
+
+1. La secuencia lineal es `EnRevision → EnCurso → Cerrado`; `Anulado` queda fuera. Ningún
+   `PATCH /estado` lleva **a** `Cerrado` ni **a** `Anulado`, ni sale de `Anulado`; `Cerrado` solo
+   sale por la anulación administrativa.
+2. Ningún `PATCH /estado` entra o sale de `Cerrado` o `Anulado`: **409** en cualquier catálogo,
+   porque los terminales se resuelven por nombre (D-4 de la 013). La anulación administrativa del
+   retiro es la única salida y no es un cambio de estado.
+3. El retiro es total y ACID: valida estado, sede, detalles, productos y stock agregado antes de
+   escribir; una sola transacción rebaja, entrega, cierra, sella e historializa.
+4. La anulación administrativa es total y ACID: devuelve exactamente `cantidad_entregada` por
+   detalle, resetea cantidades, limpia `fecha_cierre`, cambia el estado e historializa en una sola
+   transacción con bloqueo.
+5. `fecha_cierre` sigue significando «cerrado por retiro»: ningún `Anulado` la tiene, y la fecha
+   del retiro vive en el historial `EnCurso → Cerrado`.
+6. El retiro de un pedido de otra sede no existe para el Bodeguero: **404** idéntico al
+   inexistente. Un Bodeguero sin sede no puede retirar: **409**.
+7. La anulación desde `EnRevision` no toca stock ni `fecha_cierre`; la del retiro sí, y solo por
+   el Administrador.
+8. Compras mide solo demanda `EnCurso`; la devolución es stock y no crea demanda ni filas de
+   desbloqueo.
+9. El dashboard cuenta como activos `EnRevision` y `EnCurso`; excluye `Cerrado` y `Anulado`.
+10. Un `Cerrado` confirmado no se anula: **409**. La confirmación es definitiva y no se borra ni
+    se reescribe; el pedido sigue `Cerrado` y se presenta «Entregado».
+
+### 10.5 Contrato de la API
+
+El orden de respuestas se conserva: **401** sin sesión; **403** rol fuera de la matriz (o
+capacidad institucional apagada); **404** recurso inexistente o fuera del alcance del rol
+concedido; **409** conflicto de precondición o de flujo; **422** entrada inválida. En el retiro,
+la ausencia de sede del Bodeguero es un **409** de precondición del actor, como en
+`sede_del_alcance_por_rol`.
+
+#### `POST /api/v1/tickets/{ticket_id}/retiro` — nueva ruta, mismo contrato de cierre
+
+- **Sustituye** a `POST /api/v1/tickets/{ticket_id}/despacho`; el DTO de entrada es
+  `TicketRetiro` y el servicio es `registrar_retiro_ticket`.
+- **Payload:** `{"usuario_id": <id entero existente>}`, sin cambios de forma respecto de la 005.
+  Un id inexistente responde **404**; un payload inválido, **422**.
+- **Roles:** **solo `Bodeguero`**; capacidad `kanban`, la misma que ya gatea el despacho, el
+  `PATCH` y la aprobación. Administrador, Solicitante y Superadmin reciben **403**.
+- **Ámbito:** `ticket.sede_id == usuario.sede_id`. Un pedido de otra sede responde **404**
+  idéntico al inexistente; un Bodeguero sin sede, **409**.
+- **Éxito:** **200** con el ticket en `Cerrado`, `cantidad_entregada = cantidad_solicitada` por
+  detalle, `fecha_cierre` no nula y una fila de historial `EnCurso → Cerrado` con el actor de la
+  sesión y motivo nulo. La UI reconsulta el detalle.
+- **Efectos:** rebaja `stock_sede` de la sede del pedido y escribe **una `SALIDA` por detalle**
+  con la observación literal
+  `Salida por retiro del ticket #{ticket_id}; detalle_id={detalle_ticket_id}; producto_id={producto_id}`
+  (sustituye el patrón `Despacho ticket_id=…` de la 005 D-6 y conserva su límite de 250
+  caracteres y su aserción literal).
+- **Errores de negocio:** **409** si el pedido no está `EnCurso`, si el catálogo no contiene
+  `EnCurso` o `Cerrado`, si no tiene detalles, sede, productos o stock suficiente, o si una
+  inconsistencia de institución impide resolver el retiro.
+- **Concurrencia:** bloquea el ticket y las filas `stock_sede`; dos retiros del mismo pedido se
+  serializan, el segundo relee `Cerrado` y responde **409** sin movimientos. Un fallo de
+  escritura revierte stock, cantidades, estado, fecha y auditoría. SQLite no acredita el bloqueo.
+
+#### `POST /api/v1/tickets/{ticket_id}/anulacion` — ampliación desde `Cerrado`
+
+- **Petición:** sin cambios (`motivo` obligatorio). La matriz conserva `{Administrador,
+  Solicitante}`.
+- **Desde `EnRevision`:** se conserva el comportamiento vigente: dueño Solicitante o
+  Administrador; no toca stock, no sella `fecha_cierre`, exige motivo, escribe la fila
+  `EnRevision → Anulado`.
+- **Desde `Cerrado`:** **solo el Administrador** y **solo si el pedido no está confirmado**.
+  Devuelve el stock según D-32, resetea `cantidad_entregada`, deja `fecha_cierre` nula, pasa a
+  `Anulado` y escribe la fila `Cerrado → Anulado` con actor y motivo literal. El Solicitante
+  dueño recibe **409** con un detalle que declara que la anulación de un retiro es
+  administrativa. Orden de validación desde `Cerrado`: **404** de alcance (inexistente o ajeno)
+  → **409** de estado (`EnCurso` o `Anulado`) → **409** de rol (Solicitante) → **409** de
+  confirmación previa (la fila canónica `Cerrado → Cerrado`) → **409** de sede no resoluble
+  (`Cerrado` sin `sede_id`) → **422** de motivo. La confirmación previa y la sede nula responden
+  **409** sin tocar stock, cantidades, `fecha_cierre`, estado ni historial.
+- **Errores:** **409** desde `EnCurso` o `Anulado`; **409** si el catálogo no contiene `Anulado`;
+  **409** si el pedido ya fue confirmado por el Solicitante; **409** si el pedido `Cerrado` no
+  tiene `sede_id`; **422** si el motivo falta, está vacío o excede 500 caracteres. Un error no
+  escribe nada.
+- **Concurrencia:** bloquea el ticket y las filas `stock_sede`; una segunda anulación espera,
+  relee `Anulado` y responde **409** sin duplicar `ENTRADA`. La confirmación y la anulación
+  compiten por el mismo bloqueo del ticket: si la confirmación gana, la anulación ve la fila
+  `Cerrado → Cerrado` y responde **409**; si la anulación gana, la confirmación ve `Anulado` y
+  responde **409**. Nunca se aceptan una anulación y una confirmación sobre el mismo pedido. Un
+  fallo revierte stock, estado, cantidades e historial. SQLite no acredita el bloqueo.
+
+#### `POST /api/v1/tickets/{ticket_id}/rechazo` — sin cambio
+
+Conserva sus actores (Bodeguero/Administrador) y su comportamiento desde `EnRevision`. Sobre un
+`Cerrado` responde **409** y **nunca** devuelve stock: la devolución solo la abre la anulación
+administrativa (D-40).
+
+#### `PATCH /api/v1/tickets/{ticket_id}/estado` — legado, sin cambios de contrato
+
+Sigue concedido **solo al Administrador**, con su regla de **un paso entre contiguos**
+(`EnRevision → EnCurso` y el retroceso `EnCurso → EnRevision`), `EnCurso → Cerrado` reservado al
+retiro con **409** y detalle que dirige a `POST /tickets/{ticket_id}/retiro`, y `Cerrado` y
+`Anulado` sin entrada ni salida vía `PATCH` en **cualquier** catálogo. `Anulado` solo se alcanza
+por anulación o rechazo. La UI no lo invoca.
+
+#### `POST /api/v1/tickets/{ticket_id}/confirmacion-entrega` — sin cambios
+
+Conserva su contrato, sus roles y el motivo canónico. Añade una precisión de lectura: un pedido
+`Anulado` responde **409** aunque tenga una fila de confirmación previa, y `entrega_confirmada`
+no se presenta como `true` fuera de `Cerrado`.
+
+#### `POST /api/v1/inventario/movimientos` — rol restringido
+
+Pasa a concederse **solo al `Bodeguero`**; el Administrador recibe **403** por matriz. La
+capacidad `inventario` sigue gateando la operación después de la matriz. No cambia el payload, la
+validación ni la auditoría.
+
+### 10.6 Interfaz
+
+**Barra de acciones del detalle.**
+
+| Estado | Acciones ofrecidas |
+|---|---|
+| `EnRevision` | **Aprobar** (Administrador), **Rechazar** (Bodeguero/Administrador), **Anular** (Solicitante dueño/Administrador), **Editar** (dueño/Administrador) |
+| `EnCurso` | **Registrar retiro** (solo Bodeguero de la sede del pedido, con `stock_disponible = true`) |
+| `Cerrado` | **Confirmar entrega** (Solicitante dueño, si no está confirmada); **Anular el retiro** (solo Administrador, con motivo, solo si **no** está confirmada) |
+| `Anulado` | Ninguna |
+
+- **Retiro.** El botón dice «Registrar retiro» (sustituye «Despachar» y «Confirmar stock local y
+  despachar»), el diálogo de confirmación se titula «Confirmar retiro» y el resultado se anuncia
+  como «Retirado». No pide motivo; se ofrece solo con el pedido `EnCurso`, `stock_disponible`
+  estrictamente `true`, rol `Bodeguero` y pedido de su sede. Sin doble envío; un 409 se muestra en
+  `role="alert"` y la vista reconsulta.
+- **Anulación del retiro.** Solo el Administrador la ve en `Cerrado` y solo si
+  `entrega_confirmada` es `false`; pide motivo obligatorio con confirmación previa y advierte de
+  la devolución de stock. Un 409 o 422 se muestra en `role="alert"` sin cambiar el estado por
+  cuenta propia. Una vez confirmada la entrega, la acción desaparece y el pedido se presenta
+  «Entregado»; el backend sigue siendo la frontera y responde 409 a cualquier intento.
+- **Etiqueta de proceso.** «Retirado» en `Cerrado` sin confirmar; «Entregado» en `Cerrado`
+  confirmado; «Rechazado» en `Anulado`; «En revisión» en `EnRevision`. La etiqueta no sustituye
+  al estado canónico y no depende solo del color.
+- **Kanban.** Tres columnas (`EnRevision` «En Revisión», `EnCurso` «En Curso», «Terminados»);
+  sin columna `Pendiente`; contadores por tarjetas; solo lectura y tarjeta-enlace.
+- **Roles.** El Administrador no ve «Registrar retiro»; el Solicitante no lo ve; el Bodeguero no
+  ve «Aprobar», «Editar», «Rechazar» ni «Anular el retiro». El espejo de roles del frontend debe
+  acompañar la matriz: retiro solo `Bodeguero`, anulación del retiro solo `Administrador`,
+  movimientos manuales solo `Bodeguero`.
+
+### 10.7 Catálogo, semilla, tenants y versión
+
+- **Semilla:** cuatro filas (1 `EnRevision`, 2 `EnCurso`, 3 `Cerrado`, 4 `Anulado`); tickets
+  1–4 y 9 en `EnRevision`, 5–6 en `EnCurso`, 7–8 y 10 en `Cerrado`; ninguno en `Anulado`. Los
+  `Cerrado` conservan `fecha_cierre` y `cantidad_entregada = cantidad_solicitada`.
+- **Aprovisionamiento:** el catálogo que replica un tenant nuevo tiene las mismas cuatro filas e
+  **incluye `Anulado`**; las descripciones no mencionan «despacho».
+- **Sin DDL:** no hay tablas, columnas, índices ni migraciones nuevos. Control sigue en **26**
+  tablas, cada tenant en **23**, el modelo en **21** entidades de dominio y el token en `026.0`.
+- **Reset:** la base se reconstruye con `docker compose down -v` + `up -d`, nunca con migraciones
+  (`AGENTS.md` §8.8).
+
+#### Impacto en stack.md
+
+La sección «Ciclo de vida del ticket: estado `Anulado` e historial de transiciones (Feature 013)»
+de `docs/spec/stack.md` afirma hoy que `Anulado` es la **quinta** fila del catálogo y que
+`Cerrado` y `Anulado` son los **dos terminales**; ambos extremos quedan superados. Texto
+propuesto para esa sección (se aplicará durante la implementación, no ahora):
+
+> **Enmienda 26/Nov/2026 (catálogo de tres estados y retiro).** El catálogo `estado_ticket`
+> replicado por tenant pasa a **cuatro filas** —`EnRevision`, `EnCurso`, `Cerrado` y `Anulado`—:
+> `Pendiente` desaparece y su nombre canónico es `EnRevision`, que es el estado inicial del alta.
+> La secuencia lineal es `EnRevision → EnCurso → Cerrado`; `Anulado` queda fuera y sigue siendo
+> terminal. El **retiro** (antes «despacho») lo registra solo el **Bodeguero de la sede del
+> pedido**: rebaja `stock_sede` con una `SALIDA` por detalle, fija `cantidad_entregada`, sella
+> `fecha_cierre` y escribe la fila `EnCurso → Cerrado`, todo en una transacción ACID. `Cerrado`
+> deja de ser terminal absoluto: solo el **Administrador** puede anularlo (`Cerrado → Anulado`)
+> **mientras el Solicitante no haya confirmado la entrega**, devolviendo el stock con una
+> `ENTRADA` por detalle con `cantidad_entregada > 0`, reseteando las cantidades entregadas,
+> dejando `fecha_cierre` nula y escribiendo la fila del historial con actor y motivo, en una sola
+> transacción con bloqueo del ticket y de las filas `stock_sede`. Una vez confirmada la entrega,
+> el pedido no se anula: la confirmación es final y un intento de anulación responde **409** sin
+> efectos. `Anulado` no tiene salida y el `PATCH /estado` de legado sigue bloqueando entrar o
+> salir de `Cerrado` y de `Anulado`. Sin DDL, sin migración, sin cambio de conteos (26/23) y con
+> el token `026.0`; la base se reconstruye con `down -v` + `up -d`. La observación de cada
+> `SALIDA` pasa a «Salida por retiro del ticket #…».
+
+### 10.8 Fuera de alcance
+
+- **El checkbox «Solo con stock» del inventario es una enmienda a la 018**, no a la 013: se
+  tratará como dependencia separada, sin AC en esta spec.
+- **La recepción de compras del Bodeguero no cambia**: conserva su contrato, su rol y su
+  excepción de producto inactivo.
+- **No se crea un estado «recibido», «entregado» ni «por confirmar»**, ni se convierte la
+  confirmación de entrega en un estado canónico.
+- **No se renombran carpetas, tablas ni identificadores internos históricos**: solo la ruta, el
+  DTO, el servicio, la observación de la `SALIDA` y la copia visible.
+- **No se reabre `Anulado`**, no se re-despacha un pedido anulado y no se permite una segunda
+  `ENTRADA` por la misma anulación.
+- **No se cambian** Compras, la cadena de la OC, el plan de `orden_compra_ticket`, el algoritmo de
+  cobertura, la fórmula del dashboard, la autenticación, las capacidades ni el conjunto de roles.
+- **No se crea la Feature 028 ni se abre una entrada nueva en `roadmap.md`**: todo vive como
+  enmienda post-cierre de la 013 y notas derivadas en 005, 007, 004 y 018.
+
+### 10.9 Glosario
+
+| Término | Vigencia | Uso |
+|---|---|---|
+| **Retiro** | **Vigente desde esta enmienda** | Acto por el que el Bodeguero de la sede entrega físicamente los insumos, rebaja `stock_sede`, cierra el pedido en `Cerrado` y sella `fecha_cierre`. Nombra la ruta, el DTO, el servicio, la observación de la `SALIDA`, la copia visible y los helpers/constantes del frontend (`ROLES_RETIRO_TICKETS`, `puedeRegistrarRetiro`, `registrarRetiro`, tipo `'retiro'`). |
+| **Despacho** | **Histórico (Feature 005)** | Nombre de la feature, de las specs históricas 005/013 y de los identificadores internos del backend que no se renombran. En el frontend activo no queda: sus helpers/constantes pasan a `ROLES_RETIRO_TICKETS`, `puedeRegistrarRetiro` y `registrarRetiro`. No se usa en la ruta pública, el DTO, el servicio, la observación ni la copia visible. |
+| **Retirado** | Vigente | Etiqueta de proceso de un `Cerrado` sin confirmación de entrega. |
+| **Entregado** | Vigente | Etiqueta de proceso de un `Cerrado` con confirmación del Solicitante dueño. |
+| **Anulación del retiro** | Vigente | `Cerrado → Anulado` ejecutada solo por el Administrador, con devolución de stock y motivo obligatorio, **solo si el Solicitante no confirmó la entrega**. |
+
+### 10.10 Criterios de aceptación (AC-50…AC-68)
+
+> **Cerrados y evidenciados el 27/Nov/2026.** La enmienda está implementada; cada AC lleva su
+> evidencia al pie. Los recuentos vigentes son **72 operaciones v1 / 74 entradas** y **25/22
+> tablas con `026.1`** por la enmienda externa de la 012 del 27/Nov/2026: la línea base de la
+> 013 era 75/77, 26/23 y `026.0`, y esta enmienda no cambia la cardinalidad de operaciones ni el
+> DDL.
+
+- [x] **AC-50 (catálogo de cuatro estados)** DADO una instalación nueva, ENTONCES `estado_ticket`
+      contiene exactamente cuatro filas —`EnRevision`, `EnCurso`, `Cerrado` y `Anulado`—, sin
+      `Pendiente` y sin dos filas homónimas; los tickets semilla quedan 1–4 y 9 en `EnRevision`,
+      5–6 en `EnCurso` y 7–8 y 10 en `Cerrado` (ninguno en `Anulado`), y los `Cerrado` conservan
+      `fecha_cierre` y `cantidad_entregada = cantidad_solicitada`. El catálogo que replica el
+      aprovisionamiento de un tenant nuevo contiene esas cuatro filas, `Anulado` incluido. No hay
+      DDL, migración ni token nuevos: 26/23 tablas y `026.0`.
+  - **Recuentos (línea base de la 013, no vigente):** 75 v1/77 entradas, 26/23 tablas y `026.0`; **vigente:** 72 v1/74 entradas, 25/22 y `026.1` por la enmienda externa de la 012 (27/Nov/2026).
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_catalogo_estados_013.py::test_el_catalogo_del_aprovisionamiento_tiene_las_cuatro_filas_ac_50` (y `::test_las_descripciones_del_catalogo_no_hablan_de_despacho_ac_50`), `backend/tests/funcional/sistema/test_catalogo_retiro_postgres_013.py` (**5 passed**, gated) y `backend/tests/funcional/sistema/test_instalacion_limpia_postgres.py` (**8 passed**, gated). SQL del reset del 27/Nov/2026: el catálogo del tenant tiene **4** filas `EnRevision,EnCurso,Cerrado,Anulado`; INST-001 #1–#4 `EnRevision`, #5–#6 `EnCurso`, #7–#8 `Cerrado`; INST-002 #9 `EnRevision` y #10 `Cerrado`; ningún ticket en `Anulado`; los `Cerrado` conservan `fecha_cierre` y `cantidad_entregada = cantidad_solicitada` (INST-001 #7–#8 y INST-002 #10 5/5). **Delta externo de la 012 (27/Nov/2026):** la base vigente tiene **25/22** tablas y `026.1`; la 013 no añadió DDL, migración ni token (26/23 y `026.0` eran su línea base). `evidencia/README.md` §11.1 y §11.3.
+
+- [x] **AC-51 (alta en `EnRevision`)** DADO un Solicitante autenticado que abre el alta,
+      ENTONCES el estado inicial se muestra fijo en `EnRevision` y no es editable; el alta envía
+      siempre el `EnRevision` resuelto por nombre; el backend responde **409** si el `estado_id`
+      no es `EnRevision` (o si el catálogo no lo contiene) y **201** con `EnRevision` en el resto
+      de casos, con `fecha_cierre` nula y sin historial inventado. Sustituye AC-27; el alta sigue
+      reservada al Solicitante por la enmienda del 26/Nov/2026 de la 007.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_ciclo_vida_alta_inicial_013.py` (6 pruebas: 409 en `EnCurso`, `Cerrado` y `Anulado` y catálogo sin `EnRevision`; 201; resolución por nombre fuera de la primera fila; `fecha_cierre` nula) y `frontend/src/app/features/tickets/tickets.component.spec.ts` (estado fijo, sin selector). 4200: los pedidos #9, #10 y #11 nacieron `EnRevision` con «En Revisión» fijo y sin selector (capturas 40-01/40-02).
+
+- [x] **AC-52 (aprobación desde `EnRevision`)** DADO un pedido en `EnRevision`, CUANDO el
+      Administrador lo aprueba, ENTONCES responde **200**, queda en `EnCurso` —con stock o sin
+      él—, `fecha_cierre` sigue nula y el historial registra **una** fila `EnRevision → EnCurso`
+      con el actor de la sesión y motivo `Aprobación del pedido`. El Bodeguero, el Solicitante y
+      el Superadmin reciben **403**; un pedido ya `EnCurso`, `Cerrado` o `Anulado` recibe **409**
+      sin escribir. `Pendiente` ya no es un origen posible.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_ciclo_vida_aprobacion_013.py` (200 desde `EnRevision`; `EnCurso` con y sin stock; una sola fila con motivo `Aprobación del pedido`; 403 y 409 sin escribir) y `test_catalogo_estados_013.py::test_aprobar_desde_enrevision_deja_en_curso_ac_52`. 4200: #9, #10 y #11 pasaron de «En Revisión» a «En Curso» con `QA, Admin` como actor y `fecha_cierre` nula (capturas 40-03/40-04).
+
+- [x] **AC-53 (edición solo en `EnRevision`)** DADO un pedido propio o de la institución en
+      `EnRevision`, CUANDO se edita con payload válido, ENTONCES responde **200** con cabecera e
+      ítems reemplazados y sin cambiar estado, solicitante, sede ni institución; fuera de
+      `EnRevision` responde **409** sin escribir. Actores: Solicitante dueño y Administrador;
+      Bodeguero y Superadmin, **403**; un pedido ajeno, **404** idéntico.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_ciclo_vida_edicion_013.py` (12 pruebas: 200 en `EnRevision`; 409 fuera sin escribir; 403 Bodeguero/Superadmin; 404 idéntico al pedido ajeno) y `frontend/src/app/features/tickets/ticket-detalle.component.spec.ts`; la edición conserva estado, solicitante, sede e institución.
+
+- [x] **AC-54 (anulación y rechazo solo desde `EnRevision`)** DADO un pedido en `EnRevision`,
+      CUANDO el Solicitante dueño o el Administrador lo anula, o el Bodeguero o el Administrador
+      lo rechaza, ENTONCES responde **200** con el pedido en `Anulado`, `fecha_cierre` nula, sin
+      stock ni movimientos y con una fila de historial con actor y motivo literal. Desde
+      `EnCurso` o `Anulado` responde **409** sin efectos. Los actores de cada operación no
+      cambian.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_anulacion_retiro_013.py::test_la_anulacion_desde_enrevision_conserva_su_contrato_sin_stock_ac_54` y `test_catalogo_estados_013.py::test_anular_y_rechazar_solo_desde_enrevision_ac_54`, `::test_anular_desde_en_curso_responde_409_ac_54`; 4200: el detalle de #9 presenta «Anulado» con la etiqueta «Rechazado» y sin acciones (captura 40-09).
+
+- [x] **AC-55 (retiro: ruta, DTO, servicio y roles)** DADO un pedido `EnCurso`, CUANDO el
+      **Bodeguero** invoca `POST /api/v1/tickets/{ticket_id}/retiro` con un `usuario_id`
+      existente, ENTONCES responde **200** con el pedido en `Cerrado`; el Administrador, el
+      Solicitante y el Superadmin reciben **403** por matriz; un `usuario_id` inexistente o un
+      pedido inexistente/ajeno, **404**; un payload inválido, **422**. `POST /despacho` deja de
+      existir en el contrato y en la matriz, y el número de operaciones sigue en **75**
+      (`/openapi.json`, 75 v1 + `GET /` + `/health` = 77 entradas).
+  - **Recuentos (línea base de la 013, no vigente):** 75 v1/77 entradas, 26/23 tablas y `026.0`; **vigente:** 72 v1/74 entradas, 25/22 y `026.1` por la enmienda externa de la 012 (27/Nov/2026).
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_retiro_transaccional_013.py` (200; 403 por matriz; 404 de usuario y de pedido; 422 de payload) y `backend/tests/no_funcional/seguridad/test_permisos_retiro_013.py`. `GET /openapi.json` vivo: **72** operaciones v1 / **74** entradas y `/despacho` ausente. **Delta externo de la 012:** la línea base de la 013 era **75/77**; la enmienda de la 012 del 27/Nov retiró 3 operaciones y dejó 72/74, sin que la 013 cambie la cardinalidad (una clave renombrada: `/despacho` → `/retiro`). 4200: #9 y #10 retirados por el Bodeguero de su sede (capturas 40-05/40-06/40-10/40-11).
+
+- [x] **AC-56 (retiro acotado a la sede del Bodeguero)** DADO un Bodeguero con sede asignada,
+      CUANDO intenta retirar un pedido cuya `sede_id` es otra, ENTONCES responde **404 idéntico**
+      al de un pedido inexistente, sin revelar existencia ni tocar stock; SI el Bodeguero no
+      tiene sede, ENTONCES responde **409** sin fallback. Un pedido de su sede se retira con
+      normalidad.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_retiro_sede_013.py` (4 pruebas: sede propia 200; otra sede **404 idéntico** al inexistente; Bodeguero sin sede 409; ticket sin sede 409). 4200: el Bodeguero de Sede Maipú retiró #9 y #10, ambos de Sede Maipú.
+
+- [x] **AC-57 (retiro transaccional)** DADO un retiro aceptado, ENTONCES cada detalle rebaja
+      `stock_sede` de la sede del pedido por `cantidad_solicitada`, escribe una `SALIDA` con la
+      observación literal
+      `Salida por retiro del ticket #{ticket_id}; detalle_id={detalle_ticket_id}; producto_id={producto_id}`,
+      fija `cantidad_entregada = cantidad_solicitada`, sella `fecha_cierre` y registra una fila
+      `EnCurso → Cerrado`. Dos retiros concurrentes producen uno solo: el segundo responde **409**
+      sin movimientos. Un fallo de escritura revierte stock, cantidades, estado, fecha y
+      auditoría.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_retiro_transaccional_013.py` (17 pruebas: `SALIDA` con la observación literal, una por línea, 409 sin stock, segundo retiro 409 y reversión total) y `backend/tests/funcional/sistema/test_retiro_anulacion_postgres_013.py` (gated, retiro concurrente `(200, 409)` con un solo juego de `SALIDA`). SQL del 27/Nov/2026: `SALIDA` 3 «Salida por retiro del ticket #9; detalle_id=9; producto_id=10», stock 45→42, `cantidad_entregada` 3, `fecha_cierre` 18:37:21 e historial `EnCurso → Cerrado`.
+
+- [x] **AC-58 (anulación administrativa del retiro)** DADO un pedido `Cerrado`, CUANDO el
+      **Administrador** lo anula con motivo válido, ENTONCES responde **200**, el pedido queda en
+      `Anulado` con `fecha_cierre` nula, cada detalle con `cantidad_entregada > 0` genera una
+      `ENTRADA` por la cantidad entregada enlazada a `stock_sede` de la sede y producto (creando
+      la fila si falta), `stock_actual` se incrementa en esa cantidad, `cantidad_entregada` queda
+      en 0 y el historial registra **una** fila `Cerrado → Anulado` con actor y motivo literal.
+      SI quien anula es el Solicitante dueño, ENTONCES **409** sin escribir; SI el pedido ya fue
+      confirmado por el Solicitante, ENTONCES **409** sin escribir y sin borrar la fila de
+      confirmación; SI el pedido no tiene `sede_id`, ENTONCES **409** sin escribir; SI se invoca
+      `POST /tickets/{id}/rechazo` sobre un `Cerrado`, ENTONCES **409** y nunca devuelve stock
+      (D-40); un motivo inválido, **422**; un pedido en `EnCurso` o ya `Anulado`, **409**.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_anulacion_retiro_013.py` (14 pruebas: 200 con `ENTRADA`, reset, fecha nula e historial `Cerrado → Anulado`; 409 si ya está confirmado, sin sede, `EnCurso` o `Anulado`; 422; el rechazo sobre `Cerrado` no devuelve stock; choque de unicidad 409) y `backend/tests/funcional/sistema/test_retiro_anulacion_postgres_013.py`. SQL del 27/Nov/2026: #9 `Anulado`, `fecha_cierre` NULL, `cantidad_entregada` 0, stock 42→45, `ENTRADA` 3 «Devolución por anulación del retiro del ticket #9; detalle_id=9; producto_id=10» e historial `Cerrado → Anulado` con actor y motivo. 4200: capturas 40-07/40-08/40-09.
+
+- [x] **AC-59 (anulación del retiro: atomicidad y concurrencia)** DADO que la anulación del
+      retiro se acepta, ENTONCES stock, cantidades, `fecha_cierre`, estado e historial se
+      confirman juntos; SI una escritura falla, ENTONCES se revierten todos. Dos anulaciones
+      concurrentes del mismo pedido se serializan: la primera responde **200** y la segunda,
+      tras esperar, relee `Anulado` y responde **409** sin duplicar ninguna `ENTRADA`. Un choque de
+      unicidad al crear la fila `stock_sede` faltante se traduce a **409**, nunca a 500, sin
+      duplicar la fila ni dejar stock parcial (D-40). La garantía se verifica en PostgreSQL 16;
+      SQLite no acredita el bloqueo.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/sistema/test_retiro_anulacion_postgres_013.py` (anulación concurrente `(200, 409)` con una sola `ENTRADA`; creación de la fila `stock_sede`; cruce con confirmación en ambos órdenes) y `test_anulacion_retiro_013.py::test_el_choque_de_unicidad_al_crear_stock_sede_se_traduce_a_409_ac_59` y `::test_la_anulacion_es_atomica_si_falla_la_auditoria_ac_59`. La suite gated completa cerró en **2287 passed / 3 skipped / 0 failed**.
+
+- [x] **AC-60 (`PATCH /estado` de legado)** DADO el catálogo nuevo, CUANDO el Administrador usa
+      el `PATCH` de legado, ENTONCES `EnRevision → EnCurso` y `EnCurso → EnRevision` son válidos
+      por ser un paso; `EnRevision → Cerrado` es **409** por saltarse un paso; `EnCurso →
+      Cerrado` es **409** con el detalle que dirige al retiro; cualquier petición que entre o
+      salga de `Cerrado` o de `Anulado` es **409** en cualquier catálogo; `Anulado` solo se
+      alcanza por anulación o rechazo. El `PATCH` sigue concedido solo al Administrador y la UI
+      no lo invoca.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_patch_estado_retiro_013.py` (8 pruebas: un paso en ambas direcciones; 409 al saltar; `EnCurso → Cerrado` dirigido al retiro; sin entrada ni salida de `Cerrado`/`Anulado`; solo Administrador; terminalidad por nombre en catálogo degenerado) y `test_ciclo_vida_aprobacion_013.py::test_patch_estado_conserva_su_contrato_de_legado_para_el_administrador_ac_49`.
+
+- [x] **AC-61 (confirmación de entrega conservada)** DADO un pedido `Cerrado` del Solicitante de
+      la sesión y sin confirmación, CUANDO confirma la entrega, ENTONCES responde **200**, el
+      estado sigue `Cerrado`, `fecha_cierre` y `cantidad_entregada` no cambian, no hay movimiento
+      de stock y el historial registra una fila `Cerrado → Cerrado` con motivo
+      `Entrega confirmada por el solicitante`. SI el pedido está `Anulado` o ya confirmado,
+      ENTONCES **409**; el resto de roles, **403**. Una vez confirmado, el pedido no puede
+      anularse: el intento posterior responde **409** sin borrar ni reescribir la fila de
+      confirmación; el pedido sigue `Cerrado` y se presenta «Entregado».
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_confirmacion_anulacion_013.py` (6 pruebas: 200 `Cerrado → Cerrado` sin stock, fecha ni movimiento; 409 después de confirmar y después de anular; 403 otros roles; 409 fuera de `Cerrado`) y `backend/tests/funcional/e2e/test_flujo_retiro_013.py`. SQL del 27/Nov/2026: #10 sigue `Cerrado`, `fecha_cierre` 18:40:25 y `cantidad_entregada` 3 intactas, sin movimiento nuevo, historial `Cerrado → Cerrado` «Entrega confirmada por el solicitante». 4200: confirmación y «Entregado» (40-12/40-13/40-14) y 409 real «La entrega de este pedido ya fue confirmada por el solicitante: el retiro no puede anularse» (40-15).
+
+- [x] **AC-62 (Kanban de tres columnas)** DADO el tablero, ENTONCES muestra exactamente
+      `EnRevision` («En Revisión»), `EnCurso` («En Curso») y «Terminados» (que agrupa `Cerrado` y
+      `Anulado`); no existe columna `Pendiente` ni columna `Anulado` separada; los contadores
+      suman las tarjetas de cada columna; el tablero sigue siendo de solo lectura y cada tarjeta
+      es el enlace al detalle. Las tarjetas `Anulado` no cuentan como entregadas.
+  - **Evidencia (27/Nov/2026):** `frontend/src/app/features/tickets/tickets.component.spec.ts` (exactamente 3 columnas; sin `Pendiente` ni `Anulado` separada; contadores = tarjetas; solo lectura; tarjeta-enlace). 4200: **En Revisión 4 / En Curso 3 / Terminados 4**, con #9 «Rechazado» y #10 «Entregado» (captura 40-16); 8080: los mismos contadores (40-18).
+
+- [x] **AC-63 (interfaz del retiro y de la anulación del retiro)** DADO el detalle de un pedido,
+      ENTONCES la acción se llama «Registrar retiro», el diálogo «Confirmar retiro» y el resultado
+      «Retirado»; solo se ofrece al Bodeguero de la sede, con el pedido `EnCurso` y
+      `stock_disponible = true`; el Administrador no ve el retiro y ve «Anular el retiro» solo en
+      `Cerrado` y solo si **no** está confirmado, con motivo obligatorio y confirmación previa;
+      el Solicitante no ve ninguna de las dos. Tras la confirmación del Solicitante, la acción de
+      anular desaparece y el pedido se presenta «Entregado». La etiqueta de proceso de un `Cerrado` sin confirmar es «Retirado», la de un
+      `Cerrado` confirmado «Entregado», la de `EnRevision` «En revisión» y la de `Anulado`
+      «Rechazado». Los errores 409/422 se muestran en `role="alert"` sin doble envío y con
+      reconsulta.
+  - **Evidencia (27/Nov/2026):** `frontend/src/app/features/tickets/ticket-detalle.component.spec.ts` («Registrar retiro», «Confirmar retiro», «Retirado», «Anular el retiro», «Entregado», «Rechazado»; 409/422 en `role="alert"`; sin doble envío) y `frontend/src/app/core/auth/roles.spec.ts`. 4200 con Administrador, Bodeguero y Solicitante: el Bodeguero ve «Registrar retiro» en `EnCurso` (40-05/40-10); el Administrador ve «Anular el retiro» solo en `Cerrado` sin confirmar (40-07/40-08) y ninguna acción en `Entregado` (40-15); el Solicitante ve «Confirmar entrega» y no ve retiro ni anulación (40-12). El Superadmin queda fuera de `/tickets` (`ROLES_TICKETS` lo excluye; `roles.spec.ts` AC-3), por lo que no ve las acciones.
+
+- [x] **AC-64 (matriz y espejo del frontend)** DADO la matriz central y `/openapi.json`,
+      ENTONCES la matriz conserva **75** operaciones: `POST /tickets/{id}/retiro` figura con
+      **solo `Bodeguero`** (capacidad `kanban`), `POST /inventario/movimientos` con **solo
+      `Bodeguero`** (capacidad `inventario`), `POST /tickets/{id}/anulacion` conserva
+      `{Administrador, Solicitante}` y `PATCH /estado` conserva `{Administrador}`; ninguna otra
+      entrada cambia de roles ni se retira; `/openapi.json` publica 75 operaciones v1 y 77
+      entradas. El espejo de roles del frontend concede el retiro y los movimientos manuales solo
+      al Bodeguero y la anulación del retiro solo al Administrador.
+  - **Recuentos (línea base de la 013, no vigente):** 75 v1/77 entradas, 26/23 tablas y `026.0`; **vigente:** 72 v1/74 entradas, 25/22 y `026.1` por la enmienda externa de la 012 (27/Nov/2026).
+  - **Evidencia (27/Nov/2026):** `backend/tests/no_funcional/seguridad/test_permisos_retiro_013.py` (11 pruebas: matriz 72; `/retiro` solo `Bodeguero` con capacidad `kanban`; movimientos solo `Bodeguero`; `/anulacion` `{Administrador, Solicitante}`; `PATCH` `{Administrador}`; OpenAPI 72/74; `/despacho` ausente) y `roles.spec.ts` (espejo: retiro y movimientos solo Bodeguero; anulación del retiro solo Administrador). **Delta externo de la 012:** 72 v1 / 74 entradas vigentes; 75/77 era la línea base de la 013 y la 013 no cambia la cardinalidad.
+
+- [x] **AC-65 (dashboard)** DADO el dashboard, ENTONCES «tickets activos» cuenta `EnRevision` y
+      `EnCurso` y excluye por nombre exacto `Cerrado` y `Anulado`; la fórmula, el ámbito por rol
+      y el resto de KPI no cambian.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/integracion/test_ciclo_vida_dashboard_013.py` (el KPI excluye `Anulado` por nombre; ámbito del Solicitante; resto del dashboard intacto). 4200: «Pedidos Activos» **7** = 4 `EnRevision` + 3 `EnCurso`, excluyendo 3 `Cerrado` y 1 `Anulado` (captura 40-17).
+
+- [x] **AC-66 (Compras y cobertura)** DADO un pedido en `EnRevision`, ENTONCES no participa en
+      `GET /compras/necesidades` ni en `stock_disponible`; solo `EnCurso` cuenta como demanda.
+      Una devolución por anulación del retiro incrementa `stock_actual` y puede volver a cubrir un
+      pedido en la siguiente lectura, sin cambiar la simulación, el plan de `orden_compra_ticket`
+      ni escribir filas de desbloqueo.
+  - **Evidencia (27/Nov/2026):** `backend/tests/funcional/e2e/test_flujo_retiro_013.py::test_compras_021_no_cambia_por_la_devolucion_ac_35` (necesidad y caso #10 omitidos antes y después de la devolución; sin filas de desbloqueo ni de plan) y suite 020/021. 4200: `/compras/necesidades` con 4 filas / 33 unidades sugeridas y la devolución de #9 reflejada en `stock_sede` (45), sin cambiar la simulación ni el plan.
+
+- [x] **AC-67 (stack.md y coherencia documental)** DADO el cierre de la enmienda, ENTONCES
+      `docs/spec/stack.md` describe el catálogo de cuatro estados, el retiro y la anulación
+      `Cerrado → Anulado` con devolución; un grep de coherencia no deja ninguna afirmación
+      vigente que diga que `Pendiente` es canónico, que el catálogo tiene cinco filas, que
+      `Cerrado` es terminal sin salida o que la ruta vigente es `/despacho`, salvo las notas
+      históricas y las de superación.
+  - **Evidencia (27/Nov/2026):** `docs/spec/stack.md` §2 (enmiendas «26/Nov/2026» y «Superación») describe el catálogo de cuatro estados, el retiro, la anulación `Cerrado → Anulado` con devolución y el bloqueo por confirmación. Grep de cierre del 27/Nov/2026 sobre `AGENTS.md`, `MEMORY.md`, `.agents/skills/`, `stack.md`, `docs/diagramas/` y `docs/informes/`: **0** afirmaciones vigentes de `Pendiente`, `/despacho`, `Despachado`, «cinco estados», «cuatro columnas», `75/77` o `026.0`; solo quedan notas históricas o de superación (`stack.md:288/291/652/666/668`, `AGENTS.md:38` con «pendientes» de testing). Los diagramas corrientes se actualizaron (06/07/10/11 y textos de 04/08/09) con PNG regenerados; los 4+1 históricos (03-secuencia y 01-actividad) llevan banner visible y el informe Word se regeneró (§11.9 de `evidencia/README.md`).
+
+- [x] **AC-68 (cierre)** DADO el cierre, ENTONCES `pytest` y `ng test` están en verde,
+      `/openapi.json` publica 75 operaciones v1 con la ruta nueva, y el flujo se recorre en los
+      dos puertos: 4200 con escritura real (alta en `EnRevision`, aprobación, retiro y anulación
+      del retiro con devolución) y humo en 8080 con la imagen reconstruida (`AGENTS.md`
+      §8.5–§8.6).
+  - **Recuentos (línea base de la 013, no vigente):** 75 v1/77 entradas, 26/23 tablas y `026.0`; **vigente:** 72 v1/74 entradas, 25/22 y `026.1` por la enmienda externa de la 012 (27/Nov/2026).
+  - **Evidencia (27/Nov/2026):** `pytest` SQLite **2163 passed / 127 skipped / 0 failed** (9:10); gated PostgreSQL **2287 passed / 3 skipped / 0 failed** (29:05, bases desechables, `apt_erp` intacta); `ng test` **671 SUCCESS / 0 FAILED**; `ng build` limpio (`main-IRJLFDU6.js`, Initial 339.98 kB). `/openapi.json` vivo: **72 v1 / 74 entradas** (delta externo 012; la 013 conserva su cardinalidad, publica `/retiro` y no `/despacho`). 4200 con escritura real (alta #9–#11, aprobación, retiro, anulación con devolución y 409 posterior) y 8080 reconstruido (`evidenciasproyecto-frontend:latest` `8c7ca2…`, bundle `main-IRJLFDU6.js`, 3 columnas 4/3/4, detalle «Entregado»/«Rechazado»). `evidencia/README.md` §11.
+
+### 10.11 Superación de reglas anteriores
+
+Para que no queden dos contratos vigentes, queda **derogado o superado** exactamente lo
+siguiente:
+
+- **AC-27 (enmienda del 05/Nov/2026):** el alta en `Pendiente` queda derogada; el alta nace en
+  `EnRevision` (AC-51). La prioridad `Media` predeterminada y el estado fijo en la UI se
+  conservan.
+- **El nombre canónico `Pendiente` y su fila:** derogados. `EnRevision` es el único nombre del
+  estado inicial y de la etapa de revisión. La fila 2 actual (`EnRevision`) se elimina para no
+  dejar dos filas homónimas; el catálogo queda en cuatro filas.
+- **Toda referencia de la 013 a `Pendiente` como estado existente, editable, anulable o
+  aprobable** —D-3, D-9, AC-1, AC-3, AC-13, AC-14, AC-24 (parte), AC-28, AC-29, AC-32, AC-36 y
+  AC-47—: superada en esa parte; el estado equivalente es `EnRevision`. AC-47 («`EnRevision` es
+  heredado y el flujo nuevo no lo produce») queda derogado por completo: `EnRevision` es el
+  estado inicial.
+- **La terminalidad absoluta de `Cerrado`** —§3 «Fuera», la fila `Cerrado` de la tabla de §5,
+  AC-4 y AC-26 de la 013, D-4 de la 013 en la parte «sin salida en cualquier catálogo», D-1 de
+  la 005 y la nota de `stack.md`—: superada. `Cerrado` tiene una única salida, la anulación
+  administrativa del retiro **de un pedido no confirmado** (AC-58); si el Solicitante ya
+  confirmó la entrega, la anulación responde 409. `Anulado` sigue siendo terminal sin salida, y
+  el `PATCH /estado` sigue bloqueando entrar o salir de ambos (AC-60).
+- **AC-2 (25/Nov/2026) en la parte «anulación desde `Cerrado` = 409»:** superada **solo para el
+  Administrador**; el Solicitante dueño sigue recibiendo 409 (D-33).
+- **El actor del despacho** —AC-17/AC-33/AC-34/AC-49 y la entrada de la matriz de la 007—:
+  superado. El Administrador deja de retirar y de registrar movimientos manuales; el Bodeguero es
+  el único actor del retiro (AC-55) y de `POST /inventario/movimientos` (AC-64).
+- **La ruta `/despacho`, el DTO `TicketDespacho` y el servicio `despachar_ticket`:** superados por
+  `/retiro`, `TicketRetiro` y `registrar_retiro_ticket` (D-29, AC-55). En el frontend, los
+  helpers/constantes históricos del mapping de D-29 quedan superados por `ROLES_RETIRO_TICKETS`,
+  `puedeRegistrarRetiro` y `registrarRetiro`.
+- **La observación literal de la 005 D-6** (`Despacho ticket_id=…; detalle_id=…; producto_id=…`)
+  y **el detalle 409 de la 005** (`El cierre requiere despacho; use
+  POST /api/v1/tickets/{ticket_id}/despacho`): superados por la observación
+  `Salida por retiro del ticket #…` y por el detalle que dirige a `/retiro`.
+- **Las columnas del Kanban de la 004** —AC-1 y D-1, en lo que exigen una columna por cada
+  nombre del catálogo— **y la §9 D-24/AC-41 de la 013**, en lo que conservaban `Pendiente` y
+  `EnRevision` como columnas separadas: superadas por las tres columnas de AC-62. La columna
+  «Terminados» y la agrupación de `Cerrado` y `Anulado` se conservan.
+- **La etiqueta de proceso «Despachado»** —D-22, AC-37 y AC-41—: superada por «Retirado»;
+  «Entregado» se conserva. La etiqueta «En aprobación», propia de `Pendiente`, desaparece con el
+  nombre.
+- **La §9.10, en lo que decía «ninguna acción en `Cerrado` o `Anulado`»:** superada también para
+  la anulación administrativa del retiro del Administrador (AC-63). `Anulado` sigue sin ninguna
+  acción y `Cerrado` solo gana esa acción para el Administrador **mientras el Solicitante no haya
+  confirmado**, además de la confirmación del Solicitante.
+- **La confirmación de entrega de §9.9/D-25/AC-42, en lo que era un acuse sin efecto sobre la
+  anulación:** superada. La confirmación es final y **bloquea** la anulación administrativa del
+  retiro (D-34, AC-61); un `Cerrado` confirmado no se anula y sigue presentándose «Entregado».
+- **La §9.5, en lo que ofrecía «Despachar» al Administrador y lo llamaba así:** superada.
+- **La entrada `POST /inventario/movimientos → {Administrador, Bodeguero}` de la 007:** superada
+  por `{Bodeguero}` (D-31).
+- **El catálogo del aprovisionamiento de cuatro filas sin `Anulado`:** corregido; no era una
+  regla sino una carencia del código, y un tenant nuevo debe nacer con el catálogo completo
+  (AC-50).
+
+### 10.12 Trazabilidad con otras features
+
+- **005 (despacho transaccional):** el rename toca su ruta, su DTO, el nombre del servicio, su
+  observación literal y el detalle 409 de su `PATCH`; su semántica —solo desde `EnCurso`, cierre
+  en `Cerrado`, rebaja, `SALIDA` por detalle, `cantidad_entregada`, `fecha_cierre`, bloqueo y
+  ACID— se conserva. Su D-1 («`Cerrado` terminal del catálogo») queda superado en la parte de la
+  salida administrativa. Nota de enmienda a redactar en la 005 durante la implementación.
+- **007 (control de acceso por roles):** cambian los roles de dos entradas existentes
+  (`/retiro` solo Bodeguero y `/inventario/movimientos` solo Bodeguero) y la clave de una
+  (`/despacho` → `/retiro`); la cardinalidad sigue en 75 y el espejo del frontend debe
+  acompañar. Nota de enmienda a redactar en la 007.
+- **004 (tablero Kanban):** las columnas pasan de «una por estado» a tres (AC-62); se conserva la
+  regla de backend de un paso y la terminalidad por nombre, con la salvedad de la anulación
+  administrativa del retiro. Nota de enmienda a redactar en la 004.
+- **018 (filtro de inventario):** el checkbox «Solo con stock» es una enmienda **separada** a la
+  018, fuera de alcance de la 013; se registrará como dependencia, sin AC aquí.
+- **003 (catálogo y alta):** el estado inicial se sigue resolviendo por nombre y no por la
+  posición del catálogo; cambia el nombre de `Pendiente` a `EnRevision`. La regla de la 003 que
+  ordenaba el catálogo por flujo se conserva para presentación.
+- **009 (dashboard):** la exclusión de `Cerrado` y `Anulado` se mantiene; `EnRevision` y
+  `EnCurso` son activos (AC-65).
+- **010 (multi-tenant):** el catálogo replicado por tenant pasa a cuatro filas; el
+  aprovisionamiento debe incluir `Anulado` (AC-50).
+- **011 (inventario por sede):** el retiro usa la instantánea `ticket.sede_id` y se acota a la
+  sede del Bodeguero (AC-56); no se toca la granularidad `(sede, producto)`.
+- **020/021 (compras y cobertura):** la simulación sigue usando solo `EnCurso`; la devolución es
+  stock y no demanda; el plan de `orden_compra_ticket` no cambia (AC-66).
+- **026 (salud del esquema):** cambian los datos del catálogo de estados, no la estructura:
+  siguen 26/23 tablas, 21 entidades y `026.0`; la base se reconstruye con `down -v` + `up -d`.
+- **`stack.md`:** su sección de la 013 se actualiza con el texto de §10.7 «Impacto en stack.md».
+- **`AGENTS.md` y `MEMORY.md`:** al cerrar la enmienda se actualizarán la terminología vigente y
+  el estado del proyecto; no se editan ahora.

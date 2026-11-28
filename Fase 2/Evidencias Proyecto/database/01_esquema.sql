@@ -6,8 +6,8 @@
 --
 -- PROPOSITO
 --   Crear TODA la estructura de una instalacion limpia:
---     * el esquema global `control` (26 tablas);
---     * un esquema `tenant_<slug>_<hash>` por institucion, con las 23 tablas
+--     * el esquema global `control` (25 tablas);
+--     * un esquema `tenant_<slug>_<hash>` por institucion, con las 22 tablas
 --       de negocio replicadas.
 --   Los datos de negocio los siembra `02_datos_semilla.sql`, que corre despues.
 --
@@ -29,15 +29,15 @@
 --   movimiento_inventario, prioridad, estado_ticket, ticket, detalle_ticket,
 --   historial_transicion_ticket, historial_transicion_producto,
 --   historial_transicion_categoria, proveedor, orden_compra,
---   detalle_orden_compra, factura_compra, orden_compra_ticket) +
---   `departamento_encargado` auxiliar,
+--   detalle_orden_compra, factura_compra, orden_compra_ticket),
 --   mas las tablas de control (`funcion_institucion`, `mapa_usuario_esquema`,
---   `registro_motivo_constancia`, `version_esquema`). Las justificaciones de las
---   Features 008/010/011/012/013/014/017/020/021/026 viven en docs/spec/stack.md;
---   aqui solo esta el DDL vigente.
+--   `registro_motivo_constancia`, `version_esquema`). La enmienda 27/Nov/2026 de
+--   la 012 retiro la tabla puente auxiliar del modelo organizacional. Las
+--   justificaciones de las Features 008/010/011/012/013/014/017/020/021/026 viven
+--   en docs/spec/stack.md; aqui solo esta el DDL vigente.
 --
 -- VERSION OBJETIVO DEL DDL
---   026.0 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
+--   026.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
 -- =====================================================
 
 -- =====================================================
@@ -212,31 +212,6 @@ CREATE TABLE control.usuario (
     -- cierra la puerta a escrituras directas.
     CONSTRAINT usuario_correo_canonico_ck
         CHECK (correo = lower(trim(correo)) AND length(correo) > 0)
-);
-
--- =====================================================
--- 4b. DEPARTAMENTO_ENCARGADO  (Feature 011, auxiliar)
--- =====================================================
--- Tabla puente auxiliar (no es una entidad de dominio): un departamento admite
--- varios encargados y un usuario puede ser encargado de su departamento. La
--- regla de compatibilidad (usuario Solicitante, activo y del mismo departamento)
--- la valida el servicio; aqui solo vive la asociacion y su unicidad.
-
-CREATE TABLE control.departamento_encargado (
-    departamento_encargado_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    departamento_id INTEGER NOT NULL,
-    usuario_id INTEGER NOT NULL,
-
-    CONSTRAINT departamento_encargado_departamento_fk
-        FOREIGN KEY (departamento_id)
-        REFERENCES departamento(departamento_id),
-
-    CONSTRAINT departamento_encargado_usuario_fk
-        FOREIGN KEY (usuario_id)
-        REFERENCES usuario(usuario_id),
-
-    CONSTRAINT departamento_encargado_uk
-        UNIQUE (departamento_id, usuario_id)
 );
 
 -- =====================================================
@@ -1024,7 +999,7 @@ AS $nombre$
 $nombre$;
 
 -- Crea un esquema tenant por cada institucion de la topologia. Las plantillas
--- son identicas al DDL de `control` de las 23 tablas de negocio, con las FKs
+-- son identicas al DDL de `control` de las 22 tablas de negocio, con las FKs
 -- calificadas al mismo esquema (sin referencias cross-schema). El espejo
 -- `institucion` se limita a dos columnas (`institucion_id`, `nombre`): `rut`,
 -- `direccion`, `activo` y `funcion_institucion` viven SOLO en control.
@@ -1082,16 +1057,6 @@ BEGIN
         'CONSTRAINT usuario_rol_fk FOREIGN KEY (rol_id) REFERENCES %1$I.rol(rol_id), '
         'CONSTRAINT usuario_sede_fk FOREIGN KEY (sede_id) REFERENCES %1$I.sede(sede_id), '
         'CONSTRAINT usuario_correo_canonico_ck CHECK (correo = lower(trim(correo)) AND length(correo) > 0))',
-
-        'CREATE TABLE %1$I.departamento_encargado ('
-        'departamento_encargado_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
-        'departamento_id INTEGER NOT NULL, '
-        'usuario_id INTEGER NOT NULL, '
-        'CONSTRAINT departamento_encargado_departamento_fk FOREIGN KEY (departamento_id) '
-        'REFERENCES %1$I.departamento(departamento_id), '
-        'CONSTRAINT departamento_encargado_usuario_fk FOREIGN KEY (usuario_id) '
-        'REFERENCES %1$I.usuario(usuario_id), '
-        'CONSTRAINT departamento_encargado_uk UNIQUE (departamento_id, usuario_id))',
 
         'CREATE TABLE %1$I.categoria ('
         'categoria_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, '
@@ -1430,17 +1395,17 @@ BEGIN
             EXECUTE format(v_plantilla, v_esquema);
         END LOOP;
 
-        -- Fail-closed: el tenant debe tener exactamente las 23 tablas de negocio.
+        -- Fail-closed: el tenant debe tener exactamente las 22 tablas de negocio.
         SELECT count(*) INTO v_conteo
         FROM information_schema.tables
         WHERE table_schema = v_esquema
           AND table_type = 'BASE TABLE';
-        IF v_conteo <> 23 THEN
+        IF v_conteo <> 22 THEN
             RAISE EXCEPTION
-                '01: el tenant % tiene % tabla(s) (esperadas 23).',
+                '01: el tenant % tiene % tabla(s) (esperadas 22).',
                 v_esquema, v_conteo;
         END IF;
-        RAISE NOTICE '01: tenant % creado con 23 tablas.', v_esquema;
+        RAISE NOTICE '01: tenant % creado con 22 tablas.', v_esquema;
     END LOOP;
 END;
 $tenants$;

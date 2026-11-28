@@ -1,14 +1,14 @@
-"""T2 (Feature 011): sede del ticket y despacho por instantanea — pruebas rojas.
+"""T2 (Feature 011): sede del ticket y retiro por instantanea — pruebas rojas.
 
 Seam bajo prueba: la **interfaz HTTP del `app` real** (`POST /api/v1/tickets/`,
-`POST /api/v1/tickets/{ticket_id}/despacho`) mas la lectura persistida de la
+`POST /api/v1/tickets/{ticket_id}/retiro`) mas la lectura persistida de la
 auditoria, que en esta tarea no tiene endpoint adaptado.
 
 Regla de negocio que estas pruebas fijan (spec D-5 y decision 11 del usuario):
 
   * al **crear** el ticket se almacena en `ticket.sede_id` la sede vigente del
     departamento del solicitante (instantanea);
-  * el **despacho** rebaja el stock de esa sede almacenada, **no** el de la sede a
+  * el **retiro** rebaja el stock de esa sede almacenada, **no** el de la sede a
     la que el departamento apunte en ese momento;
   * reasignar el departamento afecta a los tickets **futuros**;
   * un departamento sin sede impide crear el ticket (409) y un ticket legado sin
@@ -17,10 +17,10 @@ Regla de negocio que estas pruebas fijan (spec D-5 y decision 11 del usuario):
 Trazabilidad AC (spec 011 §5):
 
   * **AC-6** sede de departamento y ausencia de asignacion.
-  * **AC-9** instantanea de sede en ticket, despacho y auditoria.
+  * **AC-9** instantanea de sede en ticket, retiro y auditoria.
 
 Fase ROJA de TDD: ni la columna `ticket.sede_id` ni el contrato de respuesta ni el
-despacho por sede existen todavia (T3/T9). Cada prueba arranca con la guarda de
+retiro por sede existen todavia (T3/T9). Cada prueba arranca con la guarda de
 capacidad y falla con un motivo explicito.
 """
 
@@ -47,12 +47,12 @@ from tests.funcional.integracion._soporte_sede_011 import (
     movimientos_con_stock_sede,
 )
 
-RUTA_DESPACHO = "/api/v1/tickets/{ticket_id}/despacho"
+RUTA_RETIRO = "/api/v1/tickets/{ticket_id}/retiro"
 
 
 def _instalar_flujo(motor) -> dict[str, int]:
     return instalar_catalogo_estados(
-        motor, ("Pendiente", "EnRevision", "EnCurso", "Cerrado")
+        motor, ("EnRevision", "EnCurso", "Cerrado", "Anulado")
     )
 
 
@@ -80,7 +80,7 @@ def _crear_ticket(
 
 
 def _transicionar(cliente_http, ticket_id: int, estado_id: int) -> None:
-    """Aplica una transicion lineal valida (AC-27 reserva el alta a `Pendiente`)."""
+    """Aplica una transicion lineal valida (el alta nace en `EnRevision`)."""
     respuesta = cliente_http.patch(
         f"{RUTA_TICKETS}{ticket_id}/estado", json={"estado_id": estado_id}
     )
@@ -121,13 +121,24 @@ def _cliente_creador(motor, datos):
     """Cliente del Solicitante de INST01, unico rol que ejerce el alta.
 
     Enmienda 26/Nov/2026 (E26N-5): Administrador y Bodeguero reciben 403 por
-    matriz; las transiciones y el despacho conservan sus propios clientes.
+    matriz; las transiciones y el retiro conservan sus propios clientes.
     """
     return cliente(
         motor,
         "Solicitante",
         departamento_id=datos["departamento_id"],
         usuario_id=datos["usuarios_inst01"]["Solicitante"],
+    )
+
+
+def _cliente_bodeguero_de_sede(motor, datos, sede_id: int):
+    """Bodeguero de INST01 acotado a la sede indicada (D-30)."""
+    return cliente(
+        motor,
+        "Bodeguero",
+        departamento_id=datos["departamento_id"],
+        usuario_id=datos["usuarios_inst01"]["Bodeguero"],
+        sede_id=sede_id,
     )
 
 
@@ -154,7 +165,7 @@ def test_crear_ticket_almacena_la_sede_del_departamento(
             cliente_http,
             usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
+            estado_id=ids["EnRevision"],
             producto_id=datos_base["producto_id"],
         )
 
@@ -179,7 +190,7 @@ def test_departamento_sin_sede_no_crea_ticket_responde_409(
             cliente_http,
             usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
+            estado_id=ids["EnRevision"],
             producto_id=datos_base["producto_id"],
         )
 
@@ -188,7 +199,7 @@ def test_departamento_sin_sede_no_crea_ticket_responde_409(
 
 
 # ---------------------------------------------------------------------------
-# AC-9: despacho desde la instantanea, no desde la sede vigente del departamento
+# AC-9: retiro desde la instantanea, no desde la sede vigente del departamento
 # ---------------------------------------------------------------------------
 
 
@@ -197,9 +208,9 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(
 ):
     """AC-9: reasignar el departamento no redirige un ticket ya emitido.
 
-    El ticket nace en la sede A (stock 50). Antes del despacho el departamento se
+    El ticket nace en la sede A (stock 50). Antes del retiro el departamento se
     reasigna a la sede B (stock 7, insuficiente para la cantidad pedida): si el
-    despacho derivara la sede del departamento en ese instante, fallaria con 409.
+    retiro derivara la sede del departamento en ese instante, fallaria con 409.
     Debe rebajar A y dejar B intacta. Un ticket **nuevo** si usa B.
     """
     exigir_contrato_ticket_con_sede()
@@ -222,7 +233,7 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(
             cliente_http,
             usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
+            estado_id=ids["EnRevision"],
             producto_id=datos_base["producto_id"],
             cantidad=5,
         )
@@ -235,15 +246,15 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(
         departamento_id=datos_base["departamento_id"],
         usuario_id=datos_base["usuario_id"],
     ) as cliente_http:
-        _transicionar(cliente_http, ticket_id, ids["EnRevision"])
         _transicionar(cliente_http, ticket_id, ids["EnCurso"])
 
         # Reasignacion posterior: el ticket ya emitido conserva su instantanea.
         asignar_sede_a_departamento(motor, datos_base["departamento_id"], sede_b)
 
-        despacho = cliente_http.post(
-            RUTA_DESPACHO.format(ticket_id=ticket_id),
-            json={"usuario_id": datos_base["usuario_id"]},
+    with _cliente_bodeguero_de_sede(motor, dos_instituciones, sede_a) as cliente_http:
+        retiro = cliente_http.post(
+            RUTA_RETIRO.format(ticket_id=ticket_id),
+            json={"usuario_id": dos_instituciones["usuarios_inst01"]["Bodeguero"]},
         )
 
     with _cliente_creador(motor, dos_instituciones) as cliente_http:
@@ -251,13 +262,13 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(
             cliente_http,
             usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
+            estado_id=ids["EnRevision"],
             producto_id=datos_base["producto_id"],
             asunto="Ticket posterior a la reasignacion",
             cantidad=1,
         )
 
-    assert despacho.status_code == 200, despacho.text
+    assert retiro.status_code == 200, retiro.text
     assert leer_stock_sede(motor, sede_a, datos_base["producto_id"]) == 45
     assert leer_stock_sede(motor, sede_b, datos_base["producto_id"]) == 7, (
         "la sede vigente del departamento no debe rebajarse"
@@ -270,7 +281,7 @@ def test_ticket_abierto_despacha_desde_la_sede_almacenada(
 def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(
     motor, datos_base, dos_instituciones
 ):
-    """AC-9: sin saldo en la sede almacenada el despacho no cambia nada."""
+    """AC-9: sin saldo en la sede almacenada el retiro no cambia nada."""
     exigir_contrato_ticket_con_sede()
     ids = _instalar_flujo(motor)
     sede_id = crear_sede(motor, institucion_id=datos_base["institucion_id"])
@@ -287,7 +298,7 @@ def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(
             cliente_http,
             usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
+            estado_id=ids["EnRevision"],
             producto_id=datos_base["producto_id"],
             cantidad=5,
         )
@@ -300,14 +311,15 @@ def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(
         departamento_id=datos_base["departamento_id"],
         usuario_id=datos_base["usuario_id"],
     ) as cliente_http:
-        _transicionar(cliente_http, ticket_id, ids["EnRevision"])
         _transicionar(cliente_http, ticket_id, ids["EnCurso"])
-        despacho = cliente_http.post(
-            RUTA_DESPACHO.format(ticket_id=ticket_id),
-            json={"usuario_id": datos_base["usuario_id"]},
+
+    with _cliente_bodeguero_de_sede(motor, dos_instituciones, sede_id) as cliente_http:
+        retiro = cliente_http.post(
+            RUTA_RETIRO.format(ticket_id=ticket_id),
+            json={"usuario_id": dos_instituciones["usuarios_inst01"]["Bodeguero"]},
         )
 
-    assert despacho.status_code == 409, despacho.text
+    assert retiro.status_code == 409, retiro.text
     assert leer_stock_sede(motor, sede_id, datos_base["producto_id"]) == 1
     assert contar_movimientos(motor) == auditorias_antes, "sin auditoria parcial"
     assert leer_estado_de_ticket(motor, ticket_id) == ids["EnCurso"], (
@@ -315,7 +327,7 @@ def test_stock_insuficiente_en_la_sede_del_ticket_responde_409(
     )
 
 
-def test_despacho_registra_movimiento_por_stock_sede(
+def test_retiro_registra_movimiento_por_stock_sede(
     motor, datos_base, dos_instituciones
 ):
     """AC-9: la salida de auditoria referencia la sede y deja el legado intacto."""
@@ -334,7 +346,7 @@ def test_despacho_registra_movimiento_por_stock_sede(
             cliente_http,
             usuario_id=usuario_solicitante,
             prioridad_id=datos_base["prioridad_id"],
-            estado_id=ids["Pendiente"],
+            estado_id=ids["EnRevision"],
             producto_id=datos_base["producto_id"],
             cantidad=4,
         )
@@ -347,14 +359,15 @@ def test_despacho_registra_movimiento_por_stock_sede(
         departamento_id=datos_base["departamento_id"],
         usuario_id=datos_base["usuario_id"],
     ) as cliente_http:
-        _transicionar(cliente_http, ticket_id, ids["EnRevision"])
         _transicionar(cliente_http, ticket_id, ids["EnCurso"])
-        despacho = cliente_http.post(
-            RUTA_DESPACHO.format(ticket_id=ticket_id),
-            json={"usuario_id": datos_base["usuario_id"]},
+
+    with _cliente_bodeguero_de_sede(motor, dos_instituciones, sede_id) as cliente_http:
+        retiro = cliente_http.post(
+            RUTA_RETIRO.format(ticket_id=ticket_id),
+            json={"usuario_id": dos_instituciones["usuarios_inst01"]["Bodeguero"]},
         )
 
-    assert despacho.status_code == 200, despacho.text
+    assert retiro.status_code == 200, retiro.text
     salidas = [
         movimiento
         for movimiento in movimientos_con_stock_sede(motor)
@@ -363,13 +376,16 @@ def test_despacho_registra_movimiento_por_stock_sede(
     assert len(salidas) == 1
     assert salidas[0].stock_sede_id is not None
     assert salidas[0].cantidad == 4
-    assert despacho.json()["detalles"][0]["cantidad_entregada"] == 4
+    assert retiro.json()["detalles"][0]["cantidad_entregada"] == 4
 
 
-def test_ticket_legado_sin_sede_no_se_despacha(motor, datos_base):
-    """AC-9: un ticket sin instantanea de sede no se despacha hasta migrarlo."""
+def test_ticket_legado_sin_sede_no_se_retira(motor, datos_base):
+    """AC-9: un ticket sin instantanea de sede no se retira hasta migrarlo."""
     exigir_contrato_ticket_con_sede()
     ids = _instalar_flujo(motor)
+    sede_bodeguero = crear_sede(
+        motor, institucion_id=datos_base["institucion_id"], nombre="Sede Bodeguero"
+    )
     ticket_id = _crear_ticket_directo(
         motor,
         usuario_id=datos_base["usuario_id"],
@@ -380,14 +396,18 @@ def test_ticket_legado_sin_sede_no_se_despacha(motor, datos_base):
     )
 
     with cliente(
-        motor, "Administrador", departamento_id=datos_base["departamento_id"]
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        usuario_id=9999,
+        sede_id=sede_bodeguero,
     ) as cliente_http:
-        despacho = cliente_http.post(
-            RUTA_DESPACHO.format(ticket_id=ticket_id),
-            json={"usuario_id": datos_base["usuario_id"]},
+        retiro = cliente_http.post(
+            RUTA_RETIRO.format(ticket_id=ticket_id),
+            json={"usuario_id": 9999},
         )
 
-    assert despacho.status_code == 409, despacho.text
+    assert retiro.status_code == 409, retiro.text
     assert leer_estado_de_ticket(motor, ticket_id) == ids["EnCurso"]
 
 
@@ -410,7 +430,7 @@ def test_crear_ticket_solicitante_sin_sede_de_departamento_responde_409(
             cliente_http,
             usuario_id=usuario_solicitante,
             prioridad_id=dos_instituciones["prioridad_id"],
-            estado_id=ids["Pendiente"],
+            estado_id=ids["EnRevision"],
             producto_id=dos_instituciones["producto_id"],
         )
 

@@ -42,17 +42,17 @@ const TICKET_APROBADO: Ticket = {
   },
 };
 
-const TICKET_DESPACHADO: Ticket = {
+const TICKET_RETIRADO: Ticket = {
   ...TICKET_APROBADO,
   estado_id: 4,
   fecha_cierre: '2026-11-25T10:00:00',
-  etiqueta_proceso: 'Despachado',
-  explicacion_proceso: 'Despachado: pendiente de confirmación de entrega.',
+  etiqueta_proceso: 'Retirado',
+  explicacion_proceso: 'Retirado: pendiente de confirmación de entrega.',
   stock_disponible: false,
 };
 
 const TICKET_ENTREGADO: Ticket = {
-  ...TICKET_DESPACHADO,
+  ...TICKET_RETIRADO,
   etiqueta_proceso: 'Entregado',
   explicacion_proceso: 'Entregado: confirmado por el solicitante.',
   entrega_confirmada: true,
@@ -61,9 +61,10 @@ const TICKET_ENTREGADO: Ticket = {
 /**
  * Contrato HTTP de la ampliación del 25/Nov/2026 (spec §9, T25).
  *
- * Cubre las tres mutaciones nuevas del flujo: aprobación, despacho y
- * confirmación de entrega. Las aserciones comparan ruta, verbo y cuerpo; no
- * prueban la lógica del servidor, solo que el cliente hable el contrato.
+ * Cubre las tres mutaciones del flujo: aprobación, retiro y confirmación de
+ * entrega. Las aserciones comparan ruta, verbo y cuerpo; no prueban la lógica
+ * del servidor, solo que el cliente hable el contrato. La enmienda 26/Nov/2026
+ * sustituye `despacharTicket`/`/despacho` por `registrarRetiro`/`/retiro`.
  */
 describe('TicketService (ampliación 013, §9)', () => {
   let servicio: TicketService;
@@ -100,18 +101,31 @@ describe('TicketService (ampliación 013, §9)', () => {
     expect(recibidos).toEqual([TICKET_APROBADO]);
   });
 
-  it('despacharTicket hace POST con el usuario_id de la sesión', () => {
+  /**
+   * Enmienda 26/Nov/2026 (D-29/AC-55/AC-63): el método vigente es
+   * `registrarRetiro` y llama a `/retiro`. La llamada es estática desde T39;
+   * el nombre histórico solo se consulta por acceso dinámico para probar su
+   * ausencia.
+   */
+  it('registrarRetiro hace POST con el usuario_id de la sesión a /tickets/{id}/retiro', () => {
     const recibidos: Ticket[] = [];
-    servicio
-      .despacharTicket(10, 7)
-      .subscribe((ticket) => recibidos.push(ticket));
+    servicio.registrarRetiro(10, 7).subscribe({
+      next: (ticket) => recibidos.push(ticket),
+    });
 
-    const peticion = peticionA(`${URL_API}/tickets/10/despacho`);
+    const peticion = peticionA(`${URL_API}/tickets/10/retiro`);
     expect(peticion.request.method).toBe('POST');
     expect(peticion.request.body).toEqual({ usuario_id: 7 });
-    peticion.flush(TICKET_DESPACHADO);
+    peticion.flush(TICKET_RETIRADO);
 
-    expect(recibidos).toEqual([TICKET_DESPACHADO]);
+    expect(recibidos).toEqual([TICKET_RETIRADO]);
+  });
+
+  it('ya no expone despacharTicket ni llama a /despacho (D-29)', () => {
+    const api = servicio as unknown as Record<string, unknown>;
+
+    expect(api['despacharTicket']).toBeUndefined();
+    expect(api['registrarRetiro']).toBeDefined();
   });
 
   it('confirmarEntrega hace POST sin cuerpo a /tickets/{id}/confirmacion-entrega', () => {

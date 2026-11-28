@@ -118,15 +118,61 @@ const NOMBRE_ESTADO_CERRADO = 'cerrado';
 /** Título de la columna terminal agrupada (D-24); no es un estado canónico. */
 const NOMBRE_COLUMNA_TERMINADOS = 'Terminados';
 
+/** Enmienda 27/Nov/2026 (AC-28): lecturas de periodo del tablero. */
+export type PeriodoTablero = 'todo' | 'hoy' | 'semana' | 'mes' | 'anio';
+
+/** Enmienda 27/Nov/2026 (AC-29): orden de las tarjetas dentro de cada columna. */
+export type OrdenTablero = 'recientes' | 'antiguos';
+
+const PERIODOS_TABLERO: readonly PeriodoTablero[] = [
+  'todo',
+  'hoy',
+  'semana',
+  'mes',
+  'anio',
+];
+
+const ORDENES_TABLERO: readonly OrdenTablero[] = ['recientes', 'antiguos'];
+
+/**
+ * Inicio local (00:00:00.000) del periodo calendario, construido por campos y
+ * sin restar duraciones. `semana` usa lunes como primer día: retrocede
+ * `(getDay() + 6) % 7` días desde la medianoche de hoy.
+ */
+export function inicioDePeriodo(
+  periodo: PeriodoTablero,
+  ahora: Date
+): Date | null {
+  if (periodo === 'todo') {
+    return null;
+  }
+
+  const anio = ahora.getFullYear();
+  const mes = ahora.getMonth();
+  const dia = ahora.getDate();
+
+  if (periodo === 'hoy') {
+    return new Date(anio, mes, dia);
+  }
+  if (periodo === 'semana') {
+    const diasDesdeLunes = (ahora.getDay() + 6) % 7;
+    return new Date(anio, mes, dia - diasDesdeLunes);
+  }
+  if (periodo === 'mes') {
+    return new Date(anio, mes, 1);
+  }
+  return new Date(anio, 0, 1);
+}
+
 /** Texto de ausencia del read model de responsables (D-23/AC-40). */
 const SIN_GESTION_REGISTRADA = 'Sin gestión registrada';
 
 /**
- * Nombre canonico del estado inicial del alta (enmienda AC-27): todo ticket
- * nuevo nace en `Pendiente`, resuelto por nombre normalizado y no por la
- * primera entrada del catalogo.
+ * Nombre canonico del estado inicial del alta (enmienda 26/Nov/2026,
+ * D-35/AC-51): todo ticket nuevo nace en `EnRevision`, resuelto por nombre
+ * normalizado y no por la primera entrada del catalogo.
  */
-const NOMBRE_ESTADO_PENDIENTE = 'pendiente';
+const NOMBRE_ESTADO_EN_REVISION = 'enrevision';
 
 /**
  * Nombre canonico de la prioridad predeterminada del alta (enmienda AC-27):
@@ -143,18 +189,20 @@ const NOMBRE_PRIORIDAD_MEDIA = 'media';
  *
  * **El tablero es real**: se arma con `GET /tickets/catalogos` (estados ya
  * ordenados por `estado_id`) y `GET /tickets/`, disparados al construir el
- * componente. Las columnas son las operativas del catálogo (`Pendiente`,
- * `EnRevision` heredado y `EnCurso`) más una terminal agrupada, «Terminados»,
- * que reúne `Cerrado` y `Anulado` (D-24/AC-41); las vacías se conservan
- * (AC-1). Dentro, los tickets ordenados por `fecha_creacion` descendente y, en
- * empate, por `ticket_id` descendente (AC-2). Ningun id de estado se codifica
- * a mano: el nombre sale del catalogo.
+ * componente. Las columnas son las operativas del catálogo (`EnRevision`,
+ * `EnCurso`) más una terminal agrupada, «Terminados», que reúne `Cerrado` y
+ * `Anulado` (D-24/AC-41); las vacías se conservan
+ * (AC-1). Dentro, el orden por `fecha_creacion` y `ticket_id` lo elige el
+ * selector `orden` («Más recientes» por defecto, AC-2/AC-29); la prioridad, la
+ * búsqueda y el periodo se filtran antes de agrupar. Ningun id de estado se
+ * codifica a mano: el nombre sale del catalogo.
  *
  * El modal comparte el catalogo que el tablero ya cargo: `abrirModal` no vuelve
  * a pedirlo si esta disponible. Como el tablero no muta nada, tampoco se
  * reconsulta al cambiar el estado de un ticket: las dos peticiones del
- * arranque son toda la red de la vista (sin N+1). Que el tablero no se
- * actualice al crear un ticket es deliberado (spec 004, H-3).
+ * arranque son toda la red de la vista (sin N+1). El alta inserta la respuesta
+ * `201` de `POST /tickets/` en `tickets()` y el `computed` de columnas la
+ * filtra y ordena en cliente, sin recargar el listado (AC-8).
  */
 @Component({
   selector: 'app-tickets',
@@ -178,38 +226,61 @@ export class TicketsComponent {
   /** Texto de busqueda por asunto. Vacio o solo espacios = sin filtro (AC-7). */
   readonly busqueda = signal('');
 
+  /** Periodo calendario sobre `fecha_creacion`; `todo` = sin recorte (AC-28). */
+  readonly filtroPeriodo = signal<PeriodoTablero>('todo');
+
+  /** Orden dentro de cada columna; `recientes` conserva AC-2 por defecto (AC-29). */
+  readonly orden = signal<OrdenTablero>('recientes');
+
   /** Hay algun filtro activo: distingue el vacio "por filtros" del vacio real (AC-5). */
   readonly hayFiltros = computed(
-    () => this.filtroPrioridad() !== null || this.busqueda().trim() !== ''
+    () =>
+      this.filtroPeriodo() !== 'todo' ||
+      this.filtroPrioridad() !== null ||
+      this.busqueda().trim() !== ''
   );
 
   /**
-   * Columnas del tablero: las operativas del catalogo en su orden (`Pendiente`,
-   * `EnRevision` heredado, `EnCurso`…) y una unica terminal agrupada,
-   * «Terminados», que reune `Cerrado` y `Anulado` (D-24/AC-41). La columna
+   * Columnas del tablero: las operativas del catalogo en su orden (`EnRevision`,
+   * `EnCurso`) y una unica terminal agrupada, «Terminados», que reune `Cerrado`
+   * y `Anulado` (D-24/AC-41). La columna
    * terminal aparece en la posicion del primero de esos estados y no se
    * inventa si el catalogo no contiene ninguno. Las columnas vacias se
-   * conservan (AC-1). Dentro de cada una, los tickets de sus `estado_ids`
-   * (AC-2) ordenados por `fecha_creacion` descendente y, en empate, por
-   * `ticket_id` descendente. Es `computed` y no `signal`: todo sale de
-   * `estados()`, `tickets()` y las señales de filtro, no hay estado propio que
-   * mantener.
+   * conservan (AC-1). Los filtros de prioridad, busqueda y periodo se aplican
+   * antes de agrupar; despues, las tarjetas de cada `estado_ids` se ordenan con
+   * `orden`: `recientes` = `fecha_creacion` DESC y `ticket_id` DESC (AC-2);
+   * `antiguos` = ASC y `ticket_id` ASC. Es `computed` y no `signal`: todo sale
+   * de `estados()`, `tickets()` y las señales de filtro, no hay estado propio
+   * que mantener.
    *
    * Los filtros se aplican **antes de agrupar** (plan §3.5): es un filtrado de
    * cliente sobre el conjunto ya cargado, no una consulta nueva. Con eso los
    * contadores de cada columna (`tarjetas.length`) quedan ya "despues de
-   * filtrar" (AC-3) sin una señal de contador aparte. Los dos predicados se
+   * filtrar" (AC-3) sin una señal de contador aparte. Los tres predicados se
    * combinan en interseccion (AC-7, D-6).
    */
   readonly columnas = computed<ColumnaKanban[]>(() => {
     const prioridad = this.filtroPrioridad();
     const busqueda = this.normalizar(this.busqueda());
+    const inicio = inicioDePeriodo(this.filtroPeriodo(), new Date());
+    const orden = this.orden();
 
     const filtrados = this.tickets().filter(
       (ticket) =>
         (prioridad === null || ticket.prioridad_id === prioridad) &&
-        (busqueda === '' || this.normalizar(ticket.asunto).includes(busqueda))
+        (busqueda === '' || this.normalizar(ticket.asunto).includes(busqueda)) &&
+        (inicio === null ||
+          new Date(ticket.fecha_creacion).getTime() >= inicio.getTime())
     );
+
+    const comparar =
+      orden === 'recientes'
+        ? (a: Ticket, b: Ticket) =>
+            Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion) ||
+            b.ticket_id - a.ticket_id
+        : (a: Ticket, b: Ticket) =>
+            Date.parse(a.fecha_creacion) - Date.parse(b.fecha_creacion) ||
+            a.ticket_id - b.ticket_id;
 
     const grupos: ColumnaKanban[] = [];
     let terminados: ColumnaKanban | null = null;
@@ -246,11 +317,7 @@ export class TicketsComponent {
     for (const grupo of grupos) {
       grupo.tarjetas = filtrados
         .filter((ticket) => grupo.estado_ids.includes(ticket.estado_id))
-        .sort(
-          (a, b) =>
-            Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion) ||
-            b.ticket_id - a.ticket_id
-        )
+        .sort(comparar)
         .map((ticket) => this.resolverTarjeta(ticket));
     }
 
@@ -343,6 +410,22 @@ export class TicketsComponent {
   /** Fija el filtro de prioridad desde el `<select>`: `''` es "todas". */
   cambiarPrioridad(valor: string) {
     this.filtroPrioridad.set(valor === '' ? null : Number(valor));
+  }
+
+  /** Fija el periodo desde el `<select>`; ignora valores fuera del contrato. */
+  cambiarPeriodo(valor: string) {
+    const periodo = PERIODOS_TABLERO.find((opcion) => opcion === valor);
+    if (periodo !== undefined) {
+      this.filtroPeriodo.set(periodo);
+    }
+  }
+
+  /** Fija el orden desde el `<select>`; ignora valores fuera del contrato. */
+  cambiarOrden(valor: string) {
+    const orden = ORDENES_TABLERO.find((opcion) => opcion === valor);
+    if (orden !== undefined) {
+      this.orden.set(orden);
+    }
   }
 
   /** Actualiza el texto de busqueda desde el `<input>`. */
@@ -490,38 +573,26 @@ export class TicketsComponent {
   }
 
   /**
-   * Estados admitidos como **estado inicial** del alta: todo el catálogo
-   * excepto `Anulado` (Feature 013, D-11: un ticket nuevo no puede nacer
-   * anulado). La exclusión resuelve por **nombre canónico** normalizado —con
-   * la misma regla que el resto del tablero, sin ids fijos ni posiciones— y el
-   * backend rechaza igualmente ese alta con 409; esto solo evita ofrecerlo.
+   * Estado inicial del alta: `EnRevision` resuelto por **nombre canonico**
+   * (enmienda 26/Nov/2026, D-35/AC-51), no la primera entrada del catalogo. Un
+   * catalogo degenerado no puede cambiar el estado de nacimiento; sin
+   * `EnRevision` el formulario queda invalido (fail-closed, espejo del 409 del
+   * backend).
    */
-  readonly estadosAlta = computed(() =>
-    this.estados().filter(
-      (estado) => this.normalizar(estado.nombre) !== NOMBRE_ESTADO_ANULADO
-    )
-  );
-
-  /**
-   * Estado inicial del alta: `Pendiente` resuelto por **nombre canonico**
-   * (enmienda AC-27), no la primera entrada del catalogo. Un catalogo
-   * degenerado no puede cambiar el estado de nacimiento; sin `Pendiente` el
-   * formulario queda invalido (fail-closed, espejo del 409 del backend).
-   */
-  readonly estadoPendiente = computed(
+  readonly estadoEnRevision = computed(
     () =>
-      this.estadosAlta().find(
-        (estado) => this.normalizar(estado.nombre) === NOMBRE_ESTADO_PENDIENTE
+      this.estados().find(
+        (estado) => this.normalizar(estado.nombre) === NOMBRE_ESTADO_EN_REVISION
       ) ?? null
   );
 
   /** Nombre visible del estado inicial en el campo fijo del modal (V-3). */
   readonly nombreEstadoInicial = computed(() =>
-    etiquetaEstado(this.estadoPendiente()?.nombre ?? 'Pendiente')
+    etiquetaEstado(this.estadoEnRevision()?.nombre ?? 'EnRevision')
   );
 
   estadoInicial(): number | null {
-    return this.estadoPendiente()?.estado_id ?? null;
+    return this.estadoEnRevision()?.estado_id ?? null;
   }
 
   /**
@@ -541,7 +612,7 @@ export class TicketsComponent {
   }
 
   /**
-   * Fija los valores por defecto del alta (`Pendiente` y `Media`). Se aplica
+   * Fija los valores por defecto del alta (`EnRevision` y `Media`). Se aplica
    * al cargar los catalogos y despues de cada alta exitosa, para que el
    * formulario no arrastre el ticket anterior.
    */

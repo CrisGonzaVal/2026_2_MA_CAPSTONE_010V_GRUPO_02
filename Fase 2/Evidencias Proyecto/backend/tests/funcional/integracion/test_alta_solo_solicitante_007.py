@@ -314,10 +314,10 @@ def test_el_alta_atribuye_siempre_a_la_identidad_de_sesion_ac_21(
     assert respuesta.json()["usuario_id"] == datos_base["usuario_solicitante_id"]
 
 
-def test_el_alta_nace_en_pendiente_con_institucion_sede_e_historial_ac_21(
+def test_el_alta_nace_en_enrevision_con_institucion_sede_e_historial_ac_21(
     cliente_solicitante, motor, datos_base
 ):
-    """AC-21: autoría, institución, sede, `Pendiente` y fila de creación."""
+    """AC-21: autoría, institución, sede, `EnRevision` y fila de creación."""
     sede = asegurar_sede_de_departamento(motor, datos_base)
 
     respuesta = cliente_solicitante.post(RUTA_ALTA, json=_payload(datos_base))
@@ -385,10 +385,10 @@ def test_producto_de_otra_institucion_responde_404_sin_escritura_ac_21(
     assert _conteos_alta(motor) == antes
 
 
-def test_estado_distinto_de_pendiente_responde_409_sin_escritura_ac_21(
+def test_estado_distinto_de_enrevision_responde_409_sin_escritura_ac_21(
     cliente_solicitante, motor, datos_base
 ):
-    """AC-21: un estado inicial distinto de `Pendiente` es 409 sin escribir."""
+    """AC-21: un estado inicial distinto de `EnRevision` es 409 sin escribir."""
     asegurar_sede_de_departamento(motor, datos_base)
     antes = _conteos_alta(motor)
 
@@ -561,7 +561,7 @@ def test_capacidad_tickets_apagada_deniega_y_al_rehabilitarla_crea_ac_28(
 def test_la_matriz_reserva_el_alta_al_solicitante_ac_29():
     """AC-29: la fila viva es exactamente `{Solicitante}` y no cambia el total."""
     assert permisos.MATRIZ_PERMISOS[CLAVE_MATRIZ_ALTA] == frozenset({ROL_AUTORIZADO})
-    assert len(permisos.MATRIZ_PERMISOS) == 75
+    assert len(permisos.MATRIZ_PERMISOS) == 72
 
 
 def test_openapi_del_alta_conserva_el_contrato_y_declara_el_rol_ac_29():
@@ -603,7 +603,7 @@ def test_ticket_historico_de_autor_administrador_conserva_su_autoria_ac_31(
         motor,
         datos_base,
         autor_id=autor_id,
-        estado_id=estados["Pendiente"],
+        estado_id=estados["EnRevision"],
         sede_id=sede["sede_id"],
         asunto="Ticket histórico del Administrador",
     )
@@ -622,8 +622,8 @@ def test_ticket_historico_de_autor_administrador_conserva_su_autoria_ac_31(
     detalle = respuesta.json()
     assert detalle["usuario_id"] == autor_id
     assert detalle["sede_id"] == sede["sede_id"]
-    assert detalle["estado_id"] == estados["Pendiente"]
-    assert detalle["etiqueta_proceso"] == "En aprobación"
+    assert detalle["estado_id"] == estados["EnRevision"]
+    assert detalle["etiqueta_proceso"] == "En revisión"
     assert [
         (linea["producto_id"], linea["cantidad_solicitada"])
         for linea in detalle["detalles"]
@@ -643,13 +643,14 @@ def test_ticket_historico_de_autor_administrador_conserva_su_autoria_ac_31(
     assert historial == [
         {
             "estado_origen_id": None,
-            "estado_destino_id": estados["Pendiente"],
+            "estado_destino_id": estados["EnRevision"],
             "usuario_id": autor_id,
             "motivo": None,
         }
     ], "el historial histórico conserva su fila de creación y su autor"
 
-    # 2. Se opera según su estado: aprobación y despacho del Administrador.
+    # 2. Se opera según su estado: aprobación del Administrador y retiro del
+    # Bodeguero de la sede.
     aprobacion = cliente.post(f"/api/v1/tickets/{ticket_id}/aprobacion")
     assert aprobacion.status_code == 200, aprobacion.text
     assert aprobacion.json()["estado_id"] == estados["EnCurso"]
@@ -657,15 +658,18 @@ def test_ticket_historico_de_autor_administrador_conserva_su_autoria_ac_31(
         "aprobar no reasigna el autor histórico"
     )
 
-    despacho = cliente.post(
-        f"/api/v1/tickets/{ticket_id}/despacho",
-        json={"usuario_id": autor_id},
+    bodeguero = actuar_como("Bodeguero")
+    bodeguero.usuario.sede_id = sede["sede_id"]
+    retiro = cliente.post(
+        f"/api/v1/tickets/{ticket_id}/retiro",
+        json={"usuario_id": bodeguero.usuario.usuario_id},
     )
-    assert despacho.status_code == 200, despacho.text
-    assert despacho.json()["estado_id"] == estados["Cerrado"]
+    assert retiro.status_code == 200, retiro.text
+    assert retiro.json()["estado_id"] == estados["Cerrado"]
     assert _ticket_persistido(motor, ticket_id)["usuario_id"] == autor_id, (
-        "despachar no reasigna el autor histórico"
+        "retirar no reasigna el autor histórico"
     )
+    actuar_como("Administrador")
 
     # 3. Sin confirmación de entrega: el dueño no es Solicitante (013 AC-43).
     sin_rol = cliente.post(f"/api/v1/tickets/{ticket_id}/confirmacion-entrega")
@@ -685,12 +689,12 @@ def test_ticket_historico_de_autor_administrador_conserva_su_autoria_ac_31(
     assert cuerpo["usuario_id"] == autor_id
     assert cuerpo["estado_id"] == estados["Cerrado"]
     assert cuerpo["entrega_confirmada"] is False
-    assert cuerpo["etiqueta_proceso"] == "Despachado"
+    assert cuerpo["etiqueta_proceso"] == "Retirado"
 
     filas = _historial_persistido(motor, ticket_id)
     assert [linea["estado_origen_id"] for linea in filas] == [
         None,
-        estados["Pendiente"],
+        estados["EnRevision"],
         estados["EnCurso"],
     ], "aprobación y despacho suman sus filas y ninguna confirma la entrega"
     assert all(linea["motivo"] != MOTIVO_CONFIRMACION for linea in filas)
@@ -709,7 +713,7 @@ def test_ticket_historico_de_autor_bodeguero_conserva_su_autoria_ac_31(
         motor,
         datos_base,
         autor_id=autor_id,
-        estado_id=estados["Pendiente"],
+        estado_id=estados["EnRevision"],
         sede_id=sede["sede_id"],
         asunto="Ticket histórico del Bodeguero",
     )

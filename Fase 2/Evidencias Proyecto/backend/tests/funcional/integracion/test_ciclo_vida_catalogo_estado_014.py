@@ -329,7 +329,7 @@ def test_baja_conserva_referencias_stock_movimientos_y_tickets_ac_1(motor, mundo
         motor, mundo, producto_id=producto, cantidad=2, asunto="Ticket previo a la baja"
     )
 
-    with _admin(motor, mundo) as cliente:
+    with cliente_de_rol(motor, mundo, "Bodeguero") as cliente:
         entrada = cliente.post(
             "/api/v1/inventario/movimientos",
             json={
@@ -351,6 +351,7 @@ def test_baja_conserva_referencias_stock_movimientos_y_tickets_ac_1(motor, mundo
         )
         assert salida.status_code == 201, salida.text
 
+    with _admin(motor, mundo) as cliente:
         antes = {
             "productos": contar(motor, Producto),
             "detalles": contar(motor, DetalleTicket),

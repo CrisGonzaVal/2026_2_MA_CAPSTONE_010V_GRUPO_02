@@ -71,47 +71,114 @@
           class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
           @for (rol of rolesAsignables(); track rol.rol_id) {
-            <option [value]="rol.rol_id">{{ rol.nombre_rol }}</option>
+            <option [ngValue]="rol.rol_id">{{ rol.nombre_rol }}</option>
           }
         </select>
       </div>
       <div class="flex flex-col gap-1">
         <label for="crear-usuario-departamento" class="text-sm font-medium text-slate-700">
           Departamento
+          @if (!creacionEsBodeguero()) {
+            <span aria-hidden="true" class="text-rose-600">*</span>
+          }
         </label>
         <select
           id="crear-usuario-departamento"
           formControlName="departamento_id"
-          class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          [attr.aria-describedby]="
+            creacionEsBodeguero() ? 'crear-usuario-departamento-ayuda' : null
+          "
+          class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
         >
-          @for (departamento of departamentos(); track departamento.departamento_id) {
-            <option [value]="departamento.departamento_id">
-              {{ departamento.nombre_dep }}
-            </option>
+          @if (creacionEsBodeguero()) {
+            <option [ngValue]="0">Suministros (asignación automática)</option>
+          } @else {
+            <option [ngValue]="0">Selecciona un departamento</option>
+            @for (
+              departamento of departamentosCreacion();
+              track departamento.departamento_id
+            ) {
+              <option [ngValue]="departamento.departamento_id">
+                {{ departamento.nombre_dep }}
+              </option>
+            }
           }
         </select>
+        @if (creacionEsBodeguero()) {
+          <p id="crear-usuario-departamento-ayuda" class="text-xs text-slate-500">
+            El servidor asigna automáticamente el departamento «Suministros».
+          </p>
+        } @else if (!departamentosCreacion().length) {
+          <p role="alert" class="text-xs text-rose-700">
+            No hay departamentos disponibles para este rol. Crea uno en la pestaña
+            Departamentos.
+          </p>
+        }
+        @if (creacionSeleccionaSuministros()) {
+          <p role="alert" class="text-xs text-rose-700">
+            {{ mensajeSuministros }}
+          </p>
+        }
       </div>
-      @if (creacionEsBodeguero()) {
+      @if (creacionMuestraSede()) {
         <div class="flex flex-col gap-1 md:col-span-2">
           <label for="crear-usuario-sede" class="text-sm font-medium text-slate-700">
-            Sede del Bodeguero (opcional)
+            @if (creacionEsBodeguero()) {
+              Sede del Bodeguero
+              <span aria-hidden="true" class="text-rose-600">*</span>
+            } @else {
+              Sede (filtro de departamentos)
+            }
           </label>
           <select
             id="crear-usuario-sede"
             formControlName="sede_id"
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            [attr.aria-describedby]="
+              creacionEsBodeguero() && !sedes().length
+                ? 'crear-usuario-sede-ayuda'
+                : null
+            "
+            class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
           >
-            <option [ngValue]="null">Sin asignar</option>
+            @if (creacionEsBodeguero()) {
+              <option [ngValue]="null" disabled>Selecciona una sede</option>
+            } @else {
+              <option [ngValue]="null">Todas las sedes</option>
+            }
             @for (sede of sedes(); track sede.sede_id) {
               <option [ngValue]="sede.sede_id">{{ sede.nombre }}</option>
             }
           </select>
+          @if (creacionEsBodeguero()) {
+            @if (!sedes().length) {
+              <p
+                id="crear-usuario-sede-ayuda"
+                role="alert"
+                class="text-xs text-rose-700"
+              >
+                La institución no tiene sedes registradas: no se puede crear un
+                Bodeguero sin sede.
+              </p>
+            } @else {
+              <p class="text-xs text-slate-500">
+                La sede se asigna después de crear el usuario.
+              </p>
+            }
+          } @else {
+            <p class="text-xs text-slate-500">
+              La sede solo filtra los departamentos; no se guarda en el usuario.
+            </p>
+          }
         </div>
       }
       <div class="flex flex-wrap gap-2 md:col-span-2">
         <button
           type="submit"
-          [disabled]="guardando()"
+          [disabled]="
+            guardando() ||
+            creacionBodegueroSinSedes() ||
+            creacionSeleccionaSuministros()
+          "
           class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           Crear usuario
@@ -345,7 +412,7 @@
               <p>
                 {{ usuario.activo === false
                   ? '¿Reactivar este usuario?'
-                  : '¿Desactivar este usuario? No se podrá desactivar si es encargado de un departamento.' }}
+                  : '¿Desactivar este usuario?' }}
                 La baja o reactivación exige un motivo del catálogo.
               </p>
               <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -417,7 +484,7 @@
                   class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
                   @for (rol of rolesEdicion(); track rol.rol_id) {
-                    <option [value]="rol.rol_id">{{ rol.nombre_rol }}</option>
+                    <option [ngValue]="rol.rol_id">{{ rol.nombre_rol }}</option>
                   }
                 </select>
               </div>
@@ -427,19 +494,109 @@
                   class="text-sm font-medium text-slate-700"
                 >
                   Departamento
+                  @if (!edicionEsBodeguero()) {
+                    <span aria-hidden="true" class="text-rose-600">*</span>
+                  }
                 </label>
                 <select
                   id="editar-usuario-departamento"
                   formControlName="departamento_id"
-                  class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  [attr.aria-describedby]="
+                    edicionEsBodeguero()
+                      ? 'editar-usuario-departamento-ayuda'
+                      : null
+                  "
+                  class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                 >
-                  @for (departamento of departamentos(); track departamento.departamento_id) {
-                    <option [value]="departamento.departamento_id">
-                      {{ departamento.nombre_dep }}
-                    </option>
+                  @if (edicionEsBodeguero()) {
+                    <option [ngValue]="0">Suministros (asignación automática)</option>
+                  } @else {
+                    <option [ngValue]="0">Selecciona un departamento</option>
+                    @for (
+                      departamento of departamentosEdicion();
+                      track departamento.departamento_id
+                    ) {
+                      <option [ngValue]="departamento.departamento_id">
+                        {{ departamento.nombre_dep }}
+                      </option>
+                    }
                   }
                 </select>
+                @if (edicionEsBodeguero()) {
+                  <p
+                    id="editar-usuario-departamento-ayuda"
+                    class="text-xs text-slate-500"
+                  >
+                    El servidor asigna automáticamente el departamento «Suministros».
+                  </p>
+                } @else if (!departamentosEdicion().length) {
+                  <p role="alert" class="text-xs text-rose-700">
+                    No hay departamentos disponibles para este rol. Crea uno en la
+                    pestaña Departamentos.
+                  </p>
+                }
+                @if (edicionSeleccionaSuministros()) {
+                  <p role="alert" class="text-xs text-rose-700">
+                    {{ mensajeSuministros }}
+                  </p>
+                }
               </div>
+              @if (edicionMuestraSede()) {
+                <div class="flex flex-col gap-1">
+                  <label
+                    for="editar-usuario-sede"
+                    class="text-sm font-medium text-slate-700"
+                  >
+                    @if (edicionEsBodeguero()) {
+                      Sede del Bodeguero
+                      <span aria-hidden="true" class="text-rose-600">*</span>
+                    } @else {
+                      Sede (filtro de departamentos)
+                    }
+                  </label>
+                  <select
+                    id="editar-usuario-sede"
+                    formControlName="sede_id"
+                    [attr.aria-describedby]="
+                      edicionEsBodeguero() ? 'editar-usuario-sede-ayuda' : null
+                    "
+                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    @if (edicionEsBodeguero()) {
+                      <option [ngValue]="null" disabled>Selecciona una sede</option>
+                    } @else {
+                      <option [ngValue]="null">Todas las sedes</option>
+                    }
+                    @for (sede of sedes(); track sede.sede_id) {
+                      <option [ngValue]="sede.sede_id">{{ sede.nombre }}</option>
+                    }
+                  </select>
+                  @if (edicionEsBodeguero()) {
+                    @if (!sedes().length) {
+                      <p
+                        id="editar-usuario-sede-ayuda"
+                        role="alert"
+                        class="text-xs text-rose-700"
+                      >
+                        La institución no tiene sedes registradas: no se puede guardar
+                        un Bodeguero sin sede.
+                      </p>
+                    } @else {
+                      <p
+                        id="editar-usuario-sede-ayuda"
+                        class="text-xs text-slate-500"
+                      >
+                        La sede es obligatoria y se guarda después de los cambios del
+                        usuario.
+                      </p>
+                    }
+                  } @else {
+                    <p class="text-xs text-slate-500">
+                      La sede solo filtra los departamentos; no se guarda en el usuario.
+                    </p>
+                  }
+                </div>
+              }
               <app-motivo-selector
                 [codigo]="motivoEdicion.controls.codigo"
                 [texto]="motivoEdicion.controls.texto"
@@ -448,7 +605,12 @@
               <div class="flex flex-wrap gap-2 md:col-span-2">
                 <button
                   type="submit"
-                  [disabled]="guardando() || (hayCambiosEdicion() && !motivoEdicionCompleto())"
+                  [disabled]="
+                    guardando() ||
+                    edicionBodegueroSinSedes() ||
+                    edicionSeleccionaSuministros() ||
+                    (hayCambiosEdicion() && !motivoEdicionCompleto())
+                  "
                   class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   Guardar cambios

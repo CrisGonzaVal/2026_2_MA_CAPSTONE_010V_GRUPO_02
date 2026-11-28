@@ -242,7 +242,7 @@ conserva su entrada y solo cambia de rol.
    todas las mutaciones a DTO (más superficie y riesgo) y devolver el ORM en la aprobación (la
    etiqueta prometida faltaría).
 10. **Un solo diálogo discriminado en el detalle.** `confirmando` pasa a
-    `'anular' | 'rechazo' | 'despacho' | 'entrega'`; el motivo solo se muestra para anular/rechazo.
+    `'anular' | 'rechazo' | 'retiro' | 'entrega'`; el motivo solo se muestra para anular/rechazo.
     **Descartado:** dos `<dialog>` nuevos (duplica foco, `Esc` y estilos).
 11. **El tablero agrupa en el componente.** `columnas` mapea `Pendiente`, `EnRevision` y `EnCurso`
     y una columna «Terminados» con los `estado_id` de `Cerrado` y `Anulado`. **Descartado:**
@@ -345,8 +345,8 @@ conserva su entrada y solo cambia de rol.
 | Archivo | Responsabilidad | AC |
 |---|---|---|
 | `frontend/src/app/shared/interfaces/index.ts` | `GestorProceso`; campos base en `Ticket` y de detalle en `TicketDetalle` (opcionales para no romper fixtures). | AC-39 |
-| `frontend/src/app/features/tickets/services/ticket.service.ts` | Retira `actualizarEstado`; añade `aprobarTicket`, `despacharTicket(id, usuarioId)` y `confirmarEntrega`. | AC-32, AC-42, AC-43 |
-| `frontend/src/app/core/auth/roles.ts` | `puedeAprobarTicket` (Administrador), `puedeDespacharTicket` (Administrador/Bodeguero) y `puedeConfirmarEntrega` (Solicitante); retira `puedeOperarTickets` si queda sin consumidor. | AC-32, AC-45, AC-49 |
+| `frontend/src/app/features/tickets/services/ticket.service.ts` | Retira `actualizarEstado`; añade `aprobarTicket`, `registrarRetiro(id, usuarioId)` y `confirmarEntrega`. | AC-32, AC-42, AC-43 |
+| `frontend/src/app/core/auth/roles.ts` | `puedeAprobarTicket` (Administrador), `puedeRegistrarRetiro` (Administrador/Bodeguero) y `puedeConfirmarEntrega` (Solicitante); retira `puedeOperarTickets` si queda sin consumidor. | AC-32, AC-45, AC-49 |
 | `frontend/src/app/features/tickets/ticket-detalle.component.{ts,html,spec.ts}` | Acciones semánticas, diálogo discriminado, despacho, confirmación, etiqueta/frase/responsables/línea de entrega; sin Avanzar/Retroceder ni `PATCH`. | AC-32…AC-43, AC-48 |
 | `frontend/src/app/features/tickets/tickets.component.{ts,html,spec.ts}` | Columnas `Pendiente`/`EnRevision`/`EnCurso`/«Terminados»; tarjeta con etiqueta, frase accesible y responsables; enlace al detalle. | AC-37…AC-41, AC-47 |
 | `frontend/src/app/features/tickets/ticket.service.spec.ts` (nuevo) | URL, verbo y payload de las tres operaciones nuevas. | AC-32, AC-42 |
@@ -381,9 +381,9 @@ conserva su entrada y solo cambia de rol.
 
 **Frontend**
 
-- `ticket.service.spec.ts`: URL/verbo/payload de `aprobarTicket`, `despacharTicket` y
+- `ticket.service.spec.ts`: URL/verbo/payload de `aprobarTicket`, `registrarRetiro` y
   `confirmarEntrega`; ausencia de `actualizarEstado`.
-- `roles.spec.ts`: `puedeAprobarTicket`/`puedeDespacharTicket`/`puedeConfirmarEntrega`.
+- `roles.spec.ts`: `puedeAprobarTicket`/`puedeRegistrarRetiro`/`puedeConfirmarEntrega`.
 - `ticket-detalle.component.spec.ts`: acciones por estado/rol, sin Avanzar/Retroceder, Aprobar solo
   Administrador, Despachar solo `EnCurso` + `stock_disponible`, Confirmar entrega solo dueño +
   `Cerrado` sin confirmar, diálogos, 409 accesibles, sin doble envío, reconsulta, etiqueta/frase/
@@ -476,3 +476,419 @@ conserva su entrada y solo cambia de rol.
   coherencia sobre `AGENTS.md`, `MEMORY.md` y `.agents/skills/` (PATCH/roles/etiquetas/columnas).
 - **Sin DDL, sin migración, sin `stack.md`, sin tocar `roadmap.md`**: la fila 013 ya está `[x]` y
   la enmienda se registra en `spec.md` y `evidencia/`.
+
+## 10. Enmienda 26/Nov/2026: catálogo de tres estados y retiro
+
+**Alcance.** Implementa la §10 aprobada de la spec (AC-50…AC-68): `EnRevision` como único estado
+inicial, catálogo de cuatro filas, `Pendiente` fuera, renombre del despacho a **retiro** con
+ruta/DTO/servicio/copia nuevos, retiro exclusivo del Bodeguero de la sede, anulación
+administrativa del retiro con devolución de stock **solo si el Solicitante no confirmó**, y
+confirmación final que **bloquea** esa anulación. **Sin DDL, sin migración y sin token nuevo:**
+`026.0`, 26/23 tablas y 21 entidades. La matriz conserva **75** operaciones (una clave renombrada
+y dos conjuntos de roles ajustados); `/openapi.json` conserva **75 v1 + 2 = 77** entradas, aunque
+la ruta publicada cambia. `stack.md` **no se edita en este paso**: el texto propuesto está en
+`spec.md` §10.7 y se aplica en T43.
+
+### 10.1 Orden de ejecución y TDD
+
+La enmienda se implementa en cinco fases, una tarea por llamada de `@implementer`:
+
+1. **Rojo (T32).** Se escriben/actualizan las pruebas de contrato, catálogo, flujo, retiro,
+   anulación y confirmación **antes** de tocar producción. La suite debe fallar por las razones
+   esperadas (nombres, rutas, roles, precondiciones), no por imports rotos ni fixtures
+   inconsistentes. Las pruebas que hoy pasan con `Pendiente` se dejan rojas o marcadas para
+   reconciliar en su tarea.
+2. **Datos (T33).** Semilla y catálogo de aprovisionamiento. Es el cimiento: sin las cuatro filas
+   y los tickets reenumerados, el resto no puede pasar.
+3. **Backend (T34–T38).** Estados y etiquetas; retiro; anulación del retiro + confirmación
+   bloqueante; contrato/matriz/OpenAPI; gated PostgreSQL. Cada tarea completa sus pruebas rojas
+   antes de la implementación y no avanza si la anterior no está verde.
+4. **Frontend (T39–T41).** Helpers/servicio, detalle y tablero/alta.
+5. **Integración y cierre (T42–T44).** E2E y regresión, documentación derivada y verificación en
+   los dos puertos.
+
+La regla de TDD es la de la casa: **ninguna** tarea de implementación empieza sin su prueba roja
+en el mismo commit. La evidencia de cada AC se escribe al cerrar T44, no antes.
+
+### 10.2 Decisiones técnicas (con alternativa descartada)
+
+1. **Catálogo de cuatro ids y resolución por nombre, no por posición.** La semilla y
+   `control_service` fijan `1 EnRevision`, `2 EnCurso`, `3 Cerrado`, `4 Anulado`; el código sigue
+   resolviendo por nombre normalizado (menor `estado_id` ante duplicados), como hoy. **Descartado:**
+   renombrar `Pendiente` in situ y conservar la quinta fila (dejaría dos `EnRevision` homónimas) y
+   resolver por ordinal (rompe con catálogos degenerados y con la terminalidad por nombre de la
+   013).
+2. **Una sola fuente del catálogo de aprovisionamiento.** `_ESTADOS_TICKET_TENANT` pasa a las
+   cuatro filas, `Anulado` incluido, y la semilla replica la misma lista; las descripciones dejan
+   de decir «despacho». **Descartado:** mantener dos listas divergentes (un tenant nuevo nacería
+   sin `Anulado`, que es la carencia actual) y provisionar `Anulado` desde la semilla sin tocar el
+   constructor (el aprovisionamiento en caliente seguiría incompleto).
+3. **`TicketRetiro` es un renombre del DTO, no un contrato nuevo.** Conserva `usuario_id` con la
+   misma validación; el actor del historial y de la observación es la identidad de la sesión.
+   **Descartado:** retirar `usuario_id` (cambio de payload no pedido y ruptura de clientes de la
+   005) y añadir campos nuevos (superficie innecesaria).
+4. **`registrar_retiro_ticket` conserva el cuerpo ACID de `despachar_ticket`.** Solo cambian el
+   nombre, la ruta, la observación y el ámbito; la validación total antes de escribir, el bloqueo
+   del ticket y de `stock_sede` y la transacción única se mantienen. **Descartado:** reimplementar
+   el cierre con otra transacción (dos caminos que pueden divergir) y dejar `/despacho` como alias
+   (el catálogo tendría dos rutas para el mismo acto).
+5. **El retiro reutiliza `sede_del_alcance_por_rol`.** Se invoca después de la matriz y antes de
+   resolver el ticket: un Bodeguero sin sede recibe **409**; con sede, el ticket de otra sede
+   responde **404** con el mismo `_ticket_no_encontrado()` que uno inexistente. **Descartado:**
+   duplicar la lectura de `usuario.sede_id` (dos reglas de sede) y devolver 403 al ticket de otra
+   sede (el rol sí tiene la operación; el recurso es el que falla).
+6. **La anulación del retiro se despacha dentro de `_cambiar_a_anulado`, con un helper privado
+   para la rama `Cerrado` y el tipo de operación como parámetro.** El camino común mantiene 404 →
+   409 de estado → 409 de rol → 409 de confirmación → 422 de motivo; la rama `Cerrado` solo se
+   abre para `anulacion`, de modo que `/rechazo` sobre un `Cerrado` conserva su 409 de estado y no
+   devuelve stock. **Descartado:** una ruta nueva `/anulacion-retiro` (duplicaría semántica y
+   sumaría una fila a la matriz) y un servicio separado que repita el orden de validación (dos
+   fuentes del mismo contrato).
+7. **La confirmación se detecta por el motivo canónico dentro del bloqueo del ticket.** Se reutiliza
+   el criterio de `_cargar_confirmaciones_por_ticket` (`estado_origen_id = estado_destino_id =
+   Cerrado` y `motivo = "Entrega confirmada por el solicitante"`), con una consulta `LIMIT 1`
+   antes de cualquier escritura. **Descartado:** añadir una columna booleana (DDL y segunda
+   verdad) y leer el read model cacheado (no es autoridad en la transacción).
+8. **Bloqueo del ticket primero y de `stock_sede` después, ordenado por `producto_id`.** Es el mismo
+   orden del retiro y de la recepción; la confirmación y la anulación compiten por el bloqueo del
+   ticket, de modo que solo una gana y la otra relee y responde 409. **Descartado:** bloquear
+   primero las filas de stock (riesgo de interbloqueo con la recepción de la 020) y confiar en la
+   última escritura (podría aceptarse una anulación y una confirmación a la vez).
+9. **La devolución crea la fila `stock_sede` si falta.** Se copia el patrón de
+   `compra_service/recepcion.py`: se crea `StockSede` con `sede_id=ticket.sede_id`, `producto_id`,
+   `institucion_id=ticket.institucion_id` y `stock_actual=0`, y luego se incrementa; no se toca
+   `stock_minimo` (vive en `producto`). **Descartado:** responder 409 si falta la fila (dejaría sin
+   corrección a los tickets cerrados por datos históricos) y crear la fila sin bloqueo (carrera con
+   la recepción).
+10. **La etiqueta de proceso se resuelve por nombre.** `ticket_proceso.py` elimina la rama
+    `pendiente`, renombra `ETIQUETA_DESPACHADO` a `ETIQUETA_RETIRADO` («Retirado») y conserva
+    «Entregado», «Rechazado», «En revisión» y la precedencia de `EnCurso`. **Descartado:** dejar
+    «En aprobación» como alias de `EnRevision` (etiqueta huérfana) y derivar la etiqueta en el
+    frontend (dos verdades).
+11. **Matriz: una clave renombrada y dos conjuntos ajustados.** `POST /tickets/{id}/despacho` pasa
+    a `POST /tickets/{id}/retiro` con `{Bodeguero}`; `POST /inventario/movimientos` pasa a
+    `{Bodeguero}`; `POST /tickets/{id}/anulacion` conserva `{Administrador, Solicitante}`. La
+    cardinalidad no cambia (75) y `capacidades.py` renombra la clave del retiro en `kanban`.
+    **Descartado:** crear una operación nueva para la anulación del retiro (76 y semántica
+    duplicada) y retirar `/inventario/movimientos` del Administrador por la vía de una capacidad
+    nueva (el conjunto cerrado de siete capacidades no cambia).
+12. **El frontend también renombra sus helpers y constantes.** La opción elegida («Visible + ruta
+    + UI») incluye OpenAPI, permisos y helpers del frontend: los nombres vigentes son
+    `ROLES_RETIRO_TICKETS`, `puedeRegistrarRetiro`, `registrarRetiro`, la acción `registrarRetiro`,
+    el tipo de confirmación `'retiro'` y los títulos «Registrar retiro»/«Confirmar retiro» (el
+    mapping desde los nombres históricos está en D-29 de la spec). La URL pasa a `/retiro`, el
+    conjunto de roles se reduce a `Bodeguero` y la copia cambia. El modal y el tablero dejan de
+    resolver `Pendiente` y resuelven `EnRevision`. **Descartado:** conservar los nombres históricos
+    en el frontend (dejaría dos vocabularios en la capa visible y contradice la opción elegida) y
+    renombrar también tablas, carpetas o el backend interno (no es superficie y rompe contratos).
+13. **Sin cambios en `dashboard_service` ni en `compra_service`.** El KPI ya excluye por nombre
+    `Cerrado` y `Anulado`; `stock_disponible` y la cobertura ya consideran solo `EnCurso`. Solo se
+    actualizan fixtures y aserciones que nombran `Pendiente` o el despacho. **Descartado:** tocar
+    la fórmula del KPI o la simulación (la spec lo prohíbe).
+14. **La documentación derivada se trata como una tarea de cierre, no como un efecto colateral.**
+    `stack.md` recibe el texto de §10.7; 005/007/004/018 reciben su nota de enmienda; `AGENTS.md` y
+    `MEMORY.md` se sincronizan al cerrar. **Descartado:** editar `stack.md` en T32 (el plan debe
+    seguir la spec aprobada) y dejar las notas para «después» (el grep de §8.7 quedaría rojo).
+
+### 10.3 Base de datos, semilla y catálogo
+
+- **`database/02_datos_semilla.sql`:**
+  - `estado_ticket` con cuatro filas y descripciones sin «despacho»:
+    `(1, 'EnRevision', 'Pedido creado, en revision por la Administracion')`,
+    `(2, 'EnCurso', 'Aprobado y en preparacion para el retiro')`,
+    `(3, 'Cerrado', 'Retirado y con fecha de cierre registrada')`,
+    `(4, 'Anulado', 'Anulado o rechazado con motivo; si hubo retiro, el stock fue devuelto')`.
+  - Tickets: `1–4` y `9` a `estado_id = 1`; `5–6` a `2`; `7–8` y `10` a `3`; ninguno en `4`.
+    Los `Cerrado` conservan `fecha_cierre` y `cantidad_entregada = cantidad_solicitada`.
+  - La fase que deja `control.estado_ticket` solo con `Anulado` se conserva; la copia a tenants
+    ocurre antes y lleva las cuatro filas.
+- **`backend/app/services/control_service.py`:** `_ESTADOS_TICKET_TENANT` con las mismas cuatro
+  filas. No se toca `01_esquema.sql`: no hay DDL nuevo.
+- **Reconstrucción:** `docker compose -f docker-compose.yml down -v` + `up -d`. La verificación
+  gated comprueba 4 filas por esquema, 26/23 tablas, token `026.0` y que un tenant recién
+  aprovisionado incluye `Anulado`.
+
+### 10.4 Backend: estados, alta, aprobación, edición y anulación
+
+- **`ticket_service.py` — constantes y resolución.**
+  - Se retira `NOMBRE_ESTADO_PENDIENTE`; `NOMBRE_ESTADO_EN_REVISION` queda como único nombre del
+    estado inicial.
+  - `crear_ticket`: resuelve `EnRevision` por nombre, exige ese `estado_id` y responde **409** si
+    el catálogo no lo contiene o el payload trae otro. El `201` sigue devolviendo el read model
+    (`_respuesta_ticket_con_proceso`); no se toca el modal ni la autoría.
+  - `aprobar_ticket`: solo acepta `EnRevision` como origen; retira `Pendiente` del conjunto
+    elegible. El resto (destino `EnCurso`, una fila, `motivo`, bloqueo) no cambia.
+  - `editar_ticket`: exige `EnRevision`; retira `Pendiente`. El reemplazo atómico de ítems y la
+    validación completa se conservan.
+  - `_cambiar_a_anulado`: `EnRevision` es el único origen con anulación/rechazo; `EnCurso` y
+    `Anulado` siguen 409. La rama `Cerrado` se añade en §10.5.
+  - `actualizar_estado_ticket`: no cambia su lógica; se actualiza el detalle 409 de cierre
+    reservado para que diga «retiro» y dirija a `/retiro`. La terminalidad por nombre y la regla de
+    un paso se conservan.
+- **`ticket_proceso.py`:** se elimina la rama `pendiente`; `ETIQUETA_DESPACHADO` pasa a
+  `ETIQUETA_RETIRADO` con la frase «Retirado: pendiente de confirmación de entrega.»; `EnRevision`
+  conserva «En revisión» y `EnCurso` su precedencia. Un estado desconocido sigue degradando a su
+  nombre visible.
+- **`dashboard_service.py`:** sin cambios. El KPI ya excluye `Cerrado` y `Anulado` por nombre;
+  `EnRevision` y `EnCurso` son activos. Solo se actualizan fixtures.
+- **`compra_service`:** sin cambios. La demanda y la simulación siguen considerando solo
+  `EnCurso`; la devolución es stock, no demanda, y no escribe filas de desbloqueo.
+
+### 10.5 Backend: retiro, anulación del retiro y confirmación bloqueante
+
+**Retiro — `registrar_retiro_ticket(db, ticket_id, datos: TicketRetiro, identidad)`**
+
+1. La matriz y la capacidad `kanban` ya filtraron (`{Bodeguero}`). `sede_del_alcance_por_rol`
+   devuelve la sede del Bodeguero o **409** si no tiene.
+2. `select(Ticket).where(...).with_for_update()`; si no existe o está fuera del alcance
+   institucional, **404** (`_ticket_no_encontrado`). Si el ticket no tiene sede, **409**; si
+   `ticket.sede_id != sede_bodeguero`, **404** con el mismo detalle.
+3. Resuelve `EnCurso` y `Cerrado` por nombre; si faltan, **409** fail-closed. Si el ticket no está
+   `EnCurso`, **409** sin escribir.
+4. Carga detalles, valida productos e institución, bloquea `stock_sede` de la sede por
+   `producto_id` y valida el stock agregado antes de la primera escritura (cuerpo de la 005).
+5. Escribe una `SALIDA` por detalle con la observación
+   `Salida por retiro del ticket #{ticket_id}; detalle_id={detalle_ticket_id}; producto_id={producto_id}`,
+   rebaja `stock_actual`, fija `cantidad_entregada = cantidad_solicitada`, pasa a `Cerrado`, sella
+   `fecha_cierre` si es nula y registra la fila `EnCurso → Cerrado` con el actor de la sesión.
+6. `commit` único; cualquier excepción hace `rollback` y se propaga.
+7. Devuelve el ticket (u `TicketRespuesta` si el endpoint lo requiere); la UI reconsulta.
+
+**Anulación del retiro — rama `Cerrado` de `_cambiar_a_anulado`**
+
+1. `select(Ticket).with_for_update()` desde el inicio (cambia el `db.get` actual); 404 de alcance.
+2. Resuelve `Anulado`, `EnCurso`, `Cerrado` y `EnRevision`; sin `Anulado`, **409**.
+3. Estado: `EnCurso` o `Anulado` → **409**. `Cerrado` → rama nueva **solo si la operación es
+   `anulacion`**; `/rechazo` sobre un `Cerrado` responde **409** de estado, sin devolver stock
+   (D-40). `EnRevision` → rama vigente.
+4. En `Cerrado`: si el rol de la sesión no es `Administrador`, **409** (la matriz ya concedió al
+   Solicitante dueño, que aquí no puede). Después, consulta `LIMIT 1` de la fila
+   `Cerrado → Cerrado` con `MOTIVO_CONFIRMACION_ENTREGA`: si existe, **409** sin escribir. Después,
+   si `ticket.sede_id` es nulo, **409** sin escribir (no hay sede a la que devolver; D-40.2). El
+   motivo se valida **después** (404 → 409 estado → 409 rol → 409 confirmación → 409 sin sede →
+   422).
+5. Carga los detalles con `cantidad_entregada > 0`, bloquea las filas `stock_sede` de la sede por
+   `producto_id` (creándolas si faltan, patrón de la 020) y, por cada detalle, escribe una
+   `ENTRADA` con la cantidad entregada, la observación
+   `Devolución por anulación del retiro del ticket #{ticket_id}; detalle_id={detalle_ticket_id}; producto_id={producto_id}`
+   y `stock_sede_id`; incrementa `stock_actual` y resetea `cantidad_entregada = 0`. La devolución
+   **no** exige `producto.activo`: la mercadería ya salió y la auditoría debe reflejarla (excepción
+   acotada de la 020).
+6. Pasa a `Anulado`, deja `fecha_cierre = NULL` y registra `Cerrado → Anulado` con actor y motivo
+   literal; `commit` único y `rollback` ante excepción. La fila de confirmación no se toca.
+7. La rama `EnRevision` conserva el comportamiento actual (sin stock, sin `fecha_cierre`, con
+   motivo).
+
+**Confirmación — `confirmar_entrega_ticket`**
+
+- Conserva el bloqueo del ticket, la detección por motivo y la fila `Cerrado → Cerrado`.
+- La confirmación no cambia de contrato, pero **cierra la puerta** a la anulación: si el ticket
+  ya tiene la fila, la anulación responde 409. Si la anulación ganó primero, el ticket está
+  `Anulado` y la confirmación responde 409. El test gated cubre ambos órdenes.
+
+### 10.6 Backend: contrato, matriz y archivos
+
+- **`schemas/ticket_schema.py`:** `TicketDespacho` → `TicketRetiro` (mismos campos y validación);
+  actualizar docstrings que digan «despacho».
+- **`api/v1/endpoints/tickets.py`:** `POST /{ticket_id}/retiro` (función y `response_model`
+  equivalentes), descripción OpenAPI con el 403 del Administrador y el 409 de estado/stock; el
+  `PATCH` actualiza el detalle de cierre reservado; el resto de rutas no cambia.
+- **`core/permisos.py`:** clave `/retiro` con `{Bodeguero}`; `POST /inventario/movimientos` con
+  `{Bodeguero}`; `POST /anulacion` conserva `{Administrador, Solicitante}`. Matriz 75.
+- **`core/capacidades.py`:** clave `/retiro` → `kanban`; no se agregan capacidades.
+- **`services/inventario_service.py`:** sin cambios; se importa `sede_del_alcance_por_rol` en
+  `ticket_service` (hoy ya importa `TIPO_SALIDA` y `es_stock_critico` del mismo módulo).
+- **`services/dashboard_service.py` y `services/compra_service/`:** sin cambios de lógica.
+
+### 10.7 Frontend: archivos y responsabilidades
+
+| Archivo | Responsabilidad | AC |
+|---|---|---|
+| `frontend/src/app/core/auth/roles.ts` | `ROLES_RETIRO_TICKETS`/`puedeRegistrarRetiro` solo `Bodeguero`; comentario actualizado; `puedeAnularTicket` conserva Administrador/Solicitante. | AC-55, AC-63, AC-64 |
+| `frontend/src/app/features/tickets/services/ticket.service.ts` | URL `/retiro` para `registrarRetiro(id, usuarioId)`; sin `/despacho`; comentario con el término vigente. | AC-55, AC-63 |
+| `frontend/src/app/shared/interfaces/index.ts` | Sin campos nuevos: `entrega_confirmada` ya existe; revisar que ningún tipo nombre `Pendiente`. | AC-63 |
+| `frontend/src/app/features/tickets/ticket-detalle.component.{ts,html,spec.ts}` | «Registrar retiro»/«Confirmar retiro»/«Retirado»; acción `registrarRetiro`, método `solicitarRetiro`, tipo `'retiro'`; retiro solo Bodeguero de la sede con `EnCurso` y `stock_disponible`; «Anular el retiro» solo Administrador, `Cerrado` y `entrega_confirmada = false`; 409/422 accesibles; sin doble envío. | AC-55…AC-58, AC-61, AC-63 |
+| `frontend/src/app/features/tickets/tickets.component.{ts,html,spec.ts}` | Tres columnas (`EnRevision`, `EnCurso`, «Terminados»); sin `Pendiente`; alta fija en `EnRevision`; tarjeta con «Retirado»/«Entregado»/«Rechazado». | AC-51, AC-62, AC-63 |
+| `frontend/src/app/shared/utils/etiqueta-estado.ts` | Comentario: deja de citar `Pendiente`; el mapa ya solo tiene `EnCurso` y `EnRevision` (este sigue «En Revisión»). | AC-62, AC-63 |
+| `frontend/src/app/features/tickets/ticket.service.spec.ts`, `roles.spec.ts`, specs de detalle y tablero | Pruebas de URL, roles, columnas, copy, bloqueo por confirmación y fixtures sin `Pendiente`, con los nombres nuevos. | AC-50…AC-68 (frontend) |
+
+**Decisión de identificadores:** se renombran los helpers/constantes del frontend
+(`ROLES_RETIRO_TICKETS`, `puedeRegistrarRetiro`, `registrarRetiro`, la acción `registrarRetiro`,
+el tipo `'retiro'` y los títulos «Registrar retiro»/«Confirmar retiro»). No se renombran tablas,
+columnas, carpetas ni el backend interno que no es superficie pública; las specs históricas 005 y
+013 conservan «despacho» como término de su release. El modal y el tablero dejan de resolver
+`Pendiente` y resuelven `EnRevision` por nombre.
+
+### 10.8 Reglas ACID y de concurrencia
+
+- **Retiro:** bloqueo del ticket y de `stock_sede`; validación total antes de escribir; una sola
+  transacción para stock, cantidades, estado, fecha y historial. Dos retiros del mismo ticket
+  producen uno solo: el segundo relee `Cerrado` y responde 409 sin movimientos. Un fallo revierte
+  todo. SQLite no acredita el bloqueo; el gated sí.
+- **Anulación del retiro:** bloqueo del ticket y de `stock_sede`; la confirmación previa se lee
+  dentro del bloqueo; una segunda anulación relee `Anulado` y responde 409 sin duplicar `ENTRADA`;
+  un fallo revierte stock, estado, cantidades e historial.
+- **Confirmación vs anulación:** ambas bloquean el ticket. Si confirma primero, la anulación ve la
+  fila `Cerrado → Cerrado` y responde 409; si anula primero, la confirmación ve `Anulado` y
+  responde 409. Nunca se aceptan las dos. El gated ejecuta los dos órdenes con dos sesiones.
+- **Creación de la fila de stock:** dentro del bloqueo, con el patrón de la recepción; el bloqueo
+  del ticket serializa la misma fila y la unicidad de `stock_sede` impide duplicados. Un choque de
+  creación se traduce a **409** con `X-Request-ID` (patrón de la 026, D-40.3), nunca a un 500.
+
+### 10.9 Estrategia de pruebas
+
+**Backend SQLite (ordinario)**
+
+- **Catálogo/estados:** `test_catalogo_estados_013.py` (contrato de `_ESTADOS_TICKET_TENANT` con
+  las 4 filas y `Anulado`, y resolución por nombre); el gated verifica la semilla SQL y los
+  tickets reenumerados; ajustes en
+  `test_ciclo_vida_alta_inicial_013.py`, `test_ciclo_vida_aprobacion_013.py`,
+  `test_ciclo_vida_edicion_013.py` y `test_ciclo_vida_flujo_013.py` (alta/aprobación/edición/
+  anulación/rechazo solo desde `EnRevision`).
+- **Retiro:** `test_retiro_transaccional_013.py` (rol, 404/409, ACID, observación literal,
+  historial, concurrencia SQLite, `PATCH` 409 con el detalle de retiro), `test_retiro_sede_013.py`
+  (sede propia, otra sede 404, sin sede 409) y `test_despacho_transaccional.py` reconciliado o
+  renombrado (ver §10.11).
+- **Anulación del retiro:** `test_anulacion_retiro_013.py` (200 con `ENTRADA`, reset, `fecha_cierre`
+  nula, historial, creación de `stock_sede`, 409 del Solicitante, 409 confirmado, 422) y
+  `test_confirmacion_anulacion_013.py` (confirmación 200 y anulación posterior 409; anulación 200
+  y confirmación posterior 409).
+- **Contrato/matriz:** `test_permisos_retiro_013.py` (matriz 75, `/retiro` solo Bodeguero,
+  movimientos solo Bodeguero, `/anulacion` sin cambios), `test_permisos_endpoints.py`,
+  `test_cobertura_021.py` y `test_ciclo_vida_autorizacion_013.py` (75/77 y claves).
+- **E2E:** `test_flujo_retiro_013.py` (alta `EnRevision` → aprobar → retirar → confirmar; anular
+  antes y después de confirmar; Compras/021 sin cambio; caso #10).
+
+**PostgreSQL gated (`POSTGRES_TEST_URL`, obligatorio para cierre)**
+
+- `test_catalogo_retiro_postgres_013.py`: 4 filas en control y tenant, token `026.0`, 26/23,
+  tickets reenumerados, `down -v` + `up -d`.
+- `test_retiro_anulacion_postgres_013.py`: retiro concurrente `(200, 409)` con un solo juego de
+  `SALIDA`; anulación concurrente `(200, 409)` con una sola `ENTRADA`; confirmación vs anulación
+  en ambos órdenes `(200, 409)`; lectura persistida de stock, cantidades, `fecha_cierre` e
+  historial. Nunca toca `apt_erp`.
+
+**Frontend**
+
+- `ticket.service.spec.ts`: URL `/retiro` de `registrarRetiro`, payload `{usuario_id}`, ausencia de
+  `/despacho`.
+- `roles.spec.ts`: `puedeRegistrarRetiro`/`ROLES_RETIRO_TICKETS` solo Bodeguero; anulación
+  Administrador/Solicitante; movimientos solo Bodeguero (si el espejo lo expone).
+- `ticket-detalle.component.spec.ts`: acción `registrarRetiro`, tipo `'retiro'`, títulos
+  «Registrar retiro»/«Confirmar retiro», acciones por estado/rol, anulación del retiro oculta si
+  `entrega_confirmada`, 409 accesibles, sin doble envío.
+- `tickets.component.spec.ts`: 3 columnas, sin `Pendiente`, alta fija en `EnRevision`, tarjeta con
+  «Retirado»/«Entregado»/«Rechazado».
+- `npx ng test --watch=false --browsers=ChromeHeadless` con `$env:CHROME_BIN` a Edge; `ng build`
+  limpio.
+
+**Contrato**
+
+- `/openapi.json`: 75 v1/77 entradas; `/retiro` publicada y `/despacho` ausente; el `PATCH` con el
+  detalle de retiro; la anulación con el 409 de confirmación descrito.
+
+### 10.10 Enmiendas derivadas y ajustes menores
+
+- **005 (despacho transaccional):** su ruta, DTO, nombre de servicio, observación literal y detalle
+  409 del `PATCH` cambian con el rename; su semántica ACID no. Nota de enmienda en T43.
+- **007 (control de acceso por roles):** matriz con la clave `/retiro` y movimientos solo
+  Bodeguero; espejo del frontend con `ROLES_RETIRO_TICKETS`/`puedeRegistrarRetiro`. Nota de
+  enmienda en T43.
+- **004 (tablero Kanban):** tres columnas y la salida administrativa del retiro; se conserva la
+  regla de backend de un paso. Nota de enmienda en T43.
+- **018 (filtro de inventario):** el checkbox «Solo con stock» es una enmienda **separada**; la
+  nota de T43 solo deja constancia de la dependencia, sin AC en la 013.
+- **009 (dashboard):** la fórmula no cambia; se actualizan fixtures y pruebas que nombran
+  `Pendiente`. `EnRevision` y `EnCurso` son activos.
+- **010 (multi-tenant):** el catálogo replicado por tenant pasa a 4 filas; el gated de
+  aprovisionamiento verifica `Anulado` en un tenant nuevo.
+- **021 (cobertura):** el algoritmo no cambia; se ajustan fixtures y pruebas que sembraban
+  `Pendiente` o que asertaban la ruta de despacho.
+- **026 (salud del esquema):** cambian los datos del catálogo, no la estructura; siguen 26/23
+  tablas, 21 entidades y `026.0`. Los snapshots gated de la 013 pasan de 5 a 4 filas.
+- **`stack.md`:** se aplica el texto de la §10.7 de la spec en T43, no antes.
+- **`AGENTS.md`/`MEMORY.md`:** se sincronizan al cierre (T44) con la terminología vigente y el
+  estado del proyecto; una skill desactualizada se corrige en el mismo grep.
+
+### 10.11 Pruebas existentes que quedan obsoletas o deben reconciliarse
+
+- **Todos los fixtures con `Pendiente`** (`conftest` de tickets, `test_tablero_kanban.py`,
+  `test_ciclo_vida_*`, `test_ticket_sede_011.py`, `test_modal_ticket.py`, tests de compras y
+  dashboard): pasan a `EnRevision` (id 1) y a los ids nuevos; los que asumían `estado_id = 2` para
+  `EnRevision` se ajustan a 1.
+- **`test_despacho_transaccional.py`:** se renombra a `test_retiro_transaccional_013.py` y se
+  actualizan imports (`despachar_ticket` → `registrar_retiro_ticket`, `TicketDespacho` →
+  `TicketRetiro`), URL y observación. Borrar el `.py` y el `.pyc` viejos (AGENTS §10).
+- **Tests que asertan el literal `El cierre requiere despacho; use POST .../despacho`:** pasan al
+  literal de retiro; el `PATCH` sigue 409.
+- **`test_ciclo_vida_aprobacion_013.py` y `test_ciclo_vida_confirmacion_013.py`:** orígenes
+  `Pendiente` fuera; la confirmación conserva su contrato y gana el caso de bloqueo.
+- **`test_permisos_endpoints.py`, `test_permisos_008/010/012.py`, `test_capacidades_gating_012.py`,
+  `test_cobertura_021.py`, `test_ciclo_vida_autorizacion_013.py`:** clave `/retiro`, roles de
+  movimientos, 75/77 y rutas publicadas. Las aserciones absolutas de recuento se mantienen en 75.
+- **`backend/tests/funcional/sistema/*postgres_013.py`:** el snapshot de `estado_ticket` pasa de 5
+  a 4 filas; se agrega `Anulado` al catálogo provisionado.
+- **Frontend:** `tickets.component.spec.ts` (4 → 3 columnas, fuera `Pendiente`, dentro
+  `EnRevision`), `ticket-detalle.component.spec.ts` (fuera «Despachar», dentro «Registrar
+  retiro»; anulación condicionada), `roles.spec.ts` (retiro solo Bodeguero), fixtures de
+  `Ticket`/`TicketDetalle` sin `Pendiente`.
+- **Grep de cierre:** `Pendiente`, `/despacho`, `TicketDespacho`, `despachar_ticket`,
+  `Despachado`, `cinco estados`, `4 columnas`, `75`/`77`, `26/23` y los identificadores del mapping
+  de D-29 en `backend/tests`, `frontend/src`, `docs/spec` y `.agents/skills`.
+
+### 10.12 Riesgos y mitigaciones
+
+| Riesgo | Mitigación |
+|---|---|
+| El rename `/despacho` → `/retiro` rompe tests, clientes y la matriz | Cambiar la clave en `permisos.py` y `capacidades.py`, actualizar OpenAPI y todos los tests que usan la URL; grep de `/despacho` al cerrar; la cardinalidad sigue en 75. |
+| La reenumeración de la semilla rompe fixtures y aserciones de ids | Fijar los ids 1–4 en la semilla y en `_ESTADOS_TICKET_TENANT`; recorrer todos los tests que asumen `estado_id = 2` para `EnRevision`; el reset `down -v` + `up -d` es obligatorio. |
+| `Pendiente` sobrevive en fixtures, textos o helpers | Grep global y actualización de `conftest`, specs y comentarios; el estado se resuelve siempre por nombre. |
+| La anulación del retiro compite con la confirmación | Bloqueo del ticket en ambas operaciones; detección de la fila canónica dentro del bloqueo; gated con los dos órdenes `(200, 409)`. |
+| La fila `stock_sede` no existe en un ticket histórico | Crearla dentro del bloqueo con el patrón de la recepción; test explícito con un producto sin fila. |
+| Interbloqueo entre anulación, retiro y recepción | Orden fijo: ticket → `stock_sede` por `producto_id`; reutilizar el patrón de la 005/020; gated. |
+| El frontend conserva 4 columnas, `Pendiente` o los helpers históricos | Specs de tablero y alta con 3 columnas y `EnRevision`; grep de `Pendiente` y del mapping de D-29 en `frontend/src`. |
+| `Anulado` falta en tenants nuevos | `_ESTADOS_TICKET_TENANT` con las 4 filas; gated de aprovisionamiento; reset limpio. |
+| 8080 sirve la imagen vieja | `docker compose -f docker-compose.yml build frontend` + `up -d frontend` antes del humo (AGENTS §5/§8.6). |
+| El `PATCH` de legado sigue anunciando despacho | Actualizar el literal y la descripción OpenAPI; test que lo aserta. |
+
+### 10.13 Cobertura AC → partes
+
+| AC | Partes |
+|---|---|
+| AC-50 | Semilla (`02`), `_ESTADOS_TICKET_TENANT`, gated de catálogo, reset. |
+| AC-51 | `crear_ticket` (`EnRevision`), `tickets.component` (alta fija), tests de alta. |
+| AC-52 | `aprobar_ticket` solo desde `EnRevision`; tests de aprobación. |
+| AC-53 | `editar_ticket` solo en `EnRevision`; tests de edición. |
+| AC-54 | `_cambiar_a_anulado` desde `EnRevision`; tests de anulación/rechazo. |
+| AC-55 | `TicketRetiro`, `registrar_retiro_ticket`, ruta, matriz, OpenAPI. |
+| AC-56 | `sede_del_alcance_por_rol`, comparación de sede, 404/409; tests de sede. |
+| AC-57 | Cuerpo ACID del retiro, observación, historial; tests y gated. |
+| AC-58 | Rama `Cerrado` de `_cambiar_a_anulado`, `ENTRADA`, reset, fecha, historial, 409 confirmado, rechazo sobre `Cerrado` y sin sede (D-40). |
+| AC-59 | Bloqueo, transacción única y choque de unicidad → 409 (D-40.3); gated de concurrencia. |
+| AC-60 | `PATCH /estado` con el catálogo nuevo y el detalle de retiro. |
+| AC-61 | `confirmar_entrega_ticket` + detección dentro del bloqueo; gated confirmación vs anulación. |
+| AC-62 | Tablero de 3 columnas; specs. |
+| AC-63 | Detalle: copy, acciones, roles, `entrega_confirmada`; specs. |
+| AC-64 | Matriz 75, `/retiro` y movimientos solo Bodeguero, OpenAPI 77, espejo. |
+| AC-65 | Dashboard sin cambio de fórmula; fixtures y tests. |
+| AC-66 | Compras/cobertura sin cambio; pruebas de devolución. |
+| AC-67 | `stack.md` + notas 005/007/004/018; grep. |
+| AC-68 | T44: suites, build, 4200/8080, evidencia. |
+
+### 10.14 Verificación de cierre
+
+- `pytest` SQLite completo sin regresiones y con los tests nuevos en verde; gated PostgreSQL 16 con
+  `POSTGRES_TEST_URL` (catálogo, retiro, anulación, confirmación vs anulación), sin skips
+  accidentales.
+- `ng test` con Edge headless y `ng build` de producción limpios.
+- `/openapi.json`: **75** operaciones v1 (**77** entradas), `/retiro` publicada, `/despacho`
+  ausente, el `PATCH` con el detalle de retiro y la anulación con el 409 de confirmación.
+- 4200 con escritura real: alta en `EnRevision` → aprobar → retirar → confirmar; un segundo pedido
+  anulado antes de confirmar (devolución visible en stock) y un intento de anular uno confirmado
+  (409); tablero de 3 columnas; caso #10 fuera de Compras.
+- 8080 tras `docker compose -f docker-compose.yml build frontend` + `up -d frontend`; humo de la
+  vista y del flujo básico.
+- Evidencia bajo cada AC-50…AC-68 en `evidencia/README.md` §11; `stack.md` actualizado con el
+  texto de §10.7; notas de enmienda en 005/007/004/018; `MEMORY.md` y `AGENTS.md` sincronizados
+  por el coordinador al cerrar; grep de coherencia sin afirmaciones vigentes sobre `Pendiente`,
+  cinco estados, `Cerrado` terminal sin salida o `/despacho`.

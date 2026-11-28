@@ -33,6 +33,10 @@ from app.models import (
 from app.schemas.usuario_schema import UsuarioCrear, proyectar_estado_invitacion
 from app.services import ambito_service, motivo_service
 from app.services.auth_service import IdentidadAutenticada, correo_del_actor
+from app.services.departamento_suministros import (
+    es_departamento_suministros,
+    resolver_departamento_suministros,
+)
 
 #: Costuras inyectables de la frontera Clerk de invitaciones (Feature 017).
 ConsultorIdentidad = Callable[[str], security.EstadoIdentidadClerk]
@@ -227,19 +231,59 @@ def crear_usuario(
     """
     _validar_rol_asignable(db, datos.rol_id, identidad)
     alcance = ambito_service.alcance_institucional(db, identidad)
-    if institucion_id is None:
-        ambito_service.validar_departamento_en_alcance(
-            db, datos.departamento_id, alcance
-        )
-        institucion_destino = None
-    else:
-        _validar_departamento_en_institucion(db, datos.departamento_id, institucion_id)
+    rol = db.get(Rol, datos.rol_id)
+    nombre_rol = None if rol is None else rol.nombre_rol
+    es_bodeguero = nombre_rol == permisos.RolConocido.BODEGUERO.value
+    institucion_bodeguero: str | None = None
+
+    if es_bodeguero:
+        # D-8: el Bodeguero no elige departamento. Cualquier id positivo del
+        # cliente (propio, ajeno o inexistente) se ignora: la institucion sale
+        # del actor (rutas tenant) o del parametro explicito (ruta de control).
+        institucion_bodeguero = institucion_id or alcance
+        if institucion_bodeguero is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No se pudo resolver la institucion del usuario",
+            )
         institucion_destino = institucion_id
+        institucion_para_evidencia = institucion_bodeguero
+        departamento_id = None
+    else:
+        if datos.departamento_id is None:
+            # D-12: la presencia la valida el servicio, porque el nombre del rol
+            # solo se conoce aqui; el 422 llega antes de toda mutacion.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="El departamento es obligatorio para el rol indicado",
+            )
+        if institucion_id is None:
+            ambito_service.validar_departamento_en_alcance(
+                db, datos.departamento_id, alcance
+            )
+            institucion_destino = None
+        else:
+            _validar_departamento_en_institucion(
+                db, datos.departamento_id, institucion_id
+            )
+            institucion_destino = institucion_id
+        # El ambito precede a la comprobacion de nombre: un departamento ajeno
+        # conserva su 403/404 y no revela como se llama. Dentro del ambito,
+        # «Suministros» se reserva a los Bodegueros (D-12).
+        if es_departamento_suministros(db.get(Departamento, datos.departamento_id)):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "El departamento Suministros se asigna automaticamente a los "
+                    "Bodegueros y no puede elegirse para otro rol"
+                ),
+            )
+        institucion_para_evidencia = institucion_destino or (
+            ambito_service.institucion_de_departamento(db, datos.departamento_id)
+        )
+        departamento_id = datos.departamento_id
 
     correo = security.normalizar_correo(str(datos.correo))
-    institucion_para_evidencia = institucion_destino or (
-        ambito_service.institucion_de_departamento(db, datos.departamento_id)
-    )
     sesion_control = db_control if db_control is not None else db
     mapa = _mapa_por_correo(sesion_control, correo)
     existente = _usuario_por_correo_normalizado(db, correo)
@@ -300,7 +344,20 @@ def crear_usuario(
             invitacion_id = invitacion.invitacion_id
             expira_en = invitacion.expira_en
 
-    nuevo_usuario = Usuario(**{**datos.model_dump(), "correo": correo})
+    if es_bodeguero:
+        # La fila nace en la misma transaccion del usuario (D-8): si la
+        # confirmacion tenant falla, el rollback tambien la descarta.
+        departamento_id = resolver_departamento_suministros(
+            db, institucion_bodeguero
+        ).departamento_id
+
+    nuevo_usuario = Usuario(
+        **{
+            **datos.model_dump(exclude={"departamento_id"}),
+            "correo": correo,
+            "departamento_id": departamento_id,
+        }
+    )
     try:
         _confirmar_usuario_tenant(db, nuevo_usuario)
     except IntegrityError as exc:

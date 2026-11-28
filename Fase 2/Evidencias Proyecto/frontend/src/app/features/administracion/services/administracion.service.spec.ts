@@ -13,7 +13,7 @@ import { AdministracionService } from './administracion.service';
  *
  * Seam bajo prueba: la interfaz pública del servicio contra
  * `HttpTestingController`. Se verifica método y ruta contractual de cada
- * operación de sedes, departamentos, usuarios y encargados, y que los cuerpos de
+ * operación de sedes, departamentos y usuarios, y que los cuerpos de
  * mutación no incluyan institución ni esquema (el ámbito lo resuelve el servidor).
  */
 describe('AdministracionService', () => {
@@ -117,34 +117,6 @@ describe('AdministracionService', () => {
     expect(peticion.request.method).toBe('PATCH');
     expect(peticion.request.body).toEqual({ activo: false });
     peticion.flush({ departamento_id: 10, activo: false });
-  });
-
-  it('lista encargados con GET .../encargados', () => {
-    servicio.listarEncargados(10).subscribe();
-    const peticion = httpMock.expectOne(`${organizacion}/departamentos/10/encargados`);
-    expect(peticion.request.method).toBe('GET');
-    peticion.flush([]);
-  });
-
-  it('asocia encargado con POST y cuerpo { usuario_id }', () => {
-    servicio.asociarEncargado(10, 5).subscribe();
-    const peticion = httpMock.expectOne(`${organizacion}/departamentos/10/encargados`);
-    expect(peticion.request.method).toBe('POST');
-    expect(peticion.request.body).toEqual({ usuario_id: 5 });
-    peticion.flush({
-      usuario_id: 5,
-      departamento_id: 10,
-      nombre: 'Ana',
-      apellido: 'Pérez',
-      correo: 'ana@e.com',
-    });
-  });
-
-  it('retira encargado con DELETE .../encargados/{usuarioId}', () => {
-    servicio.retirarEncargado(10, 5).subscribe();
-    const peticion = httpMock.expectOne(`${organizacion}/departamentos/10/encargados/5`);
-    expect(peticion.request.method).toBe('DELETE');
-    peticion.flush(null);
   });
 
   it('lista usuarios con GET /usuarios/', () => {

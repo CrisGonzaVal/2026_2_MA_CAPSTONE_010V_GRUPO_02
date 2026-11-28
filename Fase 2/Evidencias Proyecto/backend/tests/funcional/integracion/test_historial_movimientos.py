@@ -26,7 +26,10 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models import EstadoTicket, MovimientoInventario
 
-from tests.funcional.integracion._soporte_sede_011 import asegurar_sede_de_departamento
+from tests.funcional.integracion._soporte_sede_011 import (
+    asegurar_sede_de_departamento,
+    cliente as cliente_de_rol,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -110,18 +113,19 @@ def _sembrar_movimiento(motor, stock_sede_id, fecha, observacion, tipo="ENTRADA"
 
 
 @pytest.fixture
-def datos_despacho(motor, datos_base):
+def datos_despacho(motor, datos_base, sede_base):
     """Catalogo canonico del flujo sobre el producto e inventario de `datos_base`."""
-    ids = _instalar_catalogo(motor, ("Pendiente", "EnRevision", "EnCurso", "Cerrado"))
+    ids = _instalar_catalogo(motor, ("EnRevision", "EnCurso", "Cerrado"))
     datos = {**datos_base}
     datos.pop("estado_ingresado_id", None)
     datos.pop("estado_cerrado_id", None)
     datos.update(
         {
-            "estado_pendiente_id": ids["Pendiente"],
-            "estado_en_revision_id": ids["EnRevision"],
+            "estado_pendiente_id": ids["EnRevision"],
+            "estado_en_revision_id": ids["EnCurso"],
             "estado_en_curso_id": ids["EnCurso"],
             "estado_cerrado_id": ids["Cerrado"],
+            "sede_id": sede_base["sede_id"],
         }
     )
     return datos
@@ -148,11 +152,11 @@ def _abrir_ticket_en_curso(cliente, actuar_como, datos, detalles) -> int:
     assert respuesta.status_code == 201, respuesta.text
     ticket_id = respuesta.json()["ticket_id"]
     actuar_como("Administrador")
-    for estado_id in (datos["estado_en_revision_id"], datos["estado_en_curso_id"]):
-        avance = cliente.patch(
-            f"/api/v1/tickets/{ticket_id}/estado", json={"estado_id": estado_id}
-        )
-        assert avance.status_code == 200, avance.text
+    avance = cliente.patch(
+        f"/api/v1/tickets/{ticket_id}/estado",
+        json={"estado_id": datos["estado_en_curso_id"]},
+    )
+    assert avance.status_code == 200, avance.text
     return ticket_id
 
 
@@ -176,28 +180,35 @@ def test_historial_sin_movimientos_devuelve_lista_vacia(cliente, datos_base):
 
 
 def test_historial_expone_los_campos_asociados_del_movimiento(
-    cliente, motor, datos_base, sede_base
+    motor, datos_base, sede_base
 ):
     """AC-18/AC-22: el movimiento manual aparece con producto y sede.
 
     Se crea por HTTP con el registro manual (misma tabla) y se lee por HTTP en el
     historial; asi el caso comprueba tambien que un movimiento ajeno al despacho
     entra en la misma lectura. Feature 026: el destino es `stock_sede` y el DTO ya
-    no expone campos del inventario departamental legado.
+    no expone campos del inventario departamental legado. Enmienda 26/Nov/2026
+    (D-31/AC-64): el registro manual lo ejerce el Bodeguero de la sede.
     """
     stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
-    registro = cliente.post(
-        "/api/v1/inventario/movimientos",
-        json={
-            "tipo_movimiento": "ENTRADA",
-            "cantidad": 5,
-            "observacion": "Ingreso de reposicion",
-            "stock_sede_id": stock_sede_id,
-        },
-    )
-    assert registro.status_code == 201, registro.text
+    with cliente_de_rol(
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_base["sede_id"],
+    ) as cliente:
+        registro = cliente.post(
+            "/api/v1/inventario/movimientos",
+            json={
+                "tipo_movimiento": "ENTRADA",
+                "cantidad": 5,
+                "observacion": "Ingreso de reposicion",
+                "stock_sede_id": stock_sede_id,
+            },
+        )
+        assert registro.status_code == 201, registro.text
 
-    cuerpo = _leer_historial(cliente)
+        cuerpo = _leer_historial(cliente)
     assert len(cuerpo) == 1, f"se esperaba el movimiento manual: {cuerpo}"
     movimiento = cuerpo[0]
 
@@ -255,12 +266,12 @@ def test_historial_ordena_por_fecha_desc_y_desempata_por_id_desc(
 # --- AC-20: la salida del despacho aparece en el historial ---
 
 
-def test_la_salida_de_un_despacho_aparece_en_el_historial_por_stock_sede(
+def test_la_salida_de_un_retiro_aparece_en_el_historial_por_stock_sede(
     cliente, actuar_como, motor, datos_despacho
 ):
-    """AC-9 (Feature 011): el despacho audita contra `stock_sede` y se lee en el historial.
+    """AC-9 (Feature 011): el retiro audita contra `stock_sede` y se lee en el historial.
 
-    Bajo la granularidad por sede el despacho deja `inventario_id` nulo y enlaza el
+    Bajo la granularidad por sede el retiro deja `inventario_id` nulo y enlaza el
     movimiento nuevo por `stock_sede_id` (spec D-2). El historial debe reconocer esa
     poblacion nueva mediante la proyeccion unica: el movimiento aparece, con su
     `stock_sede_id` y su sede, sin departamento ni saldo legado. La auditoria se
@@ -272,15 +283,17 @@ def test_la_salida_de_un_despacho_aparece_en_el_historial_por_stock_sede(
         datos_despacho,
         [{"producto_id": datos_despacho["producto_id"], "cantidad_solicitada": 3}],
     )
-    despacho = cliente.post(
-        f"/api/v1/tickets/{ticket_id}/despacho",
+    bodeguero = actuar_como("Bodeguero")
+    bodeguero.usuario.sede_id = datos_despacho["sede_id"]
+    retiro = cliente.post(
+        f"/api/v1/tickets/{ticket_id}/retiro",
         json={"usuario_id": datos_despacho["usuario_id"]},
     )
-    assert despacho.status_code == 200, despacho.text
-    detalle_id = despacho.json()["detalles"][0]["detalle_ticket_id"]
+    assert retiro.status_code == 200, retiro.text
+    detalle_id = retiro.json()["detalles"][0]["detalle_ticket_id"]
 
     observacion = (
-        f"Despacho ticket_id={ticket_id}; "
+        f"Salida por retiro del ticket #{ticket_id}; "
         f"detalle_id={detalle_id}; "
         f"producto_id={datos_despacho['producto_id']}"
     )

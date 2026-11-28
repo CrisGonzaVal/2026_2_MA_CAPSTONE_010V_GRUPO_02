@@ -44,14 +44,14 @@ def _cliente_administrador(motor, datos):
     )
 
 
-def _ticket_en_pendiente(motor, datos) -> int:
-    return sembrar_ticket(motor, datos, estado_id=datos["estados"]["Pendiente"])
+def _ticket_en_enrevision(motor, datos) -> int:
+    return sembrar_ticket(motor, datos, estado_id=datos["estados"]["EnRevision"])
 
 
 def _sin_efectos(cliente, datos, ticket_id: int) -> None:
     """Comprueba que estado e historial quedaron intactos tras un rechazo."""
     assert abrir_ticket(cliente, ticket_id)["estado_id"] == datos["estados"][
-        "Pendiente"
+        "EnRevision"
     ], "el 422 no puede modificar el estado"
     exigir_ruta("/api/v1/tickets/{ticket_id}/historial", "GET")
     assert leer_historial(cliente, ticket_id) == [], (
@@ -62,7 +62,7 @@ def _sin_efectos(cliente, datos, ticket_id: int) -> None:
 @pytest.mark.parametrize("operacion", ["anulacion", "rechazo"])
 def test_motivo_faltante_responde_422_ac_8(motor, datos_013, operacion):
     """AC-8: payload sin `motivo` -> 422, sin modificar estado ni historial."""
-    ticket_id = _ticket_en_pendiente(motor, datos_013)
+    ticket_id = _ticket_en_enrevision(motor, datos_013)
 
     with _cliente_administrador(motor, datos_013) as cliente:
         respuesta = cliente.post(
@@ -76,7 +76,7 @@ def test_motivo_faltante_responde_422_ac_8(motor, datos_013, operacion):
 @pytest.mark.parametrize("operacion", ["anulacion", "rechazo"])
 def test_motivo_vacio_responde_422_ac_8(motor, datos_013, operacion):
     """AC-8/D-6: motivo vacio -> 422, sin modificar estado ni historial."""
-    ticket_id = _ticket_en_pendiente(motor, datos_013)
+    ticket_id = _ticket_en_enrevision(motor, datos_013)
 
     with _cliente_administrador(motor, datos_013) as cliente:
         respuesta = cliente.post(
@@ -92,7 +92,7 @@ def test_motivo_sobre_la_longitud_maxima_responde_422_ac_8(
     motor, datos_013, operacion
 ):
     """AC-8/D-6: 501 caracteres -> 422, sin modificar estado ni historial."""
-    ticket_id = _ticket_en_pendiente(motor, datos_013)
+    ticket_id = _ticket_en_enrevision(motor, datos_013)
 
     with _cliente_administrador(motor, datos_013) as cliente:
         respuesta = cliente.post(
@@ -112,7 +112,7 @@ def test_motivo_en_el_limite_maximo_es_aceptado_y_se_persiste_literal_ac_8(
         :LONGITUD_MAXIMA_MOTIVO
     ]
     assert len(motivo) == LONGITUD_MAXIMA_MOTIVO
-    ticket_id = _ticket_en_pendiente(motor, datos_013)
+    ticket_id = _ticket_en_enrevision(motor, datos_013)
 
     with _cliente_administrador(motor, datos_013) as cliente:
         respuesta = cliente.post(

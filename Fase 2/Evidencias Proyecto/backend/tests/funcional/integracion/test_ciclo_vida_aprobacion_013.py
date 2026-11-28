@@ -2,15 +2,15 @@
 
 Seam bajo prueba: la **interfaz HTTP** del `app` real (`TestClient`), como en el
 resto de la suite. La aprobacion es una operacion semantica propia
-(`POST /api/v1/tickets/{ticket_id}/aprobacion`) que lleva el pedido de
-`Pendiente` o `EnRevision` **siempre** a `EnCurso`, con una sola fila de
-historial (origen real -> `EnCurso`, actor = Administrador, motivo literal
+(`POST /api/v1/tickets/{ticket_id}/aprobacion`) que lleva el pedido desde
+`EnRevision` **siempre** a `EnCurso`, con una sola fila de historial (origen
+real -> `EnCurso`, actor = Administrador, motivo literal
 `Aprobación del pedido`, `orden_compra_id` nulo) y sin evaluar stock, reservar
-ni tocar `fecha_cierre` (spec §9.2 D-15/D-16/D-17, §9.3, AC-29/AC-30).
+ni tocar `fecha_cierre` (spec §9.2 D-15/D-16/D-17, §9.3, AC-52).
 
 El `PATCH /estado` conserva su contrato de legado (un paso, cierre reservado al
-despacho, terminalidad por nombre) pero deja de concederse al Bodeguero
-(§9.10, AC-49). El Bodeguero conserva despacho y rechazo.
+retiro, terminalidad por nombre) pero deja de concederse al Bodeguero
+(§9.10, AC-49). El Bodeguero conserva despacho y rechazo hasta T35.
 
 La matriz y el contrato se transcriben a mano desde la spec (nunca se leen de
 `permisos.MATRIZ_PERMISOS` como fuente de la expectativa).
@@ -48,7 +48,7 @@ from tests.funcional.integracion._soporte_ciclo_vida_013 import (
 #: Contrato de la ampliacion (spec §9.4).
 RUTA_APROBACION = "/api/v1/tickets/{ticket_id}/aprobacion"
 RUTA_ESTADO = "/api/v1/tickets/{ticket_id}/estado"
-RUTA_DESPACHO = "/api/v1/tickets/{ticket_id}/despacho"
+RUTA_RETIRO = "/api/v1/tickets/{ticket_id}/retiro"
 RUTA_RECHAZO = "/api/v1/tickets/{ticket_id}/rechazo"
 
 #: Motivo literal del historial (spec D-16). Fuente independiente del codigo.
@@ -95,6 +95,7 @@ def _cliente_bodeguero(motor, datos):
         "Bodeguero",
         departamento_id=datos["departamento_id"],
         usuario_id=datos["usuarios_inst01"]["Bodeguero"],
+        sede_id=datos["sede_id"],
     )
 
 
@@ -142,15 +143,15 @@ def _estado_persistido(motor, ticket_id: int) -> int | None:
 
 
 # ---------------------------------------------------------------------------
-# AC-29: 200 desde Pendiente y EnRevision; destino siempre EnCurso
+# AC-52: 200 desde EnRevision; destino siempre EnCurso
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("origen", ["Pendiente", "EnRevision"])
-def test_aprobacion_desde_origen_elegible_deja_el_pedido_en_curso_ac_29(
+@pytest.mark.parametrize("origen", ["EnRevision"])
+def test_aprobacion_desde_origen_elegible_deja_el_pedido_en_curso_ac_52(
     motor, mundo_con_stock, origen
 ):
-    """AC-29: `Pendiente` y `EnRevision` (heredado) se aprueban a `EnCurso`."""
+    """AC-52: solo `EnRevision` se aprueba a `EnCurso`."""
     datos = mundo_con_stock
     ticket_id = sembrar_ticket(
         motor, datos, estado_id=datos["estados"][origen]
@@ -189,7 +190,7 @@ def test_aprobacion_siempre_lleva_a_en_curso_y_el_stock_solo_cambia_la_etiqueta_
     """AC-29/D-17: el stock decide la etiqueta, nunca el estado destino."""
     datos = request.getfixturevalue(mundo)
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with _cliente_administrador(motor, datos) as cliente:
@@ -209,7 +210,7 @@ def test_aprobacion_no_toca_stock_ni_movimientos_ac_29(motor, mundo_con_stock):
     """AC-29/D-18: aprobar no reserva, no rebaja stock ni audita movimiento."""
     datos = mundo_con_stock
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
     stock_antes = leer_stock_sede(motor, datos["sede_id"], datos["producto_id"])
     movimientos_antes = contar_en(motor, "MovimientoInventario")
@@ -231,7 +232,7 @@ def test_aprobacion_no_toca_stock_ni_movimientos_ac_29(motor, mundo_con_stock):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("origen", ["Pendiente", "EnRevision"])
+@pytest.mark.parametrize("origen", ["EnRevision"])
 def test_aprobacion_escribe_una_sola_fila_con_actor_y_motivo_ac_30(
     motor, mundo_con_stock, origen
 ):
@@ -275,7 +276,7 @@ def test_si_la_fila_de_historial_falla_el_estado_no_cambia_ac_30(
     """
     datos = mundo_con_stock
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with motor.begin() as conexion:
@@ -288,7 +289,7 @@ def test_si_la_fila_de_historial_falla_el_estado_no_cambia_ac_30(
     assert respuesta.status_code == 500, (
         f"sin la tabla del historial la aprobacion debe fallar completa: {respuesta.text}"
     )
-    assert _estado_persistido(motor, ticket_id) == datos["estados"]["Pendiente"], (
+    assert _estado_persistido(motor, ticket_id) == datos["estados"]["EnRevision"], (
         "si la fila no pudo registrarse, el pedido conserva su estado"
     )
 
@@ -326,7 +327,6 @@ def test_aprobacion_de_un_estado_no_elegible_responde_409_sin_escribir_ac_46(
         motor,
         dos_instituciones,
         nombres_estados=(
-            "Pendiente",
             "EnRevision",
             "EnCurso",
             "Cerrado",
@@ -355,10 +355,10 @@ def test_aprobacion_sin_en_curso_en_el_catalogo_responde_409_sin_escribir_ac_46(
     datos = sembrar_mundo_013(
         motor,
         dos_instituciones,
-        nombres_estados=("Pendiente", "EnRevision", "Cerrado", "Anulado"),
+        nombres_estados=("EnRevision", "Cerrado", "Anulado"),
     )
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with _cliente_administrador(motor, datos) as cliente:
@@ -366,7 +366,7 @@ def test_aprobacion_sin_en_curso_en_el_catalogo_responde_409_sin_escribir_ac_46(
 
         assert respuesta.status_code == 409, respuesta.text
         assert abrir_ticket(cliente, ticket_id)["estado_id"] == (
-            datos["estados"]["Pendiente"]
+            datos["estados"]["EnRevision"]
         ), "el fail-closed del catalogo no puede escribir"
         assert leer_historial(cliente, ticket_id) == []
 
@@ -377,13 +377,13 @@ def test_aprobacion_inexistente_y_ajena_responden_404_identico_ac_46(
     """AC-46/D-8: inexistente y de otra institucion son 404 indistinguibles."""
     datos = mundo_con_stock
     propio = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
     ajeno = sembrar_ticket(
         motor,
         datos,
         usuario_id=datos["usuarios_inst01"]["Solicitante"],
-        estado_id=datos["estados"]["Pendiente"],
+        estado_id=datos["estados"]["EnRevision"],
     )
 
     with _cliente_administrador(motor, datos) as cliente:
@@ -403,7 +403,7 @@ def test_aprobacion_inexistente_y_ajena_responden_404_identico_ac_46(
         ), "el 404 del ajeno debe ser indistinguible del inexistente"
 
     assert inexistente.status_code == 404, inexistente.text
-    assert _estado_persistido(motor, ajeno) == datos["estados"]["Pendiente"], (
+    assert _estado_persistido(motor, ajeno) == datos["estados"]["EnRevision"], (
         "la aprobacion ajena no puede mutar el pedido"
     )
 
@@ -424,7 +424,7 @@ def test_aprobacion_no_se_concede_a_otros_roles_ac_45(
     """AC-45: Bodeguero, Solicitante y Superadmin reciben 403 por matriz."""
     datos = mundo_con_stock
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with fabrica(motor, datos) as cliente:
@@ -432,7 +432,7 @@ def test_aprobacion_no_se_concede_a_otros_roles_ac_45(
 
         assert respuesta.status_code == 403, respuesta.text
 
-    assert _estado_persistido(motor, ticket_id) == datos["estados"]["Pendiente"], (
+    assert _estado_persistido(motor, ticket_id) == datos["estados"]["EnRevision"], (
         "el 403 no puede mutar el pedido"
     )
 
@@ -485,7 +485,7 @@ def test_aprobacion_con_kanban_apagada_responde_403_sin_mutar_ac_45(
     datos = mundo_con_stock
     _sembrar_contexto_capacidades(motor, datos, {"kanban"})
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with _cliente_administrador(motor, datos, correo=_CORREO_GATING) as cliente:
@@ -493,14 +493,14 @@ def test_aprobacion_con_kanban_apagada_responde_403_sin_mutar_ac_45(
 
         assert respuesta.status_code == 403, respuesta.text
 
-    assert _estado_persistido(motor, ticket_id) == datos["estados"]["Pendiente"]
+    assert _estado_persistido(motor, ticket_id) == datos["estados"]["EnRevision"]
 
 
 def test_aprobacion_sin_sesion_responde_401_ac_46(motor, mundo_con_stock):
     """AC-46: sin sesion la precedencia empieza por el 401."""
     datos = mundo_con_stock
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with cliente_con_rol(motor, SIN_AUTENTICAR) as cliente:
@@ -518,7 +518,7 @@ def test_patch_estado_deniega_al_bodeguero_por_matriz_ac_49(motor, mundo_con_sto
     """AC-49: el Bodeguero pierde el `PATCH /estado` (403, sin mutacion)."""
     datos = mundo_con_stock
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with _cliente_bodeguero(motor, datos) as cliente:
@@ -529,31 +529,37 @@ def test_patch_estado_deniega_al_bodeguero_por_matriz_ac_49(motor, mundo_con_sto
 
         assert respuesta.status_code == 403, respuesta.text
 
-    assert _estado_persistido(motor, ticket_id) == datos["estados"]["Pendiente"]
+    assert _estado_persistido(motor, ticket_id) == datos["estados"]["EnRevision"]
 
 
 def test_patch_estado_conserva_su_contrato_de_legado_para_el_administrador_ac_49(
     motor, mundo_con_stock
 ):
-    """AC-49/AC-28: el Administrador conserva el paso y el cierre reservado."""
+    """AC-49/AC-60: el Administrador conserva el paso y el cierre reservado."""
     datos = mundo_con_stock
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with _cliente_administrador(motor, datos) as cliente:
-        avance = cliente.patch(
-            f"/api/v1/tickets/{ticket_id}/estado",
-            json={"estado_id": datos["estados"]["EnRevision"]},
-        )
-        assert avance.status_code == 200, avance.text
-        assert avance.json()["estado_id"] == datos["estados"]["EnRevision"]
-
         en_curso = cliente.patch(
             f"/api/v1/tickets/{ticket_id}/estado",
             json={"estado_id": datos["estados"]["EnCurso"]},
         )
         assert en_curso.status_code == 200, en_curso.text
+        assert en_curso.json()["estado_id"] == datos["estados"]["EnCurso"]
+
+        retroceso = cliente.patch(
+            f"/api/v1/tickets/{ticket_id}/estado",
+            json={"estado_id": datos["estados"]["EnRevision"]},
+        )
+        assert retroceso.status_code == 200, retroceso.text
+
+        avance = cliente.patch(
+            f"/api/v1/tickets/{ticket_id}/estado",
+            json={"estado_id": datos["estados"]["EnCurso"]},
+        )
+        assert avance.status_code == 200, avance.text
 
         cierre = cliente.patch(
             f"/api/v1/tickets/{ticket_id}/estado",
@@ -561,8 +567,8 @@ def test_patch_estado_conserva_su_contrato_de_legado_para_el_administrador_ac_49
         )
         assert cierre.status_code == 409, cierre.text
         assert cierre.json()["detail"] == (
-            "El cierre requiere despacho; use "
-            f"POST /api/v1/tickets/{ticket_id}/despacho"
+            "El cierre requiere retiro; use "
+            f"POST /api/v1/tickets/{ticket_id}/retiro"
         )
 
         assert abrir_ticket(cliente, ticket_id)["estado_id"] == (
@@ -577,12 +583,12 @@ def test_el_bodeguero_conserva_despacho_y_rechazo_ac_49(motor, mundo_con_stock):
         motor, datos, estado_id=datos["estados"]["EnCurso"]
     )
     a_rechazar = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with _cliente_bodeguero(motor, datos) as cliente:
         despacho = cliente.post(
-            f"/api/v1/tickets/{a_despachar}/despacho",
+            f"/api/v1/tickets/{a_despachar}/retiro",
             json={"usuario_id": datos["usuarios_inst01"]["Bodeguero"]},
         )
         assert despacho.status_code == 200, despacho.text
@@ -611,14 +617,14 @@ def test_matriz_declara_la_aprobacion_y_el_patch_solo_para_administrador_ac_44()
     assert set(permisos.MATRIZ_PERMISOS[("PATCH", RUTA_ESTADO)]) == {
         "Administrador"
     }, "el PATCH de legado deja de concederse al Bodeguero"
-    assert len(permisos.MATRIZ_PERMISOS) == 75, (
+    assert len(permisos.MATRIZ_PERMISOS) == 72, (
         "la matriz suma una operacion por tarea de la ampliacion (73 -> 74 en "
-        "T21 y 74 -> 75 con la confirmacion de entrega en T22)"
+        "T21 y 74 -> 75 con la confirmacion de entrega en T22) y la enmienda "
+        "27/Nov/2026 de la 012 la deja en 72"
     )
     # Las operaciones propias del Bodeguero no cambian de roles.
-    assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_DESPACHO)]) == {
-        "Administrador",
-        "Bodeguero",
+    assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_RETIRO)]) == {
+        "Bodeguero"
     }
     assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_RECHAZO)]) == {
         "Administrador",

@@ -204,3 +204,691 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md)
 | AC-17 | E17-1, E17-3, E17-C2 |
 | AC-18 | E17-1, E17-2, E17-3, E17-4, E17-C2, E17-C4 |
 | AC-19 | E17-1, E17-2, E17-4, E17-C1, E17-C2, E17-C3, E17-C4 |
+
+## Enmienda funcional posterior al cierre (27/Nov/2026) — campos por rol y retiro de encargados
+
+> Spec aprobada: `spec.md`, «Enmienda funcional posterior al cierre (27/Nov/2026)» y «Segundo
+> bloque de la enmienda (27/Nov/2026)». AC-20…AC-41. **Enmienda cerrada y verificada
+> (27/Nov/2026):** las tareas E12-B*, E12-A* y E12-C* quedan `[x]`; no se crea Feature 028 y la
+> Feature 012 conserva su cierre. Las tareas de esta sección se ejecutaron en orden: **B → A → C**.
+>
+> **Histórico supersedido (no reabrir):** las tareas T7, T8, T10, T12–T16 y E17-1…E17-C4 que
+> mencionan encargados o 4 pestañas se conservan como registro y quedan
+> **históricas/supersedidas** por esta enmienda; no se borran ni se cambian sus `[x]`.
+
+### Histórico supersedido
+
+| Tarea original | Estado | Motivo |
+|---|---|---|
+| T7, T8 | Histórica/supersedida | CRUD y pruebas de encargados; la tabla y sus 3 rutas se retiran. |
+| T10 | Histórica/supersedida | Vista de encargados; queda el frontend de 3 pestañas (E12-B2). |
+| T12–T16 | Histórica/supersedida | Conteos, evidencias y cierre previos a la enmienda; se reemplazan por E12-C1…C3. |
+| E17-1…E17-C4 | Histórica/supersedida | Navegación de 4 pestañas; la vigente es de 3 (AC-38). |
+
+### Bloque B — retiro de encargados
+
+- [x] **E12-B1 — Retiro estructural de `departamento_encargado` (DDL, semilla, token, backend y pruebas).**
+  - **Archivos:** `database/01_esquema.sql`, `database/02_datos_semilla.sql`,
+    `backend/app/core/config.py`; `backend/app/models/organizacion.py`,
+    `backend/app/models/__init__.py`; `backend/app/schemas/organizacion_schema.py`;
+    `backend/app/services/organizacion_service.py`;
+    `backend/app/api/v1/endpoints/organizacion.py`, `backend/app/api/v1/api.py`,
+    `backend/app/api/v1/endpoints/usuarios.py`; `backend/app/core/permisos.py`,
+    `backend/app/core/capacidades.py`; pruebas inventariadas en `spec.md` §10.3
+    (`test_modelo_sede_011.py`, `test_organizacion_011.py`, `test_organizacion_crud_012.py`,
+    `test_permisos_endpoints.py`, `test_permisos_012.py`, `test_permisos_010.py`,
+    `test_permisos_008.py`, `test_permisos.py`, `test_capacidades_gating_012.py`,
+    `_soporte_sede_011.py`,
+    `test_instalacion_limpia_postgres.py`, `test_control_postgres_010.py`,
+    `test_dashboard_tecnico_postgres_017.py`, `test_ciclo_vida_catalogo_postgres_014.py`,
+    `test_gobierno_identidades_017.py`, `test_salud_esquema_postgres_026.py`,
+    `test_catalogo_retiro_postgres_013.py`, `test_cobertura_postgres_021.py`,
+    `test_validacion_entradas_postgres_027.py`, `test_metricas_024.py`,
+    `test_correlacion_024.py`, `test_permisos_retiro_013.py`, `test_contrato_024.py`,
+    `test_ciclo_vida_autorizacion_014.py`, `test_ciclo_vida_aprobacion_013.py`,
+    `test_ciclo_vida_confirmacion_013.py`, `test_alta_solo_solicitante_007.py`,
+    `test_cobertura_021.py`, `test_compras_endpoints_020.py`, `test_detalle_producto_019.py`,
+    `test_filtros_inventario_018.py`).
+  - **Sub-pasos:** (1) retirar la tabla de `control` y del template tenant y ajustar el
+    check/comentario 23→22; (2) retirar las 5 filas, listas, secuencia, copia, `DELETE` y
+    token `026.0→026.1` de la semilla; (3) `VERSION_ESQUEMA_OBJETIVO="026.1"` y el comentario
+    de versión de `01_esquema.sql`; (4) retirar
+    modelo, `__init__`, DTO, servicios, 3 rutas, comentarios de `api.py`/`usuarios.py`,
+    3 entradas de matriz y 3 mapeos de capacidad; (5) quitar `_dependencias_usuario` y su 409
+    conservando las demás dependencias; (6) actualizar/eliminar las pruebas y los conteos
+    75/77→72/74 y 26/23→25/22; (7) `down -v` + `up -d` y verificar 25/22/`026.1`.
+  - **AC:** AC-33, AC-34, AC-35, AC-36, AC-37, AC-39.
+  - **Hecho cuando:** `pytest` SQLite y gated PostgreSQL quedan verdes; el reset deja 25/22,
+    sin `departamento_encargado` ni sus 5 filas, `026.1` en control y tenants; la matriz queda
+    en 72 v1, OpenAPI en 74 totales (72 v1 + `GET /` + `/health`) y las 3 rutas no se publican;
+    `gestion_organizacional` conserva sedes/departamentos/usuarios; la baja de usuario ya no
+    responde 409 por encargado.
+  - **Comandos:** `cd backend && pytest`; gated con `POSTGRES_TEST_URL`; desde la raíz
+    `docker compose -f docker-compose.yml down -v` y `up -d`.
+  - **Evidencia esperada:** conteos 25/22, `026.1`, ausencia de tabla/secuencia, 72/74,
+    tests de permisos/capacidad/baja y reset limpio.
+  - **Entregado (27/Nov/2026):** tabla puente retirada de punta a punta. **DDL:** `01_esquema.sql`
+    ya no crea `control.departamento_encargado` ni su template tenant; cabecera y comentarios a
+    **25/22**, check fail-closed y `RAISE NOTICE` a **22** y token de versión a **`026.1`**.
+    **Semilla:** sin las 5 asociaciones, sin lista/`setval`/copia/`DELETE` de la tabla,
+    `v_version_objetivo = '026.1'`. **Backend:** `config.VERSION_ESQUEMA_OBJETIVO = "026.1"`;
+    eliminados `models/organizacion.py` (`DepartamentoEncargado`), su import/`__all__`, los DTO
+    `EncargadoCrear`/`EncargadoRespuesta`, `_consulta_encargados`/`listar_encargados`/
+    `asociar_encargado`/`retirar_encargado`, `_dependencias_usuario` y su 409 (queda el 409 del
+    último Administrador activo), las 3 rutas de `endpoints/organizacion.py`, sus entradas de
+    `permisos.py` y `capacidades.py` y los comentarios de `api.py`/`usuarios.py`/`control_service.py`;
+    `gestion_organizacional` conserva sedes, departamentos y usuarios. **Pruebas:** se eliminaron
+    los 9 casos de la relación N:N (`test_organizacion_011.py`), los 2 de metadata
+    (`test_modelo_sede_011.py`) y el 409 por encargado (`test_organizacion_crud_012.py`, sustituido
+    por la baja 200 de AC-37); se actualizaron transcripciones y conteos en `test_permisos*.py`,
+    `test_capacidades_gating_012.py`, `_soporte_sede_011.py`, `test_contrato_024.py`,
+    `test_permisos_retiro_013.py`, `test_ciclo_vida_*013/014.py`, `test_alta_solo_solicitante_007.py`,
+    `test_cobertura_021.py`, `test_compras_endpoints_020.py`, `test_detalle_producto_019.py`,
+    `test_filtros_inventario_018.py`, `test_correlacion_024.py`, `test_metricas_024.py` y los gated
+    `test_instalacion_limpia_postgres.py`, `test_control_postgres_010.py`,
+    `test_dashboard_tecnico_postgres_017.py`, `test_ciclo_vida_catalogo_postgres_014.py`,
+    `test_gobierno_identidades_017.py`, `test_salud_esquema_postgres_026.py`,
+    `test_catalogo_retiro_postgres_013.py`, `test_cobertura_postgres_021.py` y
+    `test_validacion_entradas_postgres_027.py`. **Reset** (`down -v` + `up -d`): `control` **25**
+    tablas, cada tenant **22**, `to_regclass('control.departamento_encargado')` nulo, 0 relaciones
+    ni secuencias con ese nombre, sin las 5 filas y `version_esquema = 026.1` en control y en los
+    cuatro tenants; la guardia fail-closed sigue abortando la segunda semilla (gated). **Contrato:**
+    matriz **72**, `/openapi.json` **74** = 72 v1 + `GET /` + `/health`; las 3 rutas responden 404 y
+    no aparecen en `/openapi.json`; `gestion_organizacional` intacta. **Suites:** `pytest` SQLite
+    **2080 passed / 123 skipped**; gated PostgreSQL **2200 passed / 3 skipped** (los 3 de Redis sin
+    `REDIS_TEST_URL`); `ng test` **658 SUCCESS / 0 failed**; `npx ng build` limpio. **Grep:** sin
+    `DepartamentoEncargado`, `departamento_encargado`, `/encargados` ni «encargado» en
+    `backend/app`, `backend/tests` ni `database/`; `frontend/src` conserva las referencias y su
+    vista, que son de **E12-B2** (no se tocó el frontend). Sin cambios en `database/README.md`,
+    `MEMORY.md`, `AGENTS.md`, skills, diagramas ni informe (D-20/cierre).
+
+- [x] **E12-B2 — Retiro del frontend de encargados y navegación de 3 pestañas.**
+  - **Archivos:** eliminar
+    `frontend/src/app/features/administracion/encargados.component.ts|html|spec.ts`;
+    `frontend/src/app/features/administracion/administracion.routes.ts|spec.ts`;
+    `frontend/src/app/features/administracion/administracion-nav.component.ts|html|spec.ts`;
+    `frontend/src/app/features/administracion/administracion.component.ts|html`;
+    `frontend/src/app/features/administracion/services/administracion.service.ts|spec.ts`;
+    `frontend/src/app/shared/interfaces/index.ts`;
+    `frontend/src/app/features/administracion/usuarios.component.html|spec.ts`;
+    `frontend/src/app/features/control/control.routes.ts`;
+    `frontend/src/testing/funcional/README.md`; revisar
+    `frontend/src/app/core/guards/superficies-retiradas.spec.ts` (sin cambios esperados).
+  - **Sub-pasos:** quitar la ruta hija y el enlace; dejar `ENLACES_ADMINISTRACION` con 3;
+    ajustar IDs/ARIA y wraparound **Sedes↔Usuarios**; quitar tipos/métodos/casos de
+    encargados; quitar el texto del 409 en `usuarios.component.html`; actualizar el índice de
+    testing; verificar que `/administracion/encargados` cae en `**` → `/dashboard`; confirmar
+    que `superficies-retiradas.spec.ts` no requiere cambios.
+  - **AC:** AC-38, AC-39.
+  - **Hecho cuando:** `ng test` y `ng build` quedan verdes; hay 3 pestañas (Sedes,
+    Departamentos, Usuarios), deep links y `tabpanel` con `aria-labelledby`; no quedan
+    componente, ruta, tipos, métodos ni textos de encargados; el wraparound y los IDs son de 3.
+  - **Comandos:** `cd frontend; $env:CHROME_BIN="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe";
+    npx ng test --watch=false --browsers=ChromeHeadless; npx ng build`. Nunca `npm test`.
+  - **Evidencia esperada:** specs de nav/routes/usuarios/service verdes, 3 pestañas en 4200 y
+    `/administracion/encargados` sin vista.
+  - **Entregado (27/Nov/2026):** retiro del frontend de encargados y navegación de **3 pestañas**.
+    **Eliminados:** `encargados.component.ts|html|spec.ts`. **Rutas:** `administracion.routes.ts`
+    publica solo `sedes`, `departamentos` y `usuarios` (3 hijas por `loadComponent`) y su spec
+    espera esas 3. **Navegación:** `ENLACES_ADMINISTRACION` queda con 3 entradas e IDs
+    `pestana-administracion-sedes|departamentos|usuarios`; `administracion-nav.component.html`
+    no necesitó cambios (itera `enlaces`) y conserva `role="tablist"`, `aria-selected`/`tabindex`
+    roving y `tabpanel` con `aria-labelledby` de la sección activa; el wraparound es
+    **Sedes↔Usuarios**. Spec de nav: `PESTANAS` de 3, sin mock `listarEncargados`, conteos 3/2,
+    hrefs/IDs/textos de 3 y flechas circulares sobre 3 destinos (16 casos: 3×[AC-15 + AC-17 +
+    2 flechas] + 4 transversales). **Servicio/tipos:** fuera `listarEncargados`,
+    `asociarEncargado`, `retirarEncargado` y sus 3 casos; fuera `Encargado`/`EncargadoCrear` de
+    `shared/interfaces/index.ts`. **Textos:** `usuarios.component.html` ya no anuncia el 409 por
+    encargado (solo «¿Reactivar…?»/«¿Desactivar…?»); su caso de 409 se **reescribió** al 409
+    vigente del último Administrador activo (plan §4 «quitar/reescribir»), conservando la baja
+    genérica; `administracion.component.ts|html` y el comentario de `control.routes.ts` ya no
+    citan encargados; `testing/funcional/README.md` sin la fila del spec retirado.
+    **Wildcard:** no se añadió ninguna ruta; `app.routes.ts` conserva
+    `{ path: '**', redirectTo: 'dashboard' }` y, al no existir hija, `/administracion/encargados`
+    cae en él (sujeto a autenticación); `superficies-retiradas.spec.ts` no requería cambios.
+    **Suites:** `ng test` **645 SUCCESS / 0 failed** (658 − 6 del spec de encargados − 3 del
+    servicio − 4 de la cuarta pestaña; 44 specs); `npx ng build` limpio (inicial **339.74 kB**,
+    `main-SUOO4M4P.js`, 28.8 s; sin chunk de encargados); `pytest` SQLite **2080 passed /
+    123 skipped** sin tocar backend. **Grep:** 0 coincidencias de `encargado` (cualquier caja) y
+    `/administracion/encargados` en `frontend/src` ni en el resto de `frontend/`, así que no
+    quedan falsos positivos del rol ni históricos que distinguir. **Observación:** el índice
+    `testing/funcional/README.md` ya declaraba 42 specs/559 casos antes de esta tarea (hoy 44
+    specs/645 casos; faltaban en el índice `rut.spec.ts`, `validacion-http.spec.ts` y
+    `ticket.service.spec.ts` desde enmiendas previas): deuda documental preexistente, no tocada.
+
+### Bloque A — alta y edición por rol
+
+- [x] **E12-A1 — Contrato y resolución de «Suministros» en el alta.**
+  - **Archivos:** `backend/app/schemas/usuario_schema.py`;
+    `backend/app/services/departamento_suministros.py` (nuevo helper);
+    `backend/app/services/usuario_service.py`; nuevos tests
+    `backend/tests/funcional/unitarios/test_departamento_suministros_012.py` y
+    `backend/tests/funcional/integracion/test_alta_suministros_012.py` (o ampliación de los
+    existentes de usuarios/organización, conservando el mismo nivel de cobertura).
+  - **Sub-pasos:** redeclarar `departamento_id` opcional solo en `UsuarioCrear` y
+    `UsuarioEdicion` (`ge=1`); helper de búsqueda normalizada/creación/reactivación con
+    `begin_nested()` + `IntegrityError` + relectura; en `crear_usuario`, resolver el rol,
+    ignorar ids positivos para Bodeguero, exigir/validar departamento para los demás, rechazar
+    «Suministros» para no-Bodeguero y conservar el flujo de dos fases de la 017.
+  - **AC:** AC-20, AC-21, AC-23, AC-24, AC-25, AC-26, AC-30, AC-31.
+  - **Hecho cuando:** `pytest` verde; alta de Bodeguero sin departamento (o con id positivo
+    ajeno/inexistente) resuelve «Suministros»; `0`/negativo → 422 para todos; no-Bodeguero sin
+    departamento o con «Suministros» → 422; `UsuarioRespuesta` sigue publicando el id real;
+    no hay DDL nuevo del Bloque A.
+  - **Comandos:** `cd backend && pytest`.
+  - **Evidencia esperada:** tests de helper/alta, 201/422, reutilización/reactivación,
+    aislamiento y contrato.
+  - **Entregado (27/Nov/2026):** contrato, helper y alta por rol.
+    **Contrato:** `departamento_id` pasa a `int | None = Field(default=None, ge=1)`
+    **solo** en `UsuarioCrear` (sobrescritura) y `UsuarioEdicion`; `UsuarioBase` y
+    `UsuarioRespuesta` conservan el campo obligatorio, `UsuarioCrear` mantiene
+    `extra="forbid"` y `0`/negativo responde 422 en todos.
+    **Helper:** `backend/app/services/departamento_suministros.py` con
+    `resolver_departamento_suministros(db, institucion_id)` y el predicado
+    `es_departamento_suministros`: búsqueda `lower(trim(nombre_dep)) == 'suministros'`
+    por institución, reutilización sin tocar nombre/descripción/sede, reactivación del
+    inactivo, alta con la descripción exacta de D-8, `sede_id=NULL` y `activo=True`;
+    sin `commit()` (solo `flush()`), de modo que un alta fallida no confirma la fila.
+    **Alta:** `crear_usuario` resuelve el rol una vez contra `rol`; el Bodeguero ignora
+    cualquier `departamento_id` positivo (propio, ajeno o inexistente) y resuelve
+    «Suministros» en la institución del actor/`institucion_id`, con
+    `institucion_para_evidencia` derivada del actor; el no-Bodeguero exige el campo
+    (422 con detalle claro y sin mutación), conserva las validaciones vigentes de
+    ámbito/existencia (403/404) y rechaza «Suministros» (422) **después** del ámbito;
+    se mantienen la precedencia 401→403 y el flujo de dos fases de la 017, y el `201`
+    publica el `departamento_id` real persistido.
+    **Decisión no cubierta por el plan:** el savepoint de creación se abre solo en
+    PostgreSQL. En SQLite, pysqlite emite el `SAVEPOINT` como control de transacción
+    exterior y su `RELEASE` confirma en el acto, lo que rompería D-8 (la fila no puede
+    confirmarse antes que el usuario); SQLite serializa las escrituras y no acredita la
+    carrera, así que allí se conserva el pre-check normalizado dentro de la transacción
+    del llamador. `begin_nested()` + `IntegrityError` + relectura queda íntegro para
+    PostgreSQL y lo acredita E12-A3.
+    **Pruebas:** `backend/tests/funcional/unitarios/test_departamento_suministros_012.py`
+    (contrato DTO y helper: creación, reutilización, variantes normalizadas,
+    reactivación, aislamiento, no-commit y conflicto sin savepoint) y
+    `backend/tests/funcional/integracion/test_alta_suministros_012.py` (HTTP: Bodeguero
+    sin departamento y con id positivo propio/ajeno/inexistente → 201 y «Suministros»;
+    reutilización, variantes, reactivación y dos altas → una fila; no-Bodeguero sin
+    departamento o con «Suministros» → 422 sin mutación; departamento ajeno → 403;
+    `0`/negativo → 422 para Bodeguero y Solicitante; Administrador 403 sin crear;
+    Solicitante 201 sin crear; aislamiento INST01/INST02; fallo antes del commit no
+    confirma «Suministros»). Ajuste: `test_rol_asignable_usuarios.py::
+    test_administrador_no_crea_usuario_en_departamento_ajeno` usa Solicitante, porque el
+    Bodeguero ya no valida el departamento enviado (D-8).
+    **Resultados:** `pytest` **2126 passed / 123 skipped / 0 failed** (2080 base + 46
+    casos nuevos); `ng test` **645 SUCCESS**; `npx ng build` limpio (inicial **339.74 kB**,
+    `main-SUOO4M4P.js`). Sin cambios de frontend, DDL ni semilla; `/openapi.json` refleja
+    el campo opcional por el DTO y E12-A3 documenta el 422 por rol. Pendiente de E12-A2:
+    el `PUT /usuarios/{id}` que omite `departamento_id` aún responde 404 desde
+    `_departamento_en_alcance(None)`; A2 debe convertirlo en 422 por rol y resolver
+    «Suministros» en la edición.
+
+- [x] **E12-A2 — Edición por rol, motivo D-5 y legacy.**
+  - **Archivos:** `backend/app/services/organizacion_service.py`; tests
+    `backend/tests/funcional/integracion/test_edicion_suministros_012.py` (o ampliación de
+    `test_organizacion_crud_012.py`) y los de último Administrador existentes.
+  - **Sub-pasos:** resolver «Suministros» para Bodeguero; exigir/validar departamento para
+    no-Bodeguero y rechazar «Suministros»; calcular `cambio_efectivo` con el departamento
+    resuelto; exigir motivo D-5 en el legacy y en los cambios de rol; cambio desde Bodeguero
+    solo a Solicitante; no tocar `usuario.sede_id`; conservar el 409 del último Administrador
+    y el `PUT .../sede` fuera de motivos.
+  - **AC:** AC-27, AC-28, AC-29, AC-30, AC-31.
+  - **Hecho cuando:** `pytest` verde; un Bodeguero legacy en «Biblioteca» pasa a
+    «Suministros» con motivo; una edición sin cambios una vez en «Suministros» no exige
+    motivo; el cambio de rol y los 422 se comportan según la spec; no se consulta encargados.
+  - **Comandos:** `cd backend && pytest`.
+  - **Evidencia esperada:** tests de edición legacy, cambio de rol, motivo y último
+    Administrador.
+  - **Entregado (27/Nov/2026):** edición por rol con «Suministros», motivo D-5 y legacy.
+    **Servicio:** `organizacion_service.editar_usuario` resuelve el nombre del rol destino
+    una sola vez contra `rol` antes de validar el departamento y calcula `cambio_efectivo`
+    contra el **departamento resuelto**. Para Bodeguero ignora cualquier `departamento_id`
+    positivo (propio, ajeno o inexistente) y resuelve «Suministros» con el helper de E12-A1
+    en la institución del usuario/actor (`_institucion_de_mutacion`), sin llamar a
+    `_departamento_en_alcance` con el id del cliente; el legacy «Biblioteca» → «Suministros»
+    es efectivo y exige motivo, y un Bodeguero ya en «Suministros» sin más cambios no lo
+    exige. Para no-Bodeguero, `departamento_id` ausente/null responde **422** claro y sin
+    mutación (antes 404), conserva el 403/404 de existencia/ámbito y rechaza «Suministros»
+    con **422 después** del ámbito. Desde Bodeguero solo se permite pasar a Solicitante
+    (403 en cualquier otra transición, con `_validar_rol_asignable` como frontera del
+    Administrador); al pasar a Bodeguero se resuelve «Suministros» y el cambio de
+    rol+departamento exige motivo. `usuario.sede_id` no se toca; no se consulta encargados;
+    se conserva el 409 del último Administrador activo y `PUT .../sede` sigue fuera del
+    catálogo de motivos. La ruta de control de Administradores (mismo DTO) responde 422 si
+    se omite el departamento y 422 si se envía «Suministros», sin cambiar su formulario; el
+    `200` publica el `departamento_id` real persistido.
+    **Pruebas:** `backend/tests/funcional/integracion/test_edicion_suministros_012.py`
+    (24 casos): legacy con/sin motivo, Bodeguero estable sin motivo, cambio de nombre con
+    motivo, no-Bodeguero sin departamento (omitido/null), con «Suministros», con ajeno
+    (403/404) y con válido; `0`/negativo en edición por ambos roles; Solicitante→Bodeguero
+    con/sin motivo; Bodeguero→Solicitante válido (sin limpiar sede) y con «Suministros»
+    (422); Bodeguero→Administrador por Administrador (403 sin mutación); último
+    Administrador (409 sin mutar); ausencia de 409 por encargado; aislamiento INST01/INST02
+    con el id real; usuario ajeno 404 sin resolver «Suministros»; control omite
+    departamento (422) y rechaza «Suministros» para Administrador (422). Los tests previos
+    de edición/control/último Administrador conservan su cobertura sin cambios.
+    **Resultados:** `pytest` **2150 passed / 123 skipped / 0 failed** (2126 base + 24
+    nuevos); `ng test` **645 SUCCESS / 0 failed**; `npx ng build` limpio (inicial
+    **339.74 kB**, `main-SUOO4M4P.js`, 27.4 s). Sin cambios de DDL, semilla, contratos ni
+    frontend.
+
+- [x] **E12-A3 — Concurrencia, contrato/OpenAPI y pruebas gated del Bloque A.**
+  - **Archivos:** `backend/tests/funcional/sistema/test_suministros_postgres_012.py` (nuevo,
+    gated); `backend/tests/funcional/integracion/test_contrato_usuarios_suministros_012.py`
+    (nuevo o ampliación); `spec.md` §10.3 para los tests de conteo.
+  - **Sub-pasos:** dos altas concurrentes con dos sesiones/`Barrier`; una sola fila
+    «Suministros», ambas 201, sin 500; reutilización/reactivación concurrente; contrato
+    OpenAPI (campo opcional, 422 documentado, 72/74); regresión de `PUT .../sede` 409 y
+    `gestion_organizacional`.
+  - **AC:** AC-22, AC-30, AC-31, AC-35.
+  - **Hecho cuando:** gated PostgreSQL verde; SQLite no acredita la carrera pero la suite
+    sigue verde; OpenAPI/matriz 72/74 y los 422/409 documentados.
+  - **Comandos:** `cd backend; $env:POSTGRES_TEST_URL="postgresql://postgres:postgres@localhost:5433/postgres";
+    pytest tests/funcional/sistema/test_suministros_postgres_012.py` y suite completa.
+  - **Evidencia esperada:** test gated de carrera con conteo exacto y contrato OpenAPI.
+  - **Entregado (27/Nov/2026):** concurrencia, contrato/OpenAPI y verificación gated.
+    **Gated:** `backend/tests/funcional/sistema/test_suministros_postgres_012.py`
+    (4 casos) sobre base temporal PostgreSQL. Dos altas concurrentes de
+    **Bodeguero distintos** con dos `TestClient`/sesiones y una barrera **después
+    del pre-check** de cada petición (fuerza el mismo estado inicial y no fija el
+    ganador del lock): ambas **201**, una sola fila «Suministros» activa, con
+    `sede_id=NULL` y la descripción D-8, ambos usuarios apuntando a ella, sin 500
+    ni fila huérfana; reutilización concurrente de una fila activa sin duplicar
+    ni tocar nombre/descripción/sede; reactivación concurrente idempotente; y un
+    fallo local posterior a la resolución (monkeypatch de
+    `_confirmar_usuario_tenant`) que no confirma «Suministros».
+    **Contrato:** `backend/tests/funcional/integracion/test_contrato_usuarios_suministros_012.py`
+    (8 casos): `departamento_id` opcional solo en `UsuarioCrear`/`UsuarioEdicion`
+    y obligatorio en `UsuarioRespuesta`; esquema de entrada `integer(min 1)` o
+    `null`; `extra="forbid"` intacto; `/openapi.json` **74** = **72 v1 + `GET /`
+    + `/health`**, matriz **72** y sin rutas de encargados; **422 por rol** y por
+    «Suministros» documentado en `POST /usuarios/` y `PUT /usuarios/{id}`
+    (descripciones de `endpoints/usuarios.py` actualizadas); regresión de
+    `PUT /organizacion/usuarios/{id}/sede` **409** a no-Bodeguero y de
+    `gestion_organizacional` (mapeo de sedes/departamentos/usuarios + **403**
+    real con la capacidad apagada). El helper no requirió cambios.
+    **Resultados:** `pytest` SQLite **2158 passed / 127 skipped / 0 failed**
+    (2150/123 + 8 del contrato + 4 gated omitidos); gated PostgreSQL completo
+    **2282 passed / 3 skipped / 0 failed** (los 3 de Redis sin `REDIS_TEST_URL`);
+    `ng test` **645 SUCCESS / 0 failed**; `npx ng build` limpio (inicial
+    **339.74 kB**, `main-SUOO4M4P.js`, 29.3 s). `spec.md` §10.3 solo añade los
+    nombres de los dos archivos nuevos al inventario de pruebas. Sin cambios de
+    DDL, semilla, helper ni frontend.
+
+- [x] **E12-A4 — Frontend: tipos y alta por rol.**
+  - **Archivos:** `frontend/src/app/shared/interfaces/index.ts`;
+    `frontend/src/app/features/administracion/usuarios.component.ts|html`;
+    `frontend/src/app/features/administracion/usuarios.component.spec.ts` (casos de alta).
+  - **Sub-pasos:** `departamento_id?` en `UsuarioCrear`/`UsuarioEdicion`; señal reactiva del
+    rol; Sede visible para Bodeguero/Solicitante; Bodeguero obligatorio sin «Sin asignar»;
+    Solicitante como filtro; Departamento deshabilitado/texto «Suministros (asignación
+    automática)» para Bodeguero, obligatorio/filtrado para Solicitante y obligatorio sin
+    filtro para Administrador; sincronización
+    sede↔departamento; payload que omite departamento para Bodeguero; `PUT .../sede` tras el
+    alta con éxito parcial; tenant sin sedes.
+  - **AC:** AC-24, AC-25, AC-26, AC-31.
+  - **Hecho cuando:** `ng test`/`ng build` verdes; los specs de alta por rol, filtro,
+    sincronización, sin sedes y fallo parcial pasan.
+  - **Comandos:** `cd frontend; $env:CHROME_BIN=...; npx ng test --watch=false
+    --browsers=ChromeHeadless; npx ng build`.
+  - **Evidencia esperada:** casos de alta Bodeguero/Solicitante/Admin y éxito parcial.
+  - **Entregado (27/Nov/2026):** tipos y alta por rol.
+    **Tipos:** `UsuarioCrear` y `UsuarioEdicion` publican `departamento_id?: number | null`
+    (contrato opcional de D-12); `Usuario` y `UsuarioRespuesta` no cambian.
+    **Alta reactiva:** `rolCreacion` alimenta `creacionEsSolicitante`, `creacionMuestraSede` y
+    `creacionBodegueroSinSedes`; al cambiar de rol se recalculan validadores y el estado
+    habilitado y se limpia una selección incompatible. **Bodeguero:** Departamento
+    **deshabilitado** con «Suministros (asignación automática)» (sin depender del catálogo),
+    Sede **obligatoria** y sin «Sin asignar»; el payload **omite** `departamento_id` y nunca
+    lleva `sede_id`; tras el 201 se llama a `PUT /organizacion/usuarios/{id}/sede` y, si falla,
+    se conserva el mensaje de **éxito parcial** sin revertir el alta y sin perder el enlace de
+    invitación; sin sedes en el tenant el botón queda deshabilitado, se muestra un aviso
+    (`role="alert"`) y `guardarCreacion()` no emite la petición. **Solicitante:** Sede como
+    **filtro** («Todas las sedes») y Departamento obligatorio filtrado por sede; al elegir un
+    departamento la sede se sincroniza a la suya (o queda sin filtro si no tiene sede); al
+    cambiar de sede se limpia el departamento incompatible y el formulario no se envía; solo
+    viaja `departamento_id`. **Administrador/Superadmin:** sin Sede, Departamento habilitado y
+    obligatorio. **Decisión no cubierta por el plan:** «Suministros» se excluye del combo del
+    alta para todo rol distinto de Bodeguero (el backend responde **422** en ese caso, D-12) y
+    el tenant que solo tiene «Suministros» muestra el aviso de que no hay departamentos
+    disponibles; A6 conserva la regresión del borde.
+    **Pruebas:** 9 casos nuevos y 1 existente reforzado en `usuarios.component.spec.ts`:
+    matriz del Bodeguero (disabled/texto/sin «Sin asignar»/required), alta con éxito y payload
+    sin departamento, fallo parcial de sede, tenant sin sedes, filtro y sincronización del
+    Solicitante, limpieza y no envío con departamento incompatible, payload solo
+    `departamento_id` sin `PUT .../sede`, recálculo al cambiar de rol y Administrador sin Sede
+    (incluye la exclusión de «Suministros» y el paso Administrador→Bodeguero con sede
+    obligatoria). Sin casos de edición (A5).
+    **Resultados:** `ng test` **654 SUCCESS / 0 failed** (645 + 9); `npx ng build` limpio
+    (inicial **339.96 kB**, `main-5HWV533U.js`, 33.0 s); `pytest` **2158 passed / 127 skipped /
+    0 failed** sin tocar backend. Sin cambios de backend, DDL, semilla, spec/plan ni
+    documentación de cierre; `spec.md` §5 y `plan.md` §6 no se editan.
+  - **Corrección post-recorrido (27/Nov/2026):** el `<select>` de rol del alta usaba
+    `[value]="rol.rol_id"`, así que el navegador entregaba el id como **string** y
+    `creacionEsSolicitante()` (mapa `rolesPorId` con claves numéricas) no resolvía: al elegir
+    Solicitante se habilitaba el Departamento pero la **Sede desaparecía** (AC-24/AC-25). Los
+    tests con `setValue` numérico no lo detectaban. **Fix:** `[ngValue]` en el select de rol
+    del alta (departamento y sedes ya lo usaban) y normalización con `Number(...)` en
+    `nombreRol`, `nombreDepartamento`, `nombreSede`, `esDepartamentoSuministrosId`, los filtros
+    de sede de `departamentosCreacion`, las comparaciones de limpieza/sincronización y el
+    payload (`rol_id`/`departamento_id` numéricos); sin cambios de lógica de negocio.
+    **Prueba de regresión DOM:** `AC-24/AC-25: elegir Solicitante desde el DOM muestra la Sede
+    del alta, filtra y envía números` (selecciona la opción real y dispara `change`; comprueba
+    Sede visible sin `required`, filtro por sede y tipos numéricos en el payload). Se verificó
+    en rojo contra `[value]` (**2 failed / 63 success**) y en verde con el fix. `ng test`
+    **65 SUCCESS** en el spec y **671 SUCCESS / 0 failed** en la suite completa del momento;
+    `npx ng build` limpio (inicial **339.98 kB**, `main-IRJLFDU6.js`, 34.4 s); `pytest`
+    **2163 passed / 127 skipped / 0 failed** sin tocar backend.
+
+- [x] **E12-A5 — Frontend: edición por rol y legacy.**
+  - **Archivos:** `frontend/src/app/features/administracion/usuarios.component.ts|html`;
+    `frontend/src/app/features/administracion/usuarios.component.spec.ts` (casos de edición).
+  - **Sub-pasos:** `sede_id` en `formularioEdicion`; señal del rol de edición; Bodeguero con
+    Departamento deshabilitado y Sede obligatoria; Solicitante con Sede-filtro y Departamento
+    filtrado; `hayCambiosEdicion` que detecta el legacy «Biblioteca»→«Suministros» y exige
+    motivo; guardar en orden `PUT /usuarios` → `PUT .../sede`; éxito parcial; refrescar el
+    catálogo para mostrar «Suministros»; tenant con solo «Suministros».
+  - **AC:** AC-27, AC-28, AC-29, AC-31.
+  - **Hecho cuando:** `ng test`/`ng build` verdes; los specs de edición legacy, cambio de rol,
+    motivo, éxito parcial y tenant con solo «Suministros» pasan.
+  - **Comandos:** `cd frontend; $env:CHROME_BIN=...; npx ng test --watch=false
+    --browsers=ChromeHeadless; npx ng build`.
+  - **Evidencia esperada:** casos de edición por rol y recuperación de sede.
+  - **Entregado (27/Nov/2026):** edición por rol y legacy.
+    **Formulario:** `formularioEdicion` suma `sede_id`; `rolEdicion` alimenta
+    `edicionEsBodeguero`, `edicionEsSolicitante`, `edicionMuestraSede`,
+    `departamentosEdicion` (sin «Suministros», filtrado por sede para el Solicitante) y
+    `edicionBodegueroSinSedes`; `iniciarEdicion` deshabilita el Departamento del Bodeguero
+    (con «Suministros (asignación automática)»), exige Sede sin «Sin asignar» y, para el
+    Solicitante, inicializa el filtro con la sede de su departamento.
+    **Legacy y motivo:** `hayCambiosEdicion` compara el rol destino y, si es Bodeguero,
+    resuelve el departamento persistido normalizado (`trim/lower`): un legacy «Biblioteca»
+    es cambio efectivo (exige motivo) y uno ya en «Suministros» sin más cambios no lo es;
+    el cambio de nombre y los cambios de rol son efectivos. El motivo se exige antes de
+    enviar y el backend sigue siendo la frontera.
+    **Guardado:** payload de `PUT /usuarios/{id}` omite `departamento_id` para Bodeguero y
+    nunca lleva `sede_id`; tras el 200 se llama a `PUT .../sede` en ese orden (idempotente si
+    la sede no cambió); si el primero falla no se llama al segundo; si falla la sede, los
+    cambios quedan guardados y el mensaje es de éxito parcial («se guardaron, pero la sede
+    no se actualizó») con `role="alert"`. El Solicitante solo persiste `departamento_id` y
+    no llama al PUT de sede; el paso desde Bodeguero no toca `usuario.sede_id`. Si el tenant
+    no tiene sedes o solo tiene «Suministros», el guardado se bloquea y el formulario lo
+    indica. Tras guardar se refresca el catálogo y el listado (4 GET) conservando el mensaje
+    de éxito, de modo que el usuario muestra «Suministros» aunque la fila naciera en el PUT.
+    **Pruebas:** 10 casos nuevos en `usuarios.component.spec.ts` (legacy con/sin motivo,
+    nombre en Bodeguero, filtro/sincronización y payload del Solicitante, cambios a/desde
+    Bodeguero, tenant con solo «Suministros», tenant sin sedes, éxito parcial, orden y fallo
+    del primer PUT, Administrador sin Sede) y 2 casos existentes ajustados (el PUT de
+    edición ahora consume la recarga y el caso «sin cambios» pasó a un Bodeguero ya en
+    «Suministros»). **Resultados:** `ng test` **664 SUCCESS / 0 failed** (654 + 10);
+    `npx ng build` limpio (inicial **339.96 kB**, `main-QH2MR6KT.js`, 27.1 s); `pytest`
+    **2158 passed / 127 skipped / 0 failed** sin tocar backend. Sin cambios de DDL, semilla,
+    contratos, spec/plan ni documentación de cierre (A6/C3 pendientes).
+    **Desviaciones no cubiertas por el plan:** «Suministros» se excluye también del combo de
+    edición de Administrador/Superadmin (D-12 lo rechaza con 422; antes se ofrecía); al
+    cambiar desde Bodeguero el filtro vuelve a «Todas las sedes» hasta elegir un departamento
+    válido; la transición desde Bodeguero a otro rol distinto de Solicitante no se filtra en
+    la UI más allá de `rolesEdicion` (la vista institucional es solo del Administrador, cuyo
+    combo ya ofrece Bodeguero/Solicitante) y el 403 del backend sigue siendo la frontera.
+  - **Corrección post-recorrido (27/Nov/2026):** el `<select>` de rol de la edición sufría el
+    mismo defecto que el del alta (`[value]="rol.rol_id"` entregaba un string): al elegir
+    Solicitante, `edicionEsSolicitante()` no resolvía y la **Sede de edición desaparecía**;
+    además `hayCambiosEdicion` y las comparaciones de sede/departamento podían desalinearse.
+    **Fix:** `[ngValue]` en el select de rol de la edición y normalización con `Number(...)`
+    en `nombreRol`, `nombreDepartamento`, `nombreSede`, `esDepartamentoSuministrosId`, los
+    filtros de `departamentosEdicion`, las comparaciones de `hayCambiosEdicion`, la
+    sincronización/limpieza y el payload (`rol_id`, `departamento_id` y la sede del
+    `PUT .../sede`); sin cambios de lógica. **Prueba de regresión DOM:**
+    `AC-29: elegir Solicitante desde el DOM mantiene la Sede de edición, filtra y envía
+    números` (opción real + `change`; Sede visible y habilitada como filtro, departamentos
+    filtrados y payload numérico sin tocar el PUT de sede). Se verificó en rojo contra
+    `[value]` (**2 failed / 63 success**) y en verde con el fix. `ng test` **65 SUCCESS** en el
+    spec y **671 SUCCESS / 0 failed** en la suite completa; `npx ng build` limpio (inicial
+    **339.98 kB**, `main-IRJLFDU6.js`, 34.4 s); `pytest` **2163 passed / 127 skipped / 0
+    failed** sin tocar backend.
+
+- [x] **E12-A6 — Frontend: regresión cruzada, accesibilidad y bordes.**
+  - **Archivos:** `frontend/src/app/features/administracion/usuarios.component.spec.ts`;
+    `frontend/src/app/features/administracion/administracion-nav.component.spec.ts` solo
+    si la regresión de 3 pestañas lo requiere; sin cambios de contrato.
+  - **Sub-pasos:** matriz de roles alta/edición; labels/`aria-describedby`/estado disabled;
+    tenant sin sedes; tenant con solo «Suministros»; Bodeguero sin departamento; no-Bodeguero
+    con «Suministros»; último Administrador; `ng test` completo.
+  - **AC:** AC-24, AC-27, AC-29, AC-31, AC-38.
+  - **Hecho cuando:** suite frontend completa verde y build limpio; no se duplican casos ya
+    cubiertos en A4/A5.
+  - **Comandos:** `cd frontend; $env:CHROME_BIN=...; npx ng test --watch=false
+    --browsers=ChromeHeadless; npx ng build`.
+  - **Evidencia esperada:** specs de borde/accesibilidad y suite completa.
+  - **Entregado (27/Nov/2026):** regresión cruzada, accesibilidad y bordes del frontend.
+    **Archivos:** `usuarios.component.ts|html|spec.ts` y `administracion.routes.spec.ts`
+    (el borde del wildcard pertenece al contrato de rutas; `administracion-nav.component.ts|spec.ts`
+    no requirió cambios y se ejecutó completo). **Defectos reales corregidos:** (1) el aviso
+    «No hay departamentos disponibles» del alta no se anunciaba y ahora lleva `role="alert"`
+    (la edición ya lo tenía); (2) un rol distinto de Bodeguero con «Suministros» en el control
+    (valor heredado o programático; el combo ya lo excluye) podía enviarse y el backend lo
+    rechazaba con 422: se añaden `creacionSeleccionaSuministros`/`edicionSeleccionaSuministros`,
+    aviso inline `role="alert"`, botón deshabilitado y guardas en `guardarCreacion`/
+    `guardarEdicion` que no emiten petición (D-12/AC-24/AC-29). **Casos nuevos (8, sin duplicar
+    A4/A5):** a11y del alta (labels `for` asociados, `aria-describedby` del Departamento
+    automático, `disabled` con foco visible `focus-visible`, ids únicos y `tabindex` no
+    negativo); a11y del aviso de tenant sin sedes en alta y en edición (`role="alert"` +
+    descripción de Sede); a11y de la edición del Bodeguero; tenant con solo «Suministros» en
+    alta no-Bodeguera (se indica y no se envía); «Suministros» heredado en alta y en edición
+    no-Bodeguera (bloqueado y avisado); Administrador→Bodeguero en edición (Sede obligatoria y
+    Departamento deshabilitado) junto al **409 del último Administrador activo** sin llamada a
+    `PUT .../sede`; y una URL hija no publicada (el contrato exacto de tres vistas prueba que
+    `/administracion/encargados` no existe) → wildcard `/dashboard` sin montar la vista.
+    **Resultados:** `ng test` **672 SUCCESS / 0 FAILED** (664 base + 8; 63 casos del spec de
+    usuarios y 4 del de rutas); `npx ng build` limpio (inicial **339.98 kB**, `main-SDNVCA3X.js`);
+    `pytest` SQLite **2158 passed / 127 skipped / 0 failed** sin tocar backend. **Desviación no
+    cubierta por el plan:** el borde del wildcard se verificó en `administracion.routes.spec.ts`
+    (árbol real de administración + wildcard vigente + dashboard de reemplazo) con una URL hija
+    no publicada, en lugar del spec de la barra y sin reescribir el literal retirado: el contrato
+    exacto de tres vistas ya prueba que `/administracion/encargados` no tiene ruta y así
+    `frontend/src` sigue sin referencias que AC-39 prohíbe. No se tocaron DDL, semilla,
+    contratos, A4/A5 ni C. Los cambios visuales (aviso inline y botón deshabilitado) quedan para
+    el recorrido de C2 en 4200 y el humo de C3 en 8080.
+
+### Cierre
+
+- [x] **E12-C1 — Suites completas, build, OpenAPI y grep de coherencia.**
+  - **Archivos:** solo correcciones si una suite roja demuestra un defecto; evidencia en
+    `docs/spec/features/012-gestion-administrativa/spec.md` y
+    `docs/spec/features/012-gestion-administrativa/evidencia/README.md` al observar.
+  - **Sub-pasos:** `pytest` SQLite; gated PostgreSQL; `ng test`; `ng build`; `/openapi.json`
+    (74 = 72 v1 + `GET /` + `/health`, matriz 72); regresión de la 017
+    (`test_gobierno_identidades_017.py`, `test_provisionamiento_identidades_017.py`,
+    `test_frontera_clerk_017.py`, `test_gobierno_administradores_017.py`,
+    `test_gobierno_correcciones_017.py`, `test_aceptacion_invitacion_017.py`); `grep -r` de
+    `DepartamentoEncargado`, `departamento_encargado`, `/encargados` y «encargado» en
+    `backend/tests`, `frontend/src` y `database/`, revisando los falsos positivos de
+    «Bodeguero / Encargado de Suministros».
+  - **AC:** AC-31, AC-39, AC-41.
+  - **Hecho cuando:** todas las suites verdes, build limpio, OpenAPI/matriz 72/74 y el grep no
+    deja referencias vigentes.
+  - **Evidencia esperada:** conteos de suites, build, OpenAPI y grep.
+  - **Entregado (27/Nov/2026):** suites completas, build, contrato y grep verdes; sin cambios de
+    código ni de spec/plan. **Backend SQLite:** `.venv\Scripts\python.exe -m pytest -q`
+    **2158 passed / 127 skipped / 0 failed** (374 s). **Gated PostgreSQL:**
+    `$env:POSTGRES_TEST_URL="postgresql://postgres:postgres@localhost:5433/postgres"` → **2282
+    passed / 3 skipped / 0 failed** (2143 s; los 3 skipped son los gated de Redis sin
+    `REDIS_TEST_URL`). **Frontend:** `$env:CHROME_BIN=…msedge.exe; npx ng test --watch=false
+    --browsers=ChromeHeadless` → **672 SUCCESS / 0 FAILED** (Edge 158, 21.6 s) y `npx ng build`
+    **limpio** (`main-SDNVCA3X.js`, inicial **339.98 kB**, 52.8 s). **OpenAPI:** `/openapi.json`
+    en vivo (backend 8000) **200** con **74** operaciones = **72 v1 + `GET /` + `/health`**;
+    matriz **72**; las 3 rutas de encargados no se publican y responden **404** (sondeo
+    GET/POST/DELETE `/organizacion/departamentos/1/encargados[/1]`); `UsuarioCrear.departamento_id`
+    opcional (`anyOf int|null`, fuera de `required`) y `UsuarioRespuesta` lo exige; 422 por
+    rol/«Suministros» documentados en `POST /usuarios/` y `PUT /usuarios/{id}`; `PUT
+    /organizacion/usuarios/{id}/sede` documenta **409**; `gestion_organizacional` mapea **18**
+    operaciones de sedes/departamentos/usuarios (solo `/auth/me` y `/control/*` quedan sin
+    capacidad). **Conteos/versión (`apt_erp`, sin reset nuevo):** `control` **25** tablas, **4**
+    tenants con **22** cada uno, `to_regclass('control.departamento_encargado')` nulo, 0 relaciones
+    con ese nombre y `version_esquema = 026.1` en control y en los cuatro tenants; **21** entidades
+    de dominio (21 clases en el metadata tenant; las auxiliares de `control` no cuentan).
+    **Regresión AC-41:** las seis suites de la 017 verdes (**99 passed** en ejecución dirigida) y
+    tickets/stock/compras/dashboard/autenticación incluidos en las suites completas.
+    **Grep:** 0 coincidencias de `DepartamentoEncargado`, `departamento_encargado` ni `/encargados`
+    en `backend/tests`, `frontend/src` y `database/`; las únicas menciones de «encargado» son
+    ratchets de ausencia ya justificados (`test_contrato_usuarios_suministros_012.py::
+    test_openapi_y_matriz_no_publican_las_rutas_de_encargados`,
+    `test_edicion_suministros_012.py::test_edicion_de_usuario_no_bloquea_por_encargado`, el fixture
+    `Sin.Encargado` y el docstring «no consulta encargados» de `organizacion_service.py`), no
+    referencias vigentes; «Bodeguero / Encargado de Suministros» no aparece en esas rutas.
+    **Desviación de entorno (no de código):** la primera corrida gated se interrumpió con el disco
+    `C:` al 100 % y Docker Desktop atascado; se liberó caché regenerable
+    (`frontend/.angular/cache`, 2.4 GB), se reinició Docker Desktop y se repitió la suite completa.
+    **Reporte para C3 (no editado):** `AGENTS.md` §4/§7 (26/23/`026.0`, «21 + auxiliar»),
+    `MEMORY.md`, `database/README.md`, `docs/spec/stack.md` (árbol con `encargados.component.ts` y
+    menciones históricas), skills `sdd-workflow`/`fastapi-pydantic-v2` («22 + auxiliar»), diagramas
+    (casos de uso, clases y flujo 03) e informes (`_generar_informe.py`,
+    `_generar_planilla_pruebas.py`, `_datos/frontend-specs.json`,
+    `_datos/backend-coleccion-027.txt`) todavía citan encargados o cifras viejas;
+    `frontend/src/testing/funcional/README.md` declara 42 specs/559 casos (hoy 44/672).
+
+- [x] **E12-C2 — Reset limpio, gated y recorrido funcional en 4200.**
+  - **Archivos:** `docs/spec/features/012-gestion-administrativa/evidencia/README.md`
+    (capturas/notas) al observar; sin código nuevo.
+  - **Sub-pasos:** `down -v` + `up -d`; 25/22/`026.1`, sin `departamento_encargado`; 4200 con
+    alta de Bodeguero (Sede obligatoria, «Suministros»), alta de Solicitante (filtro/
+    sincronización), edición del Bodeguero legacy con motivo, cambio de rol a/desde Bodeguero,
+    tenant sin sedes, tenant con solo «Suministros», éxito parcial de sede, 3 pestañas y
+    `/administracion/encargados` → `/dashboard`.
+  - **AC:** AC-20…AC-30, AC-33, AC-34, AC-38.
+  - **Hecho cuando:** el recorrido 4200 escribe contra PostgreSQL real y cada caso deja el
+    estado esperado; el reset es limpio.
+  - **Evidencia esperada:** capturas, consultas SQL y resultados del recorrido.
+  - **Entregado (27/Nov/2026):** reset limpio (`down -v` + `up -d` sobre volumen recreado) con
+    `control` **25** tablas, **4** tenants con **22**, sin `departamento_encargado` y
+    `version_esquema = 026.1` en control y en los cuatro tenants; `/health` **200** y dev server
+    en 4200. **Recorrido 4200** con sesión Administrador `crise.gonzalez@duocuc.cl` (sign-in
+    token efímero; la secret key no se expuso) y **sin capturas PNG nuevas**: la evidencia es
+    textual y SQL en `evidencia/README.md`. (1) **Alta Bodeguero** `Bodeguero E12 QA`
+    (`bodeguero.e12+clerk_test@example.com`): Departamento deshabilitado «Suministros
+    (asignación automática)», Sede obligatoria sin «Sin asignar», `POST /api/v1/usuarios/`
+    **201** y PUT de sede; fila **Bodeguero · Suministros · Sede Maipu**, invitación
+    **Pendiente**; tenant a **14** usuarios. (2) **Alta Solicitante** `Solicitante E12 QA`
+    (`solicitante.e12+clerk_test@example.com`): Sede (filtro) limitó el Departamento a
+    Secretaría/RRHH/Biblioteca, se eligió Biblioteca y `POST` **201**; fila **Solicitante ·
+    Biblioteca**, sin sede persistida; **15** usuarios. (3) **Edición del Bodeguero legacy**
+    `Andres Vargas` (usuario 6): Departamento bloqueado en Suministros, Sede obligatoria y
+    motivo exigido, guardado con «Reasignación organizacional»; `PUT /api/v1/usuarios/6`
+    **200** y `PUT /organizacion/usuarios/6/sede` **200**, mensaje «Usuario «Andres Vargas»
+    actualizado y sede asignada». (4) **3 pestañas** Sedes/Departamentos/Usuarios con
+    `role=tab`, `aria-selected` y `tabpanel` con `aria-labelledby`; `/administracion/encargados`
+    cayó en el wildcard **`/dashboard`**; la pestaña Departamentos mostró **Suministros** («Sin
+    sede asignada») y el **KPI de departamentos 7 → 8**. **SQL real
+    (`tenant_inst_001_038aa2a9`):** `usuario` **15**, `departamento` **8**; Bodeguero (id 17)
+    `rol=3 Bodeguero`, `departamento_id=8 Suministros`, `sede_id=2 Sede Maipu`; Solicitante
+    (id 18) `rol=4 Solicitante`, `departamento_id=6 Biblioteca`, `sede_id=NULL`; Andres Vargas
+    (id 6) `rol=3`, `departamento_id=8`, `sede_id=2`; departamento Suministros (id 8) con
+    `sede_id=NULL` y `activo=true`. **Corrección post-recorrido:** los `<select>` de
+    rol/departamento pasaron de `[value]` a `[ngValue]` (ids normalizados y tests DOM):
+    `ng test` **671 SUCCESS / 0 FAILED** y `pytest` SQLite **2163 passed / 127 skipped /
+    0 failed**. Los casos de cambio de rol, tenant sin sedes, tenant con solo «Suministros» y
+    éxito parcial de sede ya estaban cubiertos por las suites de A1–A6 (C1) y/o el recorrido
+    previo de la enmienda; el humo visual de 8080 queda para C3.
+
+- [x] **E12-C3 — 8080 reconstruido, documentación, evidencias y cierre.**
+  - **Archivos:** `database/README.md`, `AGENTS.md` §4/§7, `MEMORY.md`, `.agents/skills/*`,
+    `docs/diagramas/`, `Informe_Flujos_Actores.docx`, `docs/spec/roadmap.md`,
+    `docs/spec/features/012-gestion-administrativa/evidencia/README.md` y la evidencia de
+    AC-20…AC-41; no tocar código salvo un defecto observado.
+  - **Sub-pasos:** `docker compose -f docker-compose.yml build frontend` + `up -d frontend`;
+    humo de 3 pestañas, deep links y flujo básico; actualizar conteos 25/22/`026.1`, 21
+    entidades, 72/74 y la lista de features; marcar capturas históricas de encargados;
+    regenerar informe/diagramas si citan la figura; completar la evidencia por AC; grep
+    `AGENTS.md`/`MEMORY.md`/skills; no reabrir el cierre de la 012.
+  - **AC:** AC-40, AC-41.
+  - **Hecho cuando:** 8080 sirve el build nuevo, el humo responde, la documentación no repite
+    encargados/4 pestañas y cada AC-20…AC-41 tiene evidencia observada.
+  - **Comandos:** `docker compose -f docker-compose.yml build frontend`; `up -d frontend`.
+  - **Evidencia esperada:** bundle/hash de 8080, capturas de las 3 pestañas, grep de
+    coherencia y evidencia por AC.
+  - **Entregado (27/Nov/2026):** **8080 reconstruido y verificado**, documentación y evidencias
+    de cierre. **8080:** `docker compose -f docker-compose.yml build frontend` (capas `CACHED`:
+    el código no cambió desde el build de la corrección `[ngValue]`) + `up -d --force-recreate
+    frontend` (contenedor recreado, `healthy`); nginx sirve **`main-IRJLFDU6.js`**, el mismo hash
+    que produce el `npx ng build` actual (limpio). Humo con sesión **Administrador**
+    (`crise.gonzalez@duocuc.cl`, INST-001): `/administracion` → `sedes` con **3 pestañas** y
+    `tabpanel`/`aria-labelledby` por ruta; **15 usuario(s)**; `Bodeguero E12 QA` y `Andres Vargas`
+    en **Bodeguero · Suministros · Sede Maipu**; `Solicitante E12 QA` en **Solicitante ·
+    Biblioteca** sin sede; departamento **Suministros** activo con su descripción y «Sin sede
+    asignada»; alta con Departamento deshabilitado «Suministros (asignación automática)» + Sede
+    obligatoria sin «Sin asignar»; cambio a Solicitante **desde el DOM** (Sede-filtro +
+    Departamento; Maipú → Secretaría/RRHH/Biblioteca); `/administracion/encargados` → wildcard
+    **`/dashboard`**; dashboard con Departamentos **8**; deep links HTTP **200**. **Sin PNG
+    nuevos:** la evidencia es textual/DOM/SQL y las capturas `01`–`28` quedan marcadas históricas.
+    **Documentación:** `AGENTS.md` §4/§7 (25/22, `026.1`, 21 entidades sin auxiliar, 3 vistas de
+    administración), `MEMORY.md` reescrito (31 líneas), `database/README.md`, `docs/spec/stack.md`
+    (nota de vigencia implementada, árbol sin `encargados.component.ts`, enmienda y estado),
+    `docs/spec/roadmap.md` (enmienda `[x]`, filas 011/012 actualizadas, «Siguiente feature»
+    015/016), `.agents/skills/{sdd-workflow,fastapi-pydantic-v2}`, `frontend/src/testing/funcional/README.md`
+    (**44 specs / 671 casos**, índice completo con `rut`, `validacion-http` y `ticket.service`:
+    la comprobación imprime **0** fuera) y `evidencia/README.md` (secciones C2 y **8080**).
+    **Diagramas:** `_generar.py` de `flujos-actores` (paso «Asignar encargados» → «Asignar sede
+    del Bodeguero», subtítulo sin encargados), HTML+PNG del flujo `03` (2400×1120), casos de uso
+    del Administrador (`A3` retirado, `A1…A5`, **20** casos) y vista general (**25 casos**,
+    «Asignar encargados» fuera), clases de organización y catálogo (**5 clases**, sin
+    `DepartamentoEncargado`, «21 ENTIDADES · ESTA VISTA: 9»); PNG regenerados a 2x con Edge
+    headless y los cuatro HTML pasan `self_check.py` (flujos 12/12). **Informe:**
+    `_generar_informe.py` sin encargados y `Informe_Flujos_Actores.docx` regenerado (58 tablas, 12
+    imágenes, 334 párrafos; 0 menciones de «encargado» en el texto). **Spec:** AC-20…AC-41 con
+    evidencia real y `[x]`; estado de la enmienda → **cerrada y verificada (27/Nov/2026)**;
+    §10.5/§10.7 y notas históricas sincronizadas. **Suites re-verificadas en C3:** `pytest` SQLite
+    **2163 passed / 127 skipped / 0 failed**; **gated PostgreSQL 2287 passed / 3 skipped / 0
+    failed** (la primera corrida gated falló 3 pruebas de concurrencia de
+    `test_correcciones_postgres_017.py` porque el contenedor `db` se reinició a mitad; pasan en
+    aislamiento y la repetición completa terminó verde); `ng test` **671 SUCCESS / 0 failed**;
+    `ng build` limpio (`main-IRJLFDU6.js`); `/openapi.json` **74** (72 v1 + 2 técnicas) y matriz
+    **72**; `control` **25** / tenants **22** con `version_esquema = 026.1` y sin
+    `departamento_encargado`.
+    **Pendiente reportado (no falseado):** `Planilla_Pruebas_Compustock.xlsx` y sus snapshots
+    `_datos/backend-coleccion-027.txt` / `_datos/frontend-specs.json` siguen siendo la **línea base
+    del cierre 027** y por eso conservan la vista y los casos de `encargados`; el generador quedó
+    documentado como artefacto histórico y con el procedimiento de re-baseline, pero no se regeneró
+    (exige recalcular conteos por tipo y la narrativa fechada). **Siguiente acción:** re-baselinar
+    la planilla cuando se actualice el informe de pruebas.
+  - **Corrección post-validación (27/Nov/2026):** el reviewer emitió `CAMBIOS NECESARIOS` solo por
+    documentación/evidencia. **AC-32:** se recorrió en 4200 el **cambio de rol en ambos sentidos**
+    sobre `Ricardo Nilo` (id 16) —Solicitante → Bodeguero con Sede Maipu, «Reasignación
+    organizacional», `PUT /usuarios/16` **200** + `PUT .../sede` **200** y fila Bodeguero ·
+    Suministros · Sede Maipu; y Bodeguero → Solicitante con Biblioteca, «Cambio de funciones»,
+    `PUT /usuarios/16` **200** sin PUT de sede y fila Solicitante · Biblioteca— y el SQL final
+    (13 usuarios, 8 departamentos, `Suministros` activo con `sede_id NULL` y 0 usuarios,
+    `usuario.sede_id = 2` residual). Se añadió a `spec.md` (AC-28/AC-29/AC-32) y a
+    `evidencia/README.md` §«Corrección post-validación — cambio de rol manual». **AC-40:**
+    corregidas las contradicciones —estado del segundo bloque (`spec.md`), nota de la 026,
+    `stack.md` sin «queda pendiente», `MEMORY.md` (Features 015/016 pendientes y recorridos
+    15/Suministros/KPI 8 como históricos, con la base viva 13/8), frase de `tasks.md` sobre no
+    marcar casillas, y evidencia de AC-39 sobre el grep de `database/` (0 en SQL, 1 mención
+    histórica en el README)—. No se tocó código, tests, DDL, la enmienda 013 ni la planilla. C3
+    sigue `[x]`; la enmienda permanece **cerrada y verificada (27/Nov/2026)**.
+
+### Matriz de trazabilidad AC ↔ tareas (enmienda)
+
+| AC | Tareas |
+|---|---|
+| AC-20 | E12-A1, E12-A3, E12-C2 |
+| AC-21 | E12-A1, E12-A3, E12-C2 |
+| AC-22 | E12-A3 |
+| AC-23 | E12-A1, E12-A3 |
+| AC-24 | E12-A1, E12-A4, E12-A6 |
+| AC-25 | E12-A1, E12-A4, E12-C2 |
+| AC-26 | E12-A1, E12-A4 |
+| AC-27 | E12-A2, E12-A5, E12-A6 |
+| AC-28 | E12-A2, E12-A5 |
+| AC-29 | E12-A2, E12-A5, E12-A6 |
+| AC-30 | E12-A1, E12-A2, E12-A3 |
+| AC-31 | E12-A1, E12-A2, E12-A3, E12-A4, E12-A5, E12-A6, E12-C1 |
+| AC-33 | E12-B1, E12-C2 |
+| AC-34 | E12-B1, E12-C2 |
+| AC-35 | E12-B1, E12-A3, E12-C1 |
+| AC-36 | E12-B1, E12-C1 |
+| AC-37 | E12-B1 |
+| AC-38 | E12-B2, E12-A6, E12-C2 |
+| AC-39 | E12-B1, E12-B2, E12-C1 |
+| AC-40 | E12-C1, E12-C2, E12-C3 |
+| AC-41 | E12-A3, E12-C1, E12-C2, E12-C3 |

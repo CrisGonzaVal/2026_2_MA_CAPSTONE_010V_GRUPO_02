@@ -166,11 +166,11 @@ def test_registro_es_solo_de_control_y_no_viaja_a_la_metadata_tenant():
     nombres = {tabla.name for tabla in tablas_metadata_tenant()}
     assert "registro_motivo_constancia" not in nombres
     assert "mapa_usuario_esquema" not in nombres
-    # Feature 026: el tenant replica 23 tablas: las 21 entidades de dominio
-    # (las 24 previas menos `inventario`), la auxiliar `departamento_encargado`
-    # y `version_esquema`. La Feature 021 habia sumado `orden_compra_ticket`
-    # (22.ª entidad) sobre las 23 anteriores.
-    assert len(nombres) == 23, sorted(nombres)
+    # Enmienda 27/Nov/2026 de la 012: el tenant replica 22 tablas: las 21
+    # entidades de dominio (las 24 previas menos `inventario`) y `version_esquema`.
+    # La Feature 021 habia sumado `orden_compra_ticket` (22.ª entidad) sobre las
+    # 23 anteriores.
+    assert len(nombres) == 22, sorted(nombres)
 
 
 def test_registro_persiste_una_constancia_de_compensacion(sesion):

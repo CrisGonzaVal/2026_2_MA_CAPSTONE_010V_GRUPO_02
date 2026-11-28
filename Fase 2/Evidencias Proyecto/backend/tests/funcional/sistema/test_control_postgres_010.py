@@ -61,9 +61,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 #: Tablas del DDL canonical que todo tenant reproduce. La Feature 011 agrego
-#: `sede`, `stock_sede` y `departamento_encargado`; la 026 retiro `inventario`.
-#: `departamento` referencia `sede`, asi que la copia por esquema debe incluirla
-#: o la FK no resuelve.
+#: `sede` y `stock_sede`; la 026 retiro `inventario` y la enmienda 27/Nov/2026 de
+#: la 012 retiro la tabla puente auxiliar. `departamento` referencia `sede`, asi
+#: que la copia por esquema debe incluirla o la FK no resuelve.
 TABLAS_DOMINIO = (
     "institucion",
     "departamento",
@@ -78,7 +78,6 @@ TABLAS_DOMINIO = (
     "detalle_ticket",
     "sede",
     "stock_sede",
-    "departamento_encargado",
 )
 
 #: Las seis FK locales hacia `institucion` que el DDL canonical declara (stack §2).

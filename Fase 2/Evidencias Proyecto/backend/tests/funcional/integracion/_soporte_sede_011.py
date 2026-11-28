@@ -2,10 +2,10 @@
 
 Los modulos de T2 comparten cuatro necesidades:
 
-1. **Leer un modelo que todavia no existe.** T3 crea `Sede`, `StockSede` y
-   `DepartamentoEncargado`; hasta entonces `modelo()` falla con `pytest.fail` y un
-   mensaje que nombra la tarea. La fase roja debe fallar por la capacidad ausente,
-   nunca por `ImportError` ni por sintaxis.
+1. **Leer un modelo que todavia no existe.** T3 crea `Sede` y `StockSede`; hasta
+   entonces `modelo()` falla con `pytest.fail` y un mensaje que nombra la tarea.
+   La fase roja debe fallar por la capacidad ausente, nunca por `ImportError` ni
+   por sintaxis.
 2. **Comprobar que la operacion ya esta publicada.** Una prueba que espera un
    `404` pasaria espuriamente si la ruta no existe todavia, asi que `exigir_ruta`
    y `exigir_operacion` fallan explicitamente mientras la Feature 011 no cablee la
@@ -50,21 +50,14 @@ RUTA_SEDE_DE_DEPARTAMENTO = (
 )
 #: Asignacion de sede a un Bodeguero (Administrador institucional).
 RUTA_SEDE_DE_USUARIO = "/api/v1/organizacion/usuarios/{usuario_id}/sede"
-#: Asociacion y listado de encargados de departamento (Administrador institucional).
-RUTA_ENCARGADOS = "/api/v1/organizacion/departamentos/{departamento_id}/encargados"
-RUTA_ENCARGADO = (
-    "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}"
-)
 
 #: Operaciones que la Feature 011 aporta a la matriz central: solo Administrador
-#: institucional (spec D-4/D-5; Superadmin no escribe en tenants).
+#: institucional (spec D-4/D-5; Superadmin no escribe en tenants). La enmienda
+#: 27/Nov/2026 de la 012 retira las tres operaciones de la tabla puente auxiliar.
 OPERACIONES_ORGANIZACION: tuple[tuple[str, str], ...] = (
     ("GET", RUTA_SEDES),
     ("PUT", RUTA_SEDE_DE_DEPARTAMENTO),
     ("PUT", RUTA_SEDE_DE_USUARIO),
-    ("GET", RUTA_ENCARGADOS),
-    ("POST", RUTA_ENCARGADOS),
-    ("DELETE", RUTA_ENCARGADO),
 )
 ROLES_ORGANIZACION: frozenset[str] = frozenset({"Administrador"})
 
@@ -385,20 +378,6 @@ def asegurar_sede_de_departamento(
     }
     return {"sede_id": sede_id, "stock_sede_ids": stock_sede_ids}
 
-
-
-def asociar_encargado_en_bd(motor, departamento_id: int, usuario_id: int) -> None:
-    """Inserta la asociacion departamento-encargado directamente en la tabla puente."""
-    DepartamentoEncargado = modelo("DepartamentoEncargado")
-    fila = DepartamentoEncargado(
-        **_valores_validos(
-            DepartamentoEncargado,
-            {"departamento_id": departamento_id, "usuario_id": usuario_id},
-        )
-    )
-    with sesion(motor) as db:
-        db.add(fila)
-        db.commit()
 
 
 def instalar_catalogo_estados(motor, nombres) -> dict[str, int]:

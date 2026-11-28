@@ -8,6 +8,16 @@ Fuente de estado: evidencia consolidada del cierre 027 (24/Nov/2026).
 No ejecuta la suite: enumera los casos con `pytest --collect-only` y usa los
 conteos documentados en `docs/spec/features/027-validacion-entradas/evidencia/README.md`.
 
+> **Artefacto histórico.** El `Planilla_Pruebas_Compustock.xlsx` versionado y los
+> snapshots `_datos/backend-coleccion-027.txt` y `_datos/frontend-specs.json` son la
+> **línea base del cierre 027** y, por tanto, todavía incluyen la vista y los casos de
+> `encargados`, retirados por la enmienda de la Feature 012 (27/Nov/2026). No se
+> regeneraron en el cierre de esa enmienda: re-baselinar exige
+> `pytest --collect-only -q` y `node docs/informes/_datos/extraer_specs.js` sobre el
+> árbol actual, actualizar `TOTAL_BACKEND`/`TOTAL_FRONTEND`/`BACKEND_*_OK` y `FECHA`, y
+> recortar `PESTANAS` a 3 entradas. Hasta entonces, la planilla **no** describe el
+> estado vigente del frontend.
+
 Salida:
     docs/informes/Planilla_Pruebas_Compustock.xlsx
 """
@@ -258,6 +268,7 @@ DETALLES_FRONTEND = {
     "login.component": "Login Clerk",
     "administracion-nav.component": "Navegación ARIA",
     "departamentos.component": "Departamentos",
+    # Histórico (línea base 027): el spec y la vista se retiraron en la enmienda de la 012.
     "encargados.component": "Encargados",
     "sedes.component": "Sedes",
     "usuarios.component": "Usuarios",
@@ -302,6 +313,8 @@ DOMINIOS_FRONTEND = {
 }
 
 # Pestañas de administración usadas por los 4 casos dinámicos de ARIA.
+# Histórico (línea base 027): la enmienda de la 012 retiró /administracion/encargados y
+# dejó 3 pestañas; recortar esta lista al re-baselinar la planilla (ver docstring).
 PESTANAS = [
     {"href": "/administracion/sedes", "etiqueta": "Sedes"},
     {"href": "/administracion/departamentos", "etiqueta": "Departamentos"},
@@ -649,7 +662,7 @@ def evaluar_critica(
             "autorización/autenticación",
         ),
         (["aislamiento", "tenant", "multitenant", "particionamiento"], "aislamiento multi-tenant"),
-        (["despacho", "transacc"], "transacción/despacho"),
+        (["despacho", "transacc"], "transacción/retiro"),
         (["limite_tasa", "rate_limit", "failopen"], "límite de tasa"),
         (
             ["validacion", "errores", "esquemas_027", "rut", "semilla", "configuracion_base_datos"],
@@ -1613,7 +1626,7 @@ def hoja_leyenda(wb: Workbook) -> None:
         (
             "6. Criticidad",
             "Sí cuando el caso cubre seguridad, autenticación, autorización, aislamiento "
-            "multi-tenant, transacciones/despacho, esquema o salud de BD, límite de tasa, "
+            "multi-tenant, transacciones/retiro, esquema o salud de BD, límite de tasa, "
             "validación de contrato, gobierno de identidades o flujos E2E. No en cambios "
             "de presentación o utilidades sin impacto de seguridad/integridad.",
         ),

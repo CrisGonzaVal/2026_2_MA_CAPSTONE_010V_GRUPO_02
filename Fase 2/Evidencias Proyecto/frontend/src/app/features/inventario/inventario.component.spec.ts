@@ -196,6 +196,72 @@ const INSUMOS_SEDE_NORTE: ProductoExistencia[] = [
   }),
 ];
 
+// --- Enmienda 018 §11: checkbox «Solo con stock» (T14) ---
+
+/**
+ * Catálogo agregado con un producto sin saldo (D-9): los tres de `INSUMOS` más
+ * uno con `stock_total: 0`, `sedes: []` y crítico por la regla vigente
+ * (`0 <= stock_minimo`). Es un fixture **local** para no mutar `INSUMOS`, que
+ * sostiene las pruebas de AC-1…AC-9.
+ */
+const INSUMOS_CON_CERO: ProductoExistencia[] = [
+  ...INSUMOS,
+  crearInsumo({
+    producto_id: 4,
+    nombre: 'Tóner agotado',
+    descripcion: 'Cartucho sin saldo',
+    unidad_medida: 'UNIDAD',
+    stock_minimo: 0,
+    categoria_id: 2,
+    categoria_nombre: 'Toner',
+    stock_total: 0,
+    es_critico: true,
+    sedes: [],
+  }),
+];
+
+/**
+ * Respuesta de la Sede Central donde el producto sin saldo **sí tiene fila** de
+ * stock con valor 0: es el caso que el servidor devuelve con filtro
+ * organizacional y que el checkbox debe ocultar además de los productos sin
+ * fila (D-9).
+ */
+const INSUMOS_SEDE_CENTRAL_CON_CERO: ProductoExistencia[] = [
+  ...INSUMOS_SEDE_CENTRAL,
+  crearInsumo({
+    producto_id: 4,
+    nombre: 'Tóner agotado',
+    descripcion: 'Cartucho sin saldo',
+    unidad_medida: 'UNIDAD',
+    stock_minimo: 0,
+    categoria_id: 2,
+    categoria_nombre: 'Toner',
+    stock_total: 0,
+    es_critico: true,
+    sedes: [crearSede({ sede_id: 1, sede_nombre: 'Sede Central', stock_actual: 0 })],
+  }),
+];
+
+/** Catálogo con todos los productos en cero, para el vacío propio de AC-13. */
+const INSUMOS_TODOS_EN_CERO: ProductoExistencia[] = [
+  crearInsumo({
+    producto_id: 5,
+    nombre: 'Cuaderno agotado',
+    stock_total: 0,
+    es_critico: true,
+    sedes: [],
+  }),
+  crearInsumo({
+    producto_id: 6,
+    nombre: 'Resma agotada',
+    categoria_id: 2,
+    categoria_nombre: 'Toner',
+    stock_total: 0,
+    es_critico: true,
+    sedes: [],
+  }),
+];
+
 /**
  * Listado administrativo (Feature 014, AC-15): ambos estados.
  *
@@ -1459,6 +1525,307 @@ describe('InventarioComponent', () => {
       expect(componente.pestanaActiva()).toBe('existencias');
       expect(panelGestion()).toBeNull();
       httpMock.expectNone(RUTA_GESTION);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Enmienda 018 §11: checkbox «Solo con stock» (T14; AC-10…AC-13)
+  //
+  // El filtro es solo de presentación: parte de la respuesta ya acotada por rol
+  // y filtros organizacionales, no viaja al servidor y no mueve la franja de
+  // indicadores. Las pruebas usan `INSUMOS_CON_CERO` para no mutar `INSUMOS`.
+  // ---------------------------------------------------------------------------
+
+  describe('«Solo con stock» (enmienda 018 §11)', () => {
+    /** Control nativo del contrato D-14. */
+    function checkboxSoloConStock(): HTMLInputElement | null {
+      return (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(
+        '#solo-con-stock',
+      );
+    }
+
+    /** Etiqueta visible asociada por `for`/`id`. */
+    function etiquetaSoloConStock(): HTMLLabelElement | null {
+      return (fixture.nativeElement as HTMLElement).querySelector<HTMLLabelElement>(
+        'label[for="solo-con-stock"]',
+      );
+    }
+
+    /** Conmuta el control como lo haría el usuario (clic nativo). */
+    function alternarSoloConStock(): void {
+      const checkbox = checkboxSoloConStock();
+      expect(checkbox).withContext('checkbox «Solo con stock»').toBeTruthy();
+      checkbox!.click();
+      fixture.detectChanges();
+    }
+
+    /** Botón «Limpiar filtros» de la barra, si está visible. */
+    function botonLimpiarFiltros(): HTMLButtonElement | null {
+      return (
+        Array.from(
+          (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>(
+            'button',
+          ),
+        ).find((candidato) => (candidato.textContent ?? '').trim() === 'Limpiar filtros') ??
+        null
+      );
+    }
+
+    /**
+     * Contadores del panel de categorías: nombre visible → cantidad anunciada
+     * («Todas» incluida). Es lo que el usuario compara con la tabla.
+     */
+    function conteosDelPanel(): Record<string, number> {
+      const nav = (fixture.nativeElement as HTMLElement).querySelector(
+        'nav[aria-label]',
+      ) as HTMLElement | null;
+      expect(nav).withContext('panel de categorías').toBeTruthy();
+      const conteos: Record<string, number> = {};
+      for (const boton of Array.from(nav!.querySelectorAll('button'))) {
+        const spans = Array.from(boton.querySelectorAll('span'));
+        const nombre = (spans[0]?.textContent ?? '').trim();
+        const conteo = Number((spans[1]?.textContent ?? '').replace(/\D/g, ''));
+        conteos[nombre] = conteo;
+      }
+      return conteos;
+    }
+
+    /** Franja de indicadores, para afirmar que no se mueve (D-10). */
+    function franja(): {
+      totalCatalogo: number;
+      totalConStock: number;
+      totalCriticos: number;
+    } {
+      return {
+        totalCatalogo: componente.totalCatalogo(),
+        totalConStock: componente.totalConStock(),
+        totalCriticos: componente.totalCriticos(),
+      };
+    }
+
+    /** Ninguna lectura nueva: el filtro no viaja al servidor (D-9). */
+    function sinPeticionesNuevas(): void {
+      expect(httpMock.match(() => true).length)
+        .withContext('peticiones HTTP abiertas tras el filtro de cliente')
+        .toBe(0);
+    }
+
+    // --- AC-10: visibilidad, estado inicial y accesibilidad ---
+
+    for (const rol of ['Administrador', 'Bodeguero', 'Solicitante'] as const) {
+      it(`«Solo con stock» está visible para ${rol} y arranca desmarcado`, () => {
+        const solicitadas = montarConRol(rol);
+
+        const checkbox = checkboxSoloConStock();
+        expect(checkbox).withContext(`checkbox de ${rol}`).toBeTruthy();
+        expect(checkbox!.type).toBe('checkbox');
+        expect(checkbox!.checked).toBe(false);
+        expect(componente.soloConStock()).toBe(false);
+        // El Solicitante conserva la vista operativa sin pedir el ámbito (D-11).
+        if (rol === 'Solicitante') {
+          expect(solicitadas).not.toContain(RUTA_AMBITO);
+        }
+        // Desmarcado, el catálogo completo sigue visible (§11.5 regla 2).
+        expect(filas().length).toBe(3);
+      });
+    }
+
+    it('el checkbox «Solo con stock» declara id, name y label, y no persiste al remontar la vista', () => {
+      montarConRol('Bodeguero');
+
+      const checkbox = checkboxSoloConStock();
+      expect(checkbox).toBeTruthy();
+      expect(checkbox!.id).toBe('solo-con-stock');
+      expect(checkbox!.name).toBe('solo-con-stock');
+      // Anillo de foco con Tailwind y sin CSS embebido (D-14).
+      expect(checkbox!.className).toContain('focus-visible:ring-2');
+      expect((fixture.nativeElement as HTMLElement).querySelector('style')).toBeNull();
+
+      const etiqueta = etiquetaSoloConStock();
+      expect(etiqueta).withContext('label visible de «Solo con stock»').toBeTruthy();
+      expect((etiqueta!.textContent ?? '').trim()).toBe('Solo con stock');
+
+      // El clic en la etiqueta conmuta el control nativo y el signal.
+      const clavesAntes = new Set(Object.keys(localStorage));
+      etiqueta!.click();
+      fixture.detectChanges();
+      expect(componente.soloConStock()).toBe(true);
+      expect(checkboxSoloConStock()!.checked).toBe(true);
+      expect(
+        Object.keys(localStorage).filter((clave) => !clavesAntes.has(clave)),
+      ).withContext('claves nuevas en localStorage').toEqual([]);
+
+      // Sin persistencia (D-13): una instancia nueva arranca desmarcada.
+      fixture.destroy();
+      fixture = TestBed.createComponent(InventarioComponent);
+      componente = fixture.componentInstance;
+      montarConRol('Bodeguero');
+
+      expect(componente.soloConStock()).toBe(false);
+      expect(checkboxSoloConStock()!.checked).toBe(false);
+      expect(filas().length).toBe(3);
+    });
+
+    // --- AC-11: filtrado por saldo, sin contrato nuevo y con la franja intacta ---
+
+    it('marcar «Solo con stock» oculta los productos con stock_total 0 sin alterar la franja ni pedir existencias', () => {
+      montarConRol('Bodeguero', { insumos: INSUMOS_CON_CERO });
+
+      expect(filas().length).toBe(4);
+      expect(textoDeLaTabla()).toContain('Tóner agotado');
+      const antes = franja();
+      expect(antes).toEqual({ totalCatalogo: 4, totalConStock: 3, totalCriticos: 2 });
+
+      alternarSoloConStock();
+
+      expect(componente.soloConStock()).toBe(true);
+      expect(filas().length).toBe(3);
+      expect(textoDeLaTabla()).not.toContain('Tóner agotado');
+      // La franja mide el catálogo cargado y no se mueve al marcar (D-10).
+      expect(franja()).toEqual(antes);
+      // El producto sigue en la respuesta: no se refetchea (D-9).
+      expect(componente.insumos().length).toBe(4);
+      sinPeticionesNuevas();
+    });
+
+    it('desmarcar «Solo con stock» recupera los productos sin saldo', () => {
+      montarConRol('Bodeguero', { insumos: INSUMOS_CON_CERO });
+
+      alternarSoloConStock();
+      expect(filas().length).toBe(3);
+
+      alternarSoloConStock();
+
+      expect(componente.soloConStock()).toBe(false);
+      expect(filas().length).toBe(4);
+      expect(textoDeLaTabla()).toContain('Tóner agotado');
+      expect(franja()).toEqual({ totalCatalogo: 4, totalConStock: 3, totalCriticos: 2 });
+      sinPeticionesNuevas();
+    });
+
+    // --- AC-12: combinación con los demás filtros y limpieza ---
+
+    it('«Solo con stock» se combina con texto, categoría, críticos y filtros organizacionales', () => {
+      montarConRol('Administrador');
+
+      elegirEnSelector('sede', 'Sede Central');
+      const porSede = consultaExistencias();
+      expect(porSede?.request.params.get('sede_id')).toBe('1');
+      porSede?.flush(INSUMOS_SEDE_CENTRAL_CON_CERO);
+      fixture.detectChanges();
+
+      elegirEnSelector('departamento', 'Operaciones');
+      const porDepartamento = consultaExistencias();
+      expect(porDepartamento?.request.params.get('sede_id')).toBe('1');
+      expect(porDepartamento?.request.params.get('departamento_id')).toBe('10');
+      porDepartamento?.flush(INSUMOS_SEDE_CENTRAL_CON_CERO);
+      fixture.detectChanges();
+
+      componente.consulta.set('toner');
+      componente.seleccionarCategoria(2);
+      componente.alternarSoloCriticos();
+      fixture.detectChanges();
+
+      // Intersección antes del checkbox: dos críticos de Toner, uno en cero.
+      expect(filas().length).toBe(2);
+      expect(textoDeLaTabla()).toContain('Toner HP 26A');
+      expect(textoDeLaTabla()).toContain('Tóner agotado');
+
+      alternarSoloConStock();
+
+      // Queda el crítico CON saldo; el crítico en cero desaparece (§11.5.5).
+      expect(filas().length).toBe(1);
+      expect(textoDeLaTabla()).toContain('Toner HP 26A');
+      expect(textoDeLaTabla()).not.toContain('Tóner agotado');
+      // Ningún filtro se altera y no se emite una lectura nueva.
+      expect(componente.consulta()).toBe('toner');
+      expect(componente.categoriaSeleccionada()).toBe(2);
+      expect(componente.soloCriticos()).toBe(true);
+      expect(componente.filtrosOrganizacionales()).toEqual({
+        sede_id: 1,
+        departamento_id: 10,
+      });
+      sinPeticionesNuevas();
+    });
+
+    it('el panel de categorías excluye los productos sin saldo al marcar «Solo con stock»', () => {
+      montarConRol('Bodeguero', { insumos: INSUMOS_CON_CERO });
+
+      expect(conteosDelPanel()).toEqual({ Todas: 4, Papeleria: 2, Toner: 2 });
+
+      alternarSoloConStock();
+
+      // «Todas» y la categoría del producto en cero bajan en 1; la otra no cambia.
+      expect(conteosDelPanel()).toEqual({ Todas: 3, Papeleria: 2, Toner: 1 });
+      sinPeticionesNuevas();
+    });
+
+    it('«Limpiar filtros» desmarca «Solo con stock» y no pide existencias si el único filtro era de cliente', () => {
+      montarConRol('Bodeguero', { insumos: INSUMOS_CON_CERO });
+
+      alternarSoloConStock();
+      expect(filas().length).toBe(3);
+
+      const limpiar = botonLimpiarFiltros();
+      expect(limpiar).withContext('botón «Limpiar filtros»').toBeTruthy();
+      limpiar!.click();
+      fixture.detectChanges();
+
+      expect(componente.soloConStock()).toBe(false);
+      expect(filas().length).toBe(4);
+      sinPeticionesNuevas();
+    });
+
+    it('«Limpiar filtros» con un filtro organizacional activo desmarca «Solo con stock» y pide el agregado', () => {
+      montarConRol('Administrador', { insumos: INSUMOS_CON_CERO });
+
+      elegirEnSelector('sede', 'Sede Central');
+      consultaExistencias()?.flush(INSUMOS_SEDE_CENTRAL_CON_CERO);
+      fixture.detectChanges();
+
+      alternarSoloConStock();
+      expect(filas().length).toBe(2);
+
+      botonLimpiarFiltros()!.click();
+      fixture.detectChanges();
+
+      expect(componente.soloConStock()).toBe(false);
+      expect(componente.sedeSeleccionada()).toBeNull();
+
+      const agregado = consultaExistencias();
+      expect(agregado?.request.params.has('sede_id')).toBe(false);
+      agregado?.flush(INSUMOS_CON_CERO);
+      fixture.detectChanges();
+
+      expect(filas().length).toBe(4);
+      expect(componente.totalCatalogo()).toBe(4);
+    });
+
+    // --- AC-13: estado vacío diferenciado y sin interferencia con carga/error ---
+
+    it('sin productos con stock muestra un vacío que distingue la falta de stock', () => {
+      montarConRol('Bodeguero', { insumos: INSUMOS_TODOS_EN_CERO });
+
+      alternarSoloConStock();
+
+      expect(filas().length).toBe(0);
+      const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(texto).toContain('Ningún insumo con stock coincide con los filtros aplicados.');
+      // No es el vacío genérico de filtros ni el de catálogo inexistente (D-12).
+      expect(texto).not.toContain('Ningún insumo coincide con los filtros aplicados.');
+      expect(texto).not.toContain('El catálogo no tiene insumos cargados.');
+      sinPeticionesNuevas();
+    });
+
+    it('el vacío de catálogo prevalece sobre el vacío de «Solo con stock»', () => {
+      montarConRol('Bodeguero', { insumos: [], categorias: CATEGORIAS });
+
+      alternarSoloConStock();
+
+      const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(texto).toContain('El catálogo no tiene insumos cargados.');
+      expect(texto).not.toContain('Ningún insumo con stock coincide con los filtros aplicados.');
+      sinPeticionesNuevas();
     });
   });
 });

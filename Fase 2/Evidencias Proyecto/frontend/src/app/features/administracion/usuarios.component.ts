@@ -7,7 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
@@ -25,6 +25,8 @@ import {
   Rol,
   Sede,
   Usuario,
+  UsuarioCrear,
+  UsuarioEdicionConMotivo,
   UsuarioInvitacionRespuesta,
 } from '../../shared/interfaces';
 import { nuevaClaveIdempotencia } from '../../shared/utils/idempotencia';
@@ -32,6 +34,16 @@ import { mensajeDeErrorAdministracion } from './administracion-errores';
 import { AdministracionService } from './services/administracion.service';
 
 const _BODEGUERO = 'Bodeguero';
+const _SOLICITANTE = 'Solicitante';
+const _SUMINISTROS = 'suministros';
+
+/**
+ * Aviso del borde «no-Bodeguero con Suministros» (D-12/AC-24/AC-29): el combo
+ * excluye la fila automática, pero un valor heredado o programático no debe
+ * enviarse; la API respondería 422 y el formulario lo indica antes de guardar.
+ */
+const _MENSAJE_SUMINISTROS_NO_BODEGUERO =
+  'El departamento «Suministros» solo se asigna automáticamente a los Bodegueros. Elige otro departamento.';
 
 /**
  * Roles cuyo reenvío de invitación autoriza el Administrador institucional
@@ -142,7 +154,7 @@ export class UsuariosComponent implements OnInit {
       (rol) =>
         rol.nombre_rol !== 'Superadmin' &&
         (puedeAsignarRol(this.rolActual(), rol.nombre_rol) ||
-          rol.rol_id === usuario?.rol_id),
+          rol.rol_id === Number(usuario?.rol_id)),
     );
   });
 
@@ -151,6 +163,7 @@ export class UsuariosComponent implements OnInit {
     apellido: ['', [Validators.required, Validators.maxLength(100)]],
     rol_id: [0, [Validators.required, Validators.min(1)]],
     departamento_id: [0, [Validators.required, Validators.min(1)]],
+    sede_id: [null as number | null],
   });
 
   /** Motivo de la edición (Feature 017, D-5/D-7). */
@@ -176,19 +189,44 @@ export class UsuariosComponent implements OnInit {
     initialValue: { codigo: '', texto: '' },
   });
 
-  /** `true` si el formulario de edición cambió algún atributo efectivo. */
+  /** Rol elegido en la edición; reactivo a los cambios del control (D-13). */
+  private readonly rolEdicion = toSignal(
+    this.formularioEdicion.controls.rol_id.valueChanges,
+    { initialValue: 0 },
+  );
+
+  /** Sede elegida en la edición (sede del Bodeguero o filtro del Solicitante). */
+  private readonly valorSedeEdicion = toSignal(
+    this.formularioEdicion.controls.sede_id.valueChanges,
+    { initialValue: null as number | null },
+  );
+
+  /**
+   * `true` si el formulario de edición cambió algún atributo efectivo.
+   *
+   * Un Bodeguero cuyo departamento persistido **no** es «Suministros» (legacy,
+   * p. ej. «Biblioteca») cambia de forma efectiva al guardar, porque el servidor
+   * resuelve «Suministros»: exige motivo aunque solo cambie el nombre o no se
+   * toque ningún otro campo (D-13/D-15). Un Bodeguero ya en «Suministros» sin
+   * más cambios no lo exige.
+   */
   readonly hayCambiosEdicion = computed(() => {
     const usuario = this.editando();
     if (!usuario) {
       return false;
     }
     const valores = this.valorEdicion();
-    return (
+    if (
       (valores.nombre ?? '').trim() !== usuario.nombre ||
       (valores.apellido ?? '').trim() !== usuario.apellido ||
-      valores.rol_id !== usuario.rol_id ||
-      valores.departamento_id !== usuario.departamento_id
-    );
+      Number(valores.rol_id) !== Number(usuario.rol_id)
+    ) {
+      return true;
+    }
+    if (this.nombreRol(Number(valores.rol_id)) === _BODEGUERO) {
+      return !this.esSuministrosPersistido(usuario);
+    }
+    return Number(valores.departamento_id) !== Number(usuario.departamento_id);
   });
 
   /** `true` si el motivo de la edición puede enviarse tal como está. */
@@ -223,14 +261,207 @@ export class UsuariosComponent implements OnInit {
     { initialValue: 0 },
   );
 
-  /** `true` si el rol elegido para el alta es Bodeguero (habilita la sede). */
+  /** Sede elegida en el alta (filtro del Solicitante o sede del Bodeguero). */
+  private readonly valorSedeCreacion = toSignal(
+    this.formularioCreacion.controls.sede_id.valueChanges,
+    { initialValue: null as number | null },
+  );
+
+  /** Departamento elegido en el alta (vacío mientras no se elija uno válido). */
+  private readonly valorDepartamentoCreacion = toSignal(
+    this.formularioCreacion.controls.departamento_id.valueChanges,
+    { initialValue: 0 },
+  );
+
+  /** `true` si el rol elegido para el alta es Bodeguero (sede obligatoria). */
   readonly creacionEsBodeguero = computed(
     () => this.nombreRol(this.rolCreacion()) === _BODEGUERO,
+  );
+
+  /** `true` si el rol elegido para el alta es Solicitante (sede como filtro). */
+  readonly creacionEsSolicitante = computed(
+    () => this.nombreRol(this.rolCreacion()) === _SOLICITANTE,
+  );
+
+  /** `true` si el alta muestra la Sede (Bodeguero y Solicitante; D-14). */
+  readonly creacionMuestraSede = computed(
+    () => this.creacionEsBodeguero() || this.creacionEsSolicitante(),
+  );
+
+  /**
+   * Departamentos elegibles en el alta para un rol distinto de Bodeguero.
+   *
+   * «Suministros» se excluye porque el backend lo rechaza (422) para cualquier
+   * rol que no sea Bodeguero (D-12); «Suministros» del Bodeguero lo resuelve el
+   * servidor y no se elige. No se filtra por `activo`: el criterio vigente del
+   * combo se conserva.
+   */
+  private readonly departamentosDisponibles = computed(() =>
+    this.departamentos().filter(
+      (departamento) => !this.esDepartamentoSuministros(departamento),
+    ),
+  );
+
+  /**
+   * Departamentos que ofrece el alta: todos los elegibles y, para el
+   * Solicitante, los de la sede elegida como filtro (D-11). Sin filtro se
+   * listan todos.
+   */
+  readonly departamentosCreacion = computed(() => {
+    const disponibles = this.departamentosDisponibles();
+    if (!this.creacionEsSolicitante()) {
+      return disponibles;
+    }
+    const sedeId = this.valorSedeCreacion();
+    if (sedeId === null) {
+      return disponibles;
+    }
+    return disponibles.filter(
+      (departamento) => departamento.sede_id === Number(sedeId),
+    );
+  });
+
+  /** Departamento seleccionado dentro de la lista vigente del alta. */
+  private readonly departamentoSeleccionadoCreacion = computed(
+    () =>
+      this.departamentosCreacion().find(
+        (departamento) =>
+          departamento.departamento_id ===
+          Number(this.valorDepartamentoCreacion()),
+      ) ?? null,
+  );
+
+  /** `true` si el tenant no tiene sedes y el alta pide una (Bodeguero). */
+  readonly creacionBodegueroSinSedes = computed(
+    () => this.creacionEsBodeguero() && this.sedes().length === 0,
+  );
+
+  /**
+   * Texto único del borde «Suministros» para un rol distinto de Bodeguero
+   * (D-12/AC-24/AC-29); se muestra junto al control y al intentar guardar.
+   */
+  readonly mensajeSuministros = _MENSAJE_SUMINISTROS_NO_BODEGUERO;
+
+  /**
+   * `true` si el alta tiene seleccionado «Suministros» para un rol distinto de
+   * Bodeguero. El combo lo excluye; este predicado cubre un valor heredado o
+   * programático y bloquea el envío con un aviso (D-12/AC-24).
+   */
+  readonly creacionSeleccionaSuministros = computed(
+    () =>
+      !this.creacionEsBodeguero() &&
+      this.esDepartamentoSuministrosId(this.valorDepartamentoCreacion()),
+  );
+
+  /** `true` si el rol destino de la edición es Bodeguero (D-13). */
+  readonly edicionEsBodeguero = computed(
+    () => this.nombreRol(this.rolEdicion()) === _BODEGUERO,
+  );
+
+  /** `true` si el rol destino de la edición es Solicitante (Sede como filtro). */
+  readonly edicionEsSolicitante = computed(
+    () => this.nombreRol(this.rolEdicion()) === _SOLICITANTE,
+  );
+
+  /** `true` si la edición muestra la Sede (Bodeguero y Solicitante; D-14). */
+  readonly edicionMuestraSede = computed(
+    () => this.edicionEsBodeguero() || this.edicionEsSolicitante(),
+  );
+
+  /**
+   * Departamentos elegibles en la edición: todos los que no son «Suministros»
+   * y, para el Solicitante, los de la sede elegida como filtro (D-11/D-13).
+   */
+  readonly departamentosEdicion = computed(() => {
+    const disponibles = this.departamentosDisponibles();
+    if (!this.edicionEsSolicitante()) {
+      return disponibles;
+    }
+    const sedeId = this.valorSedeEdicion();
+    if (sedeId === null) {
+      return disponibles;
+    }
+    return disponibles.filter(
+      (departamento) => departamento.sede_id === Number(sedeId),
+    );
+  });
+
+  /** `true` si el tenant no tiene sedes y la edición pide una (Bodeguero). */
+  readonly edicionBodegueroSinSedes = computed(
+    () => this.edicionEsBodeguero() && this.sedes().length === 0,
+  );
+
+  /**
+   * `true` si la edición tiene seleccionado «Suministros» para un rol distinto
+   * de Bodeguero. Cubre la selección heredada o programática que el combo ya no
+   * ofrece y bloquea el guardado con un aviso (D-12/AC-29).
+   */
+  readonly edicionSeleccionaSuministros = computed(
+    () =>
+      !this.edicionEsBodeguero() &&
+      this.esDepartamentoSuministrosId(this.valorEdicion().departamento_id),
   );
 
   /** Clave de idempotencia de la mutación en curso (se reutiliza en reintentos). */
   private idempotenciaEdicion: string | null = null;
   private idempotenciaEstado: string | null = null;
+
+  /**
+   * `true` mientras `abrirCreacion` reinicia el formulario: los valores
+   * programáticos no deben disparar la sincronización sede↔departamento.
+   */
+  private inicializandoCreacion = false;
+
+  /**
+   * `true` mientras `iniciarEdicion` reinicia el formulario: los valores
+   * programáticos no deben disparar la matriz de rol ni la sincronización.
+   */
+  private inicializandoEdicion = false;
+
+  constructor() {
+    this.formularioCreacion.controls.rol_id.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (!this.inicializandoCreacion) {
+          this.aplicarRolCreacion();
+        }
+      });
+    this.formularioCreacion.controls.sede_id.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (!this.inicializandoCreacion && this.creacionEsSolicitante()) {
+          this.limpiarDepartamentoIncompatible();
+        }
+      });
+    this.formularioCreacion.controls.departamento_id.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (!this.inicializandoCreacion) {
+          this.sincronizarSedeConDepartamento();
+        }
+      });
+    this.formularioEdicion.controls.rol_id.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (!this.inicializandoEdicion) {
+          this.aplicarRolEdicion();
+        }
+      });
+    this.formularioEdicion.controls.sede_id.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (!this.inicializandoEdicion && this.edicionEsSolicitante()) {
+          this.limpiarDepartamentoIncompatibleEdicion();
+        }
+      });
+    this.formularioEdicion.controls.departamento_id.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (!this.inicializandoEdicion) {
+          this.sincronizarSedeConDepartamentoEdicion();
+        }
+      });
+  }
 
   ngOnInit(): void {
     this.cargar();
@@ -241,21 +472,62 @@ export class UsuariosComponent implements OnInit {
   }
 
   nombreRol(rolId: number): string | null {
-    return this.rolesPorId().get(rolId) ?? null;
+    // El valor puede llegar como string desde un `<select>` con `[value]`
+    // (residual) mientras el mapa usa claves numéricas. Normalizar aquí evita
+    // que la matriz de rol y el motivo de edición se desalineen.
+    return this.rolesPorId().get(Number(rolId)) ?? null;
   }
 
   nombreDepartamento(departamentoId: number): string | null {
+    const id = Number(departamentoId);
     return (
-      this.departamentos().find((d) => d.departamento_id === departamentoId)
+      this.departamentos().find((d) => d.departamento_id === id)
         ?.nombre_dep ?? null
     );
+  }
+
+  /** `true` si el departamento es el «Suministros» de asignación automática. */
+  private esDepartamentoSuministros(departamento: DepartamentoGestion): boolean {
+    return departamento.nombre_dep.trim().toLowerCase() === _SUMINISTROS;
+  }
+
+  /**
+   * `true` si el id corresponde a un departamento «Suministros» del catálogo.
+   * Se usa para el borde de un rol distinto de Bodeguero (D-12/AC-24/AC-29).
+   */
+  private esDepartamentoSuministrosId(
+    departamentoId: number | null | undefined,
+  ): boolean {
+    if (departamentoId === null || departamentoId === undefined) {
+      return false;
+    }
+    const id = Number(departamentoId);
+    if (!Number.isFinite(id) || id < 1) {
+      return false;
+    }
+    const departamento = this.departamentos().find(
+      (item) => item.departamento_id === id,
+    );
+    return (
+      departamento !== undefined && this.esDepartamentoSuministros(departamento)
+    );
+  }
+
+  /**
+   * `true` si el departamento **persistido** del usuario es «Suministros».
+   * Compara el nombre normalizado del catálogo (D-8/D-15); un legado en
+   * «Biblioteca» no lo es y su edición será efectiva al resolverse «Suministros».
+   */
+  private esSuministrosPersistido(usuario: Usuario): boolean {
+    return this.esDepartamentoSuministrosId(usuario.departamento_id);
   }
 
   nombreSede(sedeId: number | null | undefined): string | null {
     if (sedeId === null || sedeId === undefined) {
       return null;
     }
-    return this.sedes().find((sede) => sede.sede_id === sedeId)?.nombre ?? null;
+    const id = Number(sedeId);
+    return this.sedes().find((sede) => sede.sede_id === id)?.nombre ?? null;
   }
 
   esBodeguero(usuario: Usuario): boolean {
@@ -313,15 +585,40 @@ export class UsuariosComponent implements OnInit {
     this.sugerenciaReenvio.set(null);
     this.confirmando.set(null);
     this.asignandoSede.set(null);
-    this.formularioEdicion.reset({
-      nombre: usuario.nombre,
-      apellido: usuario.apellido,
-      rol_id: usuario.rol_id,
-      departamento_id: usuario.departamento_id,
-    });
+    const nombreRol = this.nombreRol(usuario.rol_id);
+    const esBodeguero = nombreRol === _BODEGUERO;
+    const esSolicitante = nombreRol === _SOLICITANTE;
+    const departamentoActual =
+      this.departamentos().find(
+        (departamento) =>
+          departamento.departamento_id === Number(usuario.departamento_id),
+      ) ?? null;
+    this.inicializandoEdicion = true;
+    try {
+      this.formularioEdicion.reset({
+        nombre: usuario.nombre,
+        apellido: usuario.apellido,
+        rol_id: Number(usuario.rol_id),
+        // El Bodeguero no elige departamento: el control queda deshabilitado y
+        // el servidor resuelve «Suministros» (D-8/D-13).
+        departamento_id: esBodeguero ? 0 : Number(usuario.departamento_id),
+        // La Sede del Bodeguero es la asignada; la del Solicitante es el filtro
+        // inicializado con la sede de su departamento (D-10/D-11).
+        sede_id: esBodeguero
+          ? usuario.sede_id !== null && usuario.sede_id !== undefined
+            ? Number(usuario.sede_id)
+            : null
+          : esSolicitante
+            ? departamentoActual?.sede_id ?? null
+            : null,
+      });
+    } finally {
+      this.inicializandoEdicion = false;
+    }
     this.motivoEdicion.reset({ codigo: '', texto: '' });
     this.idempotenciaEdicion = nuevaClaveIdempotencia();
     this.editando.set(usuario);
+    this.aplicarRolEdicion();
   }
 
   cancelarEdicion(): void {
@@ -338,14 +635,24 @@ export class UsuariosComponent implements OnInit {
     this.editando.set(null);
     this.confirmando.set(null);
     this.asignandoSede.set(null);
-    this.formularioCreacion.reset({
-      nombre: '',
-      apellido: '',
-      correo: '',
-      rol_id: this.rolesAsignables()[0]?.rol_id ?? 0,
-      departamento_id: this.departamentos()[0]?.departamento_id ?? 0,
-      sede_id: null,
-    });
+    const rolInicial = this.rolesAsignables()[0]?.rol_id ?? 0;
+    const rolInicialEsBodeguero = this.nombreRol(rolInicial) === _BODEGUERO;
+    this.inicializandoCreacion = true;
+    try {
+      this.formularioCreacion.reset({
+        nombre: '',
+        apellido: '',
+        correo: '',
+        rol_id: rolInicial,
+        departamento_id: rolInicialEsBodeguero
+          ? 0
+          : (this.departamentosDisponibles()[0]?.departamento_id ?? 0),
+        sede_id: null,
+      });
+    } finally {
+      this.inicializandoCreacion = false;
+    }
+    this.aplicarRolCreacion();
     this.creando.set(true);
   }
 
@@ -359,23 +666,51 @@ export class UsuariosComponent implements OnInit {
     if (this.guardando()) {
       return;
     }
+    const esBodeguero = this.creacionEsBodeguero();
+    if (this.creacionBodegueroSinSedes()) {
+      this.errorAccion.set(
+        'La institución no tiene sedes registradas: no se puede crear un Bodeguero sin sede.',
+      );
+      return;
+    }
+    if (
+      !this.creacionEsBodeguero() &&
+      this.esDepartamentoSuministrosId(
+        this.formularioCreacion.controls.departamento_id.value,
+      )
+    ) {
+      // El combo excluye «Suministros» para roles distintos de Bodeguero; un
+      // valor heredado o programático se bloquea aquí (D-12/AC-24).
+      this.errorAccion.set(this.mensajeSuministros);
+      return;
+    }
     if (this.formularioCreacion.invalid) {
       this.formularioCreacion.markAllAsTouched();
       return;
     }
     const valores = this.formularioCreacion.getRawValue();
+    const sedeElegida =
+      esBodeguero && valores.sede_id !== null
+        ? Number(valores.sede_id)
+        : null;
+    const datos: UsuarioCrear = {
+      nombre: valores.nombre.trim(),
+      apellido: valores.apellido.trim(),
+      correo: valores.correo.trim(),
+      rol_id: Number(valores.rol_id),
+      // El Bodeguero no elige departamento: el servidor resuelve «Suministros»
+      // (D-8/D-12). La sede nunca viaja en el alta (D-10): se persiste con el
+      // PUT de sede después del 201.
+      ...(esBodeguero
+        ? {}
+        : { departamento_id: Number(valores.departamento_id) }),
+    };
     this.guardando.set(true);
     this.errorAccion.set(null);
     this.enlaceInvitacion.set(null);
 
     this.administracion
-      .crearUsuario({
-        nombre: valores.nombre.trim(),
-        apellido: valores.apellido.trim(),
-        correo: valores.correo.trim(),
-        departamento_id: valores.departamento_id,
-        rol_id: valores.rol_id,
-      })
+      .crearUsuario(datos)
       .subscribe({
         next: (creado) => {
           this.creando.set(false);
@@ -385,8 +720,7 @@ export class UsuariosComponent implements OnInit {
               nombre: `${creado.nombre} ${creado.apellido}`,
             });
           }
-          const sedeElegida = valores.sede_id;
-          if (this.creacionEsBodeguero() && sedeElegida !== null) {
+          if (esBodeguero && sedeElegida !== null) {
             this.asignarSedeTrasAlta(creado, sedeElegida);
             return;
           }
@@ -399,6 +733,154 @@ export class UsuariosComponent implements OnInit {
           this.errorAccion.set(mensajeDeErrorAdministracion(error));
         },
       });
+  }
+
+  /**
+   * Aplica la matriz de campos del rol elegido (D-14/AC-24): el Bodeguero deja
+   * el Departamento deshabilitado (lo resuelve el servidor) y exige Sede; el
+   * Solicitante habilita ambos (Sede como filtro); Administrador/Superadmin
+   * mantienen Departamento obligatorio y no muestran Sede. Las selecciones que
+   * el nuevo rol no admite se limpian.
+   */
+  private aplicarRolCreacion(): void {
+    const esBodeguero = this.creacionEsBodeguero();
+    const departamento = this.formularioCreacion.controls.departamento_id;
+    const sede = this.formularioCreacion.controls.sede_id;
+
+    if (esBodeguero) {
+      departamento.disable({ emitEvent: false });
+      departamento.setValidators(null);
+      departamento.setValue(0, { emitEvent: false });
+    } else {
+      departamento.enable({ emitEvent: false });
+      departamento.setValidators([Validators.required, Validators.min(1)]);
+    }
+    departamento.updateValueAndValidity({ emitEvent: false });
+
+    sede.setValidators(esBodeguero ? Validators.required : null);
+    if (this.creacionMuestraSede()) {
+      sede.enable({ emitEvent: false });
+    } else {
+      sede.setValue(null, { emitEvent: false });
+      sede.disable({ emitEvent: false });
+    }
+    sede.updateValueAndValidity({ emitEvent: false });
+
+    this.limpiarDepartamentoIncompatible();
+  }
+
+  /**
+   * Sincroniza la Sede con la del departamento elegido por el Solicitante; si
+   * el departamento no tiene sede, el filtro queda en «Todas las sedes» (D-11).
+   */
+  private sincronizarSedeConDepartamento(): void {
+    if (!this.creacionEsSolicitante()) {
+      return;
+    }
+    const departamento = this.departamentoSeleccionadoCreacion();
+    if (!departamento) {
+      return;
+    }
+    this.formularioCreacion.controls.sede_id.setValue(departamento.sede_id ?? null);
+  }
+
+  /**
+   * Limpia la selección de departamento que la sede filtrada ya no admite: el
+   * formulario no se envía hasta elegir uno válido (D-11/AC-24).
+   */
+  private limpiarDepartamentoIncompatible(): void {
+    const departamento = this.formularioCreacion.controls.departamento_id;
+    if (departamento.disabled) {
+      return;
+    }
+    const opciones = this.departamentosCreacion();
+    if (
+      !opciones.some(
+        (opcion) => opcion.departamento_id === Number(departamento.value),
+      )
+    ) {
+      departamento.setValue(0, { emitEvent: false });
+    }
+  }
+
+  /**
+   * Aplica la matriz de campos del rol destino de la edición (D-13/D-14): el
+   * Bodeguero deja el Departamento deshabilitado (lo resuelve el servidor) y
+   * exige Sede; el Solicitante habilita ambos con la Sede como filtro;
+   * Administrador/Superadmin mantienen Departamento obligatorio y sin Sede.
+   */
+  private aplicarRolEdicion(): void {
+    const esBodeguero = this.edicionEsBodeguero();
+    const departamento = this.formularioEdicion.controls.departamento_id;
+    const sede = this.formularioEdicion.controls.sede_id;
+
+    if (esBodeguero) {
+      departamento.disable({ emitEvent: false });
+      departamento.setValidators(null);
+      departamento.setValue(0, { emitEvent: false });
+    } else {
+      departamento.enable({ emitEvent: false });
+      departamento.setValidators([Validators.required, Validators.min(1)]);
+    }
+    departamento.updateValueAndValidity({ emitEvent: false });
+
+    sede.setValidators(esBodeguero ? Validators.required : null);
+    if (this.edicionMuestraSede()) {
+      sede.enable({ emitEvent: false });
+    } else {
+      sede.setValue(null, { emitEvent: false });
+      sede.disable({ emitEvent: false });
+    }
+    // Al cambiar de rol el Departamento queda sin selección: el filtro del
+    // Solicitante vuelve a «Todas las sedes» hasta que elija uno válido (D-11).
+    if (!esBodeguero && Number(departamento.value) === 0) {
+      sede.setValue(null);
+    }
+    sede.updateValueAndValidity({ emitEvent: false });
+
+    this.limpiarDepartamentoIncompatibleEdicion();
+    this.formularioEdicion.updateValueAndValidity({ emitEvent: true });
+  }
+
+  /**
+   * Sincroniza la Sede (filtro) con la del departamento elegido en la edición;
+   * si no tiene sede, el filtro queda en «Todas las sedes» (D-11).
+   */
+  private sincronizarSedeConDepartamentoEdicion(): void {
+    if (!this.edicionEsSolicitante()) {
+      return;
+    }
+    const departamento =
+      this.departamentosEdicion().find(
+        (opcion) =>
+          opcion.departamento_id ===
+          Number(this.formularioEdicion.controls.departamento_id.value),
+      ) ?? null;
+    if (!departamento) {
+      return;
+    }
+    this.formularioEdicion.controls.sede_id.setValue(
+      departamento.sede_id ?? null,
+    );
+  }
+
+  /**
+   * Limpia la selección de departamento que la sede filtrada ya no admite: el
+   * formulario no se envía hasta elegir uno válido (D-11/D-13).
+   */
+  private limpiarDepartamentoIncompatibleEdicion(): void {
+    const departamento = this.formularioEdicion.controls.departamento_id;
+    if (departamento.disabled) {
+      return;
+    }
+    const opciones = this.departamentosEdicion();
+    if (
+      !opciones.some(
+        (opcion) => opcion.departamento_id === Number(departamento.value),
+      )
+    ) {
+      departamento.setValue(0);
+    }
   }
 
   /** Asigna la sede elegida en el alta; el error no revierte la creación. */
@@ -441,54 +923,122 @@ export class UsuariosComponent implements OnInit {
     if (!usuario || this.guardando()) {
       return;
     }
+    if (this.edicionBodegueroSinSedes()) {
+      this.errorAccion.set(
+        'La institución no tiene sedes registradas: no se puede guardar un Bodeguero sin sede.',
+      );
+      return;
+    }
+    if (
+      !this.edicionEsBodeguero() &&
+      this.esDepartamentoSuministrosId(
+        this.formularioEdicion.controls.departamento_id.value,
+      )
+    ) {
+      // El combo excluye «Suministros» para roles distintos de Bodeguero; un
+      // valor heredado o programático se bloquea aquí (D-12/AC-29).
+      this.errorAccion.set(this.mensajeSuministros);
+      return;
+    }
     if (this.formularioEdicion.invalid) {
       this.formularioEdicion.markAllAsTouched();
       return;
     }
     const valores = this.formularioEdicion.getRawValue();
+    const rolId = Number(valores.rol_id);
+    const esBodegueroDestino = this.nombreRol(rolId) === _BODEGUERO;
     const cambia = this.hayCambiosEdicion();
     if (cambia && !this.motivoEdicionCompleto()) {
       this.motivoEdicion.markAllAsTouched();
       return;
     }
     const motivo = this.motivoEdicion.getRawValue();
+    const datos: UsuarioEdicionConMotivo = {
+      nombre: valores.nombre.trim(),
+      apellido: valores.apellido.trim(),
+      rol_id: rolId,
+      // El Bodeguero no elige departamento: lo resuelve el servidor (D-8/D-13).
+      // La Sede nunca viaja aquí: se persiste con el PUT .../sede posterior.
+      ...(esBodegueroDestino
+        ? {}
+        : { departamento_id: Number(valores.departamento_id) }),
+      ...(cambia
+        ? {
+            motivo: construirMotivo(motivo.codigo, motivo.texto),
+            idempotencia: this.idempotenciaEdicion,
+          }
+        : {}),
+    };
     this.guardando.set(true);
     this.errorAccion.set(null);
 
     this.administracion
-      .editarUsuario(usuario.usuario_id, {
-        nombre: valores.nombre.trim(),
-        apellido: valores.apellido.trim(),
-        rol_id: valores.rol_id,
-        departamento_id: valores.departamento_id,
-        ...(cambia
-          ? {
-              motivo: construirMotivo(motivo.codigo, motivo.texto),
-              idempotencia: this.idempotenciaEdicion,
-            }
-          : {}),
-      })
+      .editarUsuario(usuario.usuario_id, datos)
       .subscribe({
         next: (actualizado) => {
-          this.guardando.set(false);
+          const fusionado = this.fusionarUsuarioEditado(usuario, actualizado);
           this.editando.set(null);
           this.idempotenciaEdicion = null;
-          this.reemplazar({
-            ...usuario,
-            ...actualizado,
-            sede_id: usuario.sede_id,
-            activo: usuario.activo,
-            estado_invitacion: usuario.estado_invitacion,
-          });
+          this.reemplazar(fusionado);
+          if (esBodegueroDestino && valores.sede_id !== null) {
+            // Orden D-13: primero el usuario y después la sede. Si esta falla,
+            // los cambios del usuario ya están guardados (éxito parcial).
+            this.asignarSedeTrasEdicion(fusionado, Number(valores.sede_id));
+            return;
+          }
+          this.guardando.set(false);
           this.mensajeExito.set(
             `Usuario «${actualizado.nombre} ${actualizado.apellido}» actualizado.`,
           );
+          this.cargar();
         },
         error: (error: HttpErrorResponse) => {
           this.guardando.set(false);
           this.errorAccion.set(mensajeDeErrorAdministracion(error));
         },
       });
+  }
+
+  /** Conserva los datos que la edición no consulta (vínculo e invitación). */
+  private fusionarUsuarioEditado(
+    usuario: Usuario,
+    actualizado: Usuario,
+  ): Usuario {
+    return {
+      ...usuario,
+      ...actualizado,
+      sede_id:
+        actualizado.sede_id !== undefined
+          ? actualizado.sede_id
+          : usuario.sede_id,
+      activo: usuario.activo,
+      estado_invitacion: usuario.estado_invitacion,
+    };
+  }
+
+  /**
+   * Persiste la sede elegida tras editar un Bodeguero (D-10/D-13). Es
+   * idempotente si la sede no cambió; un fallo no revierte la edición y se
+   * informa como éxito parcial.
+   */
+  private asignarSedeTrasEdicion(usuario: Usuario, sedeId: number): void {
+    this.administracion.asignarSedeUsuario(usuario.usuario_id, sedeId).subscribe({
+      next: (resultado) => {
+        this.guardando.set(false);
+        this.reemplazar({ ...usuario, sede_id: resultado.sede_id });
+        this.mensajeExito.set(
+          `Usuario «${usuario.nombre} ${usuario.apellido}» actualizado y sede asignada.`,
+        );
+        this.cargar();
+      },
+      error: (error: HttpErrorResponse) => {
+        this.guardando.set(false);
+        this.errorAccion.set(
+          `Los cambios de «${usuario.nombre} ${usuario.apellido}» se guardaron, pero la sede no se actualizó. ${mensajeDeErrorAdministracion(error)}`,
+        );
+        this.cargar();
+      },
+    });
   }
 
   iniciarAsignacionSede(usuario: Usuario): void {
@@ -652,7 +1202,8 @@ export class UsuariosComponent implements OnInit {
     });
   }
 
-  private cargar(): void {    this.cargando.set(true);
+  private cargar(): void {
+    this.cargando.set(true);
     this.mensajeError.set(null);
 
     forkJoin({

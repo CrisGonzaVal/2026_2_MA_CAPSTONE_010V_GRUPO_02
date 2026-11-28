@@ -446,6 +446,23 @@ def listar_movimientos(
     "/movimientos",
     status_code=status.HTTP_201_CREATED,
     summary="Registrar una entrada o salida de stock",
+    description=(
+        "Registra una `ENTRADA` o `SALIDA` manual sobre el saldo de una sede "
+        "(`stock_sede_id`) y deja la fila de auditoria en la **misma "
+        "transaccion** (Trazabilidad Absoluta). `nuevo_stock` refleja el saldo "
+        "resultante.\n\n"
+        "Actores: es una **operacion de bodega** (enmienda 26/Nov/2026, "
+        "D-31/AC-64). Solo el **Bodeguero** escribe movimientos manuales; el "
+        "**Administrador**, el Solicitante y el Superadmin reciben **403** por "
+        "matriz, sin mutar el saldo. El Bodeguero solo opera su propia sede: un "
+        "`stock_sede_id` de otra sede de su institucion o ajeno responde "
+        "**404** (ocultamiento) y, sin sede asignada, **409**.\n\n"
+        "Un `stock_sede_id` inexistente responde **404**; una `SALIDA` por "
+        "encima del saldo, o un movimiento sobre un producto inactivo, **409** "
+        "sin escribir auditoria; un cuerpo invalido (tipo fuera de "
+        "`ENTRADA`/`SALIDA`, cantidad no positiva, observacion fuera de rango o "
+        "campos extra) **422**. Ningun rechazo deja saldo ni auditoria parcial."
+    ),
     responses={
         **dependencies.respuestas_de_autorizacion(),
         **dependencies.respuesta_recurso_oculto(),

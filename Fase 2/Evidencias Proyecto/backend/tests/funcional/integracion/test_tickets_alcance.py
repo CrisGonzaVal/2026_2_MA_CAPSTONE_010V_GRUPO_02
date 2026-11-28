@@ -66,7 +66,7 @@ def ambito_tickets(motor, datos_base):
     """`datos_base` (INST01) + INST02 con un solicitante ajeno y tickets cruzados.
 
     INST01 (propia): departamento "Operaciones", solicitante persistido y tres
-    tickets suyos (Pendiente, EnRevision, EnCurso).
+    tickets suyos (EnRevision, EnCurso).
 
     INST02 (ajena): institucion, departamento "Bodega Sur", un usuario persistido,
     un producto del catalogo compartido con una sede en cada institucion (para
@@ -80,7 +80,7 @@ def ambito_tickets(motor, datos_base):
         db.query(EstadoTicket).delete()
         db.flush()
         estados: dict[str, int] = {}
-        for nombre in ("Pendiente", "EnRevision", "EnCurso", "Cerrado"):
+        for nombre in ("EnRevision", "EnCurso", "Cerrado", "Anulado"):
             estado = EstadoTicket(nombre=nombre, descripcion=f"Estado {nombre}")
             db.add(estado)
             db.flush()
@@ -247,22 +247,21 @@ def ambito_tickets(motor, datos_base):
             "producto_institucional_id": producto_institucional.producto_id,
             "producto_homonimo_ajeno_id": producto_homonimo_ajeno.producto_id,
             "sede_id": sede_propia.sede_id,
-            "estado_pendiente_id": estados["Pendiente"],
             "estado_en_revision_id": estados["EnRevision"],
             "estado_en_curso_id": estados["EnCurso"],
             "estado_cerrado_id": estados["Cerrado"],
             "ticket_propio_id": nuevo_ticket(
                 solicitante.usuario_id,
-                estados["Pendiente"],
-                "Propio Pendiente",
+                estados["EnRevision"],
+                "Propio Revision",
                 datos_base["producto_id"],
                 datos_base["institucion_id"],
                 sede_propia.sede_id,
             ),
             "ticket_ajeno_id": nuevo_ticket(
                 usuario_ajeno.usuario_id,
-                estados["Pendiente"],
-                "Ajeno Pendiente",
+                estados["EnRevision"],
+                "Ajeno Revision",
                 producto_homonimo_ajeno.producto_id,
                 institucion_ajena.institucion_id,
             ),
@@ -381,7 +380,7 @@ def _payload(datos: dict, usuario_id: int | None = None) -> dict:
     """
     cuerpo = {
         "prioridad_id": datos["prioridad_id"],
-        "estado_id": datos["estado_pendiente_id"],
+        "estado_id": datos["estado_en_revision_id"],
         "asunto": "Alta de ticket en pruebas de alcance",
         "descripcion": "Atribucion y ambito de tickets.",
         "detalles": [{"producto_id": datos["producto_id"], "cantidad_solicitada": 1}],
@@ -569,13 +568,19 @@ def test_administrador_patch_ticket_propio_200(motor, ambito_tickets):
     assert respuesta.json()["estado_id"] == ambito_tickets["estado_en_curso_id"]
 
 
-def test_bodeguero_despacho_ticket_ajeno_404_sin_mutar(motor, ambito_tickets):
+def test_bodeguero_retiro_ticket_ajeno_404_sin_mutar(motor, ambito_tickets):
     with sessionmaker(bind=motor)() as db:
         antes = db.get(Ticket, ambito_tickets["ticket_despacho_ajeno_id"]).estado_id
 
-    with _cliente(motor, "Bodeguero", ambito_tickets["departamento_id"]) as cliente:
+    with _cliente(
+        motor,
+        "Bodeguero",
+        ambito_tickets["departamento_id"],
+        ambito_tickets["usuario_id"],
+        ambito_tickets["sede_id"],
+    ) as cliente:
         respuesta = cliente.post(
-            f"{RUTA_TICKETS}{ambito_tickets['ticket_despacho_ajeno_id']}/despacho",
+            f"{RUTA_TICKETS}{ambito_tickets['ticket_despacho_ajeno_id']}/retiro",
             json={"usuario_id": ambito_tickets["usuario_id"]},
         )
 
@@ -586,23 +591,30 @@ def test_bodeguero_despacho_ticket_ajeno_404_sin_mutar(motor, ambito_tickets):
     assert despues == antes
 
 
-def test_bodeguero_despacho_ticket_inexistente_404(motor, ambito_tickets):
-    with _cliente(motor, "Bodeguero", ambito_tickets["departamento_id"]) as cliente:
-        respuesta = cliente.post(
-            f"{RUTA_TICKETS}999999/despacho",
-            json={"usuario_id": ambito_tickets["usuario_id"]},
-        )
-    assert respuesta.status_code == 404, respuesta.text
-
-
-def test_bodeguero_despacho_propio_200_sigue_transaccional(motor, ambito_tickets):
-    """El despacho del ticket propio no se rompe y sigue rebajando stock."""
-    # Actor persistido: el despacho registra su fila de historial (013, AC-9).
+def test_bodeguero_retiro_ticket_inexistente_404(motor, ambito_tickets):
     with _cliente(
         motor,
         "Bodeguero",
         ambito_tickets["departamento_id"],
         ambito_tickets["usuario_id"],
+        ambito_tickets["sede_id"],
+    ) as cliente:
+        respuesta = cliente.post(
+            f"{RUTA_TICKETS}999999/retiro",
+            json={"usuario_id": ambito_tickets["usuario_id"]},
+        )
+    assert respuesta.status_code == 404, respuesta.text
+
+
+def test_bodeguero_retiro_propio_200_sigue_transaccional(motor, ambito_tickets):
+    """El retiro del ticket propio no se rompe y sigue rebajando stock."""
+    # Actor persistido: el retiro registra su fila de historial (013, AC-9).
+    with _cliente(
+        motor,
+        "Bodeguero",
+        ambito_tickets["departamento_id"],
+        ambito_tickets["usuario_id"],
+        ambito_tickets["sede_id"],
     ) as cliente:
         stock_antes = _stock_sede(
             motor,
@@ -610,7 +622,7 @@ def test_bodeguero_despacho_propio_200_sigue_transaccional(motor, ambito_tickets
             ambito_tickets["producto_id"],
         )
         respuesta = cliente.post(
-            f"{RUTA_TICKETS}{ambito_tickets['ticket_despacho_propio_id']}/despacho",
+            f"{RUTA_TICKETS}{ambito_tickets['ticket_despacho_propio_id']}/retiro",
             json={"usuario_id": ambito_tickets["usuario_id"]},
         )
         stock_despues = _stock_sede(

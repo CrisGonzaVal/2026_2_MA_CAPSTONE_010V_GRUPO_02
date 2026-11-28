@@ -596,3 +596,33 @@ absorbidos por esta feature:
 | `CancelacionOrdenCompra` | `motivo_cancelacion` | `strip`, `min_length=1`, `max_length=500` |
 | `FacturaCompraRegistrar` | `numero_factura` | `strip`, `min_length=1`, `max_length=50` |
 | `FacturaCompraRegistrar` | `observaciones` | `max_length=500` |
+
+## Nota de coordinación (27/Nov/2026): enmienda funcional de la Feature 012
+
+La **enmienda funcional posterior al cierre de la Feature 012**
+(`docs/spec/features/012-gestion-administrativa/spec.md`, sección «Enmienda funcional
+posterior al cierre (27/Nov/2026): alta y edición de usuarios según rol») **supersede solo
+la obligatoriedad de `departamento_id` en la entrada** de alta y edición de usuario que fija
+esta spec:
+
+- **R-4 y Anexo A:** `departamento_id` pasa a ser opcional en `UsuarioCrear` y
+  `UsuarioEdicion`; cuando falta, el servicio responde **422** para todo rol distinto de
+  Bodeguero y resuelve el departamento «Suministros» para Bodeguero. Se conserva `ge=1` cuando el
+  campo viene, el `NOT NULL` del DDL y el `departamento_id` real en `UsuarioRespuesta`.
+- **AC-4:** el 422 por un `departamento_id` presente con valor `0` o negativo se conserva;
+  se agrega el 422 por ausencia cuando el rol lo exige. El resto del AC no cambia.
+- **Sin impacto en el resto de la 027:** RUT con DV, longitudes y rangos del DDL,
+  `extra="forbid"`, nombres sin espacios exteriores, traducción de
+  `IntegrityError`/`DataError` y parser 422 compartido siguen vigentes sin cambios.
+
+La 027 no se reescribe: esta nota solo registra la coordinación y el alcance exacto de la
+supersesión.
+
+## Nota de vigencia (27/Nov/2026): retiro de `departamento_encargado`
+
+La enmienda de la Feature 012 (implementada y cerrada el 27/Nov/2026) retiró
+`departamento_encargado` y dejó el esquema en **25 tablas en `control` / 22 por tenant** con
+token **`026.1`**. Las menciones de esta spec
+a `026.0`, 26/23 y «sin cambio de esquema» (AC-13 y §2) son **históricas de su cierre** y
+quedan superadas por esta nota. El AC-13 sigue siendo válido como criterio de cierre de la
+027 en su fecha; no es una afirmación del estado actual. La 027 no se reescribe.

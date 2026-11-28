@@ -200,3 +200,15 @@ Todos los movimientos históricos y sus referencias a filas legadas de inventari
 | AC-12 | Verificado | `api/test_control_sede_011.py::test_version_objetivo_es_011_1`, `::test_tenant_con_la_version_anterior_no_es_objetivo`, `::test_tenant_en_version_011_1_es_objetivo`, `::test_aprovisionamiento_crea_la_sede_inicial`, `::test_aprovisionamiento_responde_la_version_011_1`; gated `test_aprovisionamiento_postgres_010.py::test_tenant_aprovisionado_recibe_sede_central_y_version_011_1`; gated `test_migracion_modelo_organizacional_011.py::test_migracion_011_crea_estructura_y_versiona` (control + 4 tenants a `011.1`). |
 | AC-13 | Verificado | gated `test_migracion_modelo_organizacional_011.py::test_instalacion_limpia_crea_sedes_y_conserva_la_guardia` (`01_` antes de `02_`, guardia fail-closed antes del primer `TRUNCATE`). |
 | AC-14 | Verificado | Suites: gated `pytest` **742 passed / 0 failed / 0 skipped**; SQLite **696 passed / 46 skipped**; `ng test` **198 SUCCESS**; `ng build` limpio. Matriz central: **28 operaciones**. Contrato `/openapi.json`: `api/test_organizacion_011.py::test_openapi_publica_las_operaciones_de_organizacion`, `::test_operaciones_de_organizacion_se_declaran_solo_para_administrador`. Recorridos: T13 (4200, escritura real) y T14 (8080, imagen reconstruida). Validación reviewer: VEREDICTO APROBADO. |
+
+## 9. Nota de retiro posterior al cierre (27/Nov/2026): encargado de departamento
+
+La **enmienda funcional de la Feature 012** (`docs/spec/features/012-gestion-administrativa/spec.md`,
+«Segundo bloque de la enmienda (27/Nov/2026): eliminación del concepto de encargado de
+departamento») retira por completo el concepto de encargado de departamento y la tabla
+`departamento_encargado`. Quedan **supersedidos** AC-4 y AC-5 en su parte de encargados, §3
+«Dentro» (relación N:N y API), D-4, §5 pasos 4 y 6, §7 (restricciones de encargados) y la
+evidencia de AC-4/AC-5. Lo demás de la 011 (sede, stock por sede, snapshot de sede en ticket,
+precondiciones y conteos históricos) sigue vigente. La base se reconstruye: la enmienda de la
+012, **implementada y cerrada el 27/Nov/2026**, dejó **25 tablas en control / 22 por tenant** y
+token **`026.1`**. La 011 no se reescribe; esta nota solo registra el retiro.

@@ -1,6 +1,6 @@
 # Feature 018: Filtros de existencias por sede y departamento
 
-**Estado:** Cerrada (21/Oct/2026)  
+**Estado:** Cerrada (21/Oct/2026). **Enmienda post-cierre del 27/Nov/2026 — checkbox «Solo con stock» (§11): cerrada el 27/Nov/2026 (T14/T15).**  
 **Release:** 2.0 — backlog posterior al Sprint 6  
 **Tipo:** Mejora de consulta de inventario
 
@@ -206,3 +206,288 @@ ruta→servicio) y no por llamada directa al servicio.
 | AC-9 | Verificado | **Suites:** `cd backend && python -m pytest -q` → **1339 passed / 76 skipped / 0 failed** (SQLite). Gated `POSTGRES_TEST_URL` → **1415 passed / 0 skipped / 0 failed** (`apt_erp` intacta: 5 instituciones, 4 esquemas `tenant_%`, `version_esquema 014.1` con la misma marca). `npx ng test --watch=false --browsers=ChromeHeadless` → **419 SUCCESS / 0 FAILED**; `npx ng build` limpio (`main-7QF7T5XQ.js`). **OpenAPI:** 61 operaciones v1, claves idénticas a `MATRIZ_PERMISOS`. **Recorrido funcional 4200** con escritura real (capturas `01`…`10`) y **humo 8080** tras `docker compose build frontend` (bundle `main-7QF7T5XQ.js`, capturas `8080-01`…`8080-04`), ambos en `docs/spec/features/018-filtro-inventario-sede-departamento/evidencia/README.md`. El 200/`[]` de la lista no contradice el 404 de 011 AC-3 (recurso `/inventario/stock`), verificado en el gated. |
 
 La ruta/DTO exactos de la operación de ámbito se fijan en `plan.md`; no pueden alterar este contrato semántico ni la lista de campos mínimos. La operación publicada es `GET /api/v1/inventario/ambito` con `AmbitoInventarioRespuesta`.
+
+> **Nota de dependencia (26/Nov/2026, Feature 013 §10).** El checkbox **«Solo con stock»** del
+> inventario queda como **enmienda separada a esta feature**, fuera del alcance de la 013 y
+> pendiente de planificación después del cierre de T44. No se implementa aquí ni agrega ACs
+> ejecutables en la 013: se registrará con su propia spec/plan cuando se aborde. La 013 solo deja
+> constancia de la dependencia en `../013-ciclo-vida-ticket/spec.md` §10.8/§10.12.
+
+## 11. Enmienda post-cierre (27/Nov/2026): checkbox «Solo con stock»
+
+> **Qué enmienda.** No crea una feature nueva ni reescribe la historia ni el cierre de la 018:
+> añade la pieza «Solo con stock» sobre lo ya cerrado, con decisiones D-9…D-14 y criterios
+> AC-10…AC-13. **No cambia la API, el DDL, el modelo de datos, la matriz de autorización, las
+> capacidades ni los permisos**: `GET /inventario/existencias` sigue devolviendo los productos con
+> saldo cero y no gana parámetros. Satisface la nota de dependencia al pie de §10 (26/Nov/2026,
+> Feature 013), cuyo texto no se edita por ser registro histórico. Las tareas de esta enmienda
+> quedaron en **T14** y **T15** de `tasks.md` y el detalle técnico, en `plan.md` §7 (§11.8).
+
+### 11.1 Problema
+
+La 018 acotó las existencias por rol y por sede/departamento, pero el catálogo sigue mostrando
+**todos** los productos del ámbito, incluidos los que no tienen saldo: sin filtro organizacional
+aparecen en cero con `sedes: []` (D-7), y con sede/departamento desaparecen solo los que no tienen
+fila de stock en esa sede, no los que la tienen con saldo cero. Para el Administrador que revisa la
+institución, el Bodeguero que prepara su bodega o el Solicitante que consulta disponibilidad antes
+de pedir, esas filas en cero son ruido: alargan la tabla y obligan a leer el número de cada fila
+para distinguir «hay» de «no hay». La lectura de disponibilidad real existe —`stock_total`— pero no
+se puede pedir a la vista que la use como criterio.
+
+### 11.2 Objetivo
+
+Añadir en la pestaña «Existencias» un checkbox **«Solo con stock»**, marcado por defecto en falso,
+que oculte de la tabla los productos sin saldo en el ámbito vigente del rol y de los filtros, sin
+tocar el contrato del backend ni los indicadores del catálogo, y que se combine con el resto de
+filtros y con «Limpiar filtros».
+
+### 11.3 Alcance de la enmienda
+
+#### Dentro
+
+- Checkbox «Solo con stock» en la barra de filtros de la pestaña «Existencias», visible para
+  **Administrador, Bodeguero y Solicitante**.
+- Predicado `stock_total > 0` aplicado en cliente sobre la última respuesta de
+  `GET /inventario/existencias` (ya acotada por rol y por `sede_id`/`departamento_id`).
+- Combinación con búsqueda por texto, categoría, «Solo stock crítico» y filtros organizacionales;
+  actualización de los conteos del panel de categorías, de «Limpiar filtros» y de la detección de
+  filtros activos.
+- Estado vacío propio, sin confundir «sin resultados» con «sin stock».
+- Accesibilidad del control y presentación con Tailwind, sin CSS quemado.
+- Pruebas de componente, `ng build`, recorrido funcional en 4200 y humo en 8080 reconstruido.
+
+#### Fuera
+
+- Endpoint, parámetro de consulta, DTO, response model, permiso, capacidad o entrada de matriz
+  nuevos; el filtro **no viaja al servidor**.
+- Cambios de DDL, modelo, semilla, token de esquema o migraciones.
+- Persistencia del estado en URL, `localStorage`, preferencias de usuario o entre pestañas.
+- Recalcular la franja de indicadores al marcar o desmarcar, o cambiar el comportamiento de
+  «Solo stock crítico».
+- Filtrar por stock en otras vistas o lecturas: detalle de producto de la 019, «Gestión del
+  catálogo» de la 014, dashboard, tickets, compras o el propio backend.
+- Ocultar productos de la respuesta, alterar `stock_total`, `sedes` o `es_critico`, o reordenar
+  las filas.
+
+### 11.4 Decisiones
+
+#### D-9 — Filtro de presentación sobre el `stock_total` ya acotado por el servidor
+
+El checkbox no envía ningún parámetro ni consulta un endpoint nuevo: oculta, en la tabla de la
+pestaña «Existencias», los productos cuyo `stock_total` en la respuesta vigente **no sea
+estrictamente mayor que 0**. El conjunto de partida es el que ya devolvió
+`GET /inventario/existencias` con el alcance del rol (Administrador: toda la institución; Bodeguero
+y Solicitante: su sede) y, si están elegidos, los filtros `sede_id`/`departamento_id`. El backend
+sigue devolviendo los productos con saldo cero —incluidos los de `sedes: []`— y conserva su
+contrato (D-7). Con filtro organizacional, el servidor ya omite los productos **sin fila** de stock
+en esa sede (D-2); el checkbox oculta además los que tienen fila **con saldo 0**.
+
+**Por qué:** `stock_total` es el campo que la tabla muestra y ya está calculado sobre el ámbito
+correcto; recalcularlo en el cliente o añadir un parámetro al servidor duplicaría una decisión de
+presentación, exigiría contrato/matriz/OpenAPI nuevos y no cambiaría ningún dato. Como el saldo es
+por sede y no por departamento (D-2), «tiene stock» solo puede significar `stock_total > 0` en el
+ámbito vigente. El `> 0` estricto —y no `>= 0`— es justamente lo que distingue «tiene existencias»
+de «aparece en el catálogo», y coincide con la definición que ya usa el indicador «Con
+existencias».
+
+#### D-10 — La franja de indicadores no se recalcula al marcar
+
+Los tres indicadores («Insumos», «Con existencias» y «Stock crítico») siguen describiendo el
+catálogo **cargado** del ámbito del rol y de los filtros organizacionales, igual que hoy con
+«Solo stock crítico»: marcar o desmarcar «Solo con stock» no los altera. Solo cambian la tabla, el
+panel de categorías y el estado vacío.
+
+**Por qué:** §6.4 y AC-1 atan la franja a la respuesta que devuelve el servidor para el ámbito
+seleccionado, no a los filtros de cliente, y la vista ya la rotula «Catálogo cargado». Recalcular
+los tres desde las filas visibles haría que, con el checkbox marcado, «Con existencias» fuera
+siempre igual a «Insumos» (todas las filas tendrían saldo): el indicador perdería su función, que
+es decir cuántos productos del catálogo tienen stock **antes** de decidir el filtro, y además
+obligaría a reescribir las aserciones de la franja de AC-1 y la prueba de la transición
+sede↔global. Alternativa descartada: recalcular desde las filas visibles, que además haría
+depender el KPI de la categoría seleccionada, algo que el panel de categorías hoy evita a
+propósito.
+
+#### D-11 — Visible para los tres roles que leen existencias
+
+El checkbox se muestra en la barra de filtros de la pestaña «Existencias» a **Administrador,
+Bodeguero y Solicitante**. No depende de `puedeVerFiltrosInventario` —que gobierna los selectores
+organizacionales y solo concede a Administrador y Bodeguero— ni consulta la lectura de ámbito. El
+Superadmin no accede a la vista, que sigue denegada por matriz y capacidad.
+
+**Por qué:** el control no amplía el alcance ni revela datos: solo oculta filas que la API ya
+devolvió para el actor. El Solicitante —que consulta disponibilidad antes de emitir su ticket— es
+el principal interesado en no leer ceros, y negárselo obligaría a mantener dos barras de filtros
+distintas sin ninguna ganancia de seguridad. La autorización y el acotamiento por sede siguen
+siendo del servidor (D-8): esto es visibilidad, no permiso.
+
+#### D-12 — Estado vacío propio, con precedencia explícita
+
+Cuando el checkbox está marcado y no queda ninguna fila visible, la vista muestra **«Ningún insumo
+con stock coincide con los filtros aplicados.»** y no el vacío genérico. La precedencia es:
+(1) si la respuesta cargada no trae ningún producto, se conserva «El catálogo no tiene insumos
+cargados.» aunque el checkbox esté marcado; (2) si hay catálogo pero el checkbox marcado deja la
+tabla vacía, se muestra el mensaje propio de stock; (3) en los demás casos con filtros y sin filas,
+se conserva «Ningún insumo coincide con los filtros aplicados.».
+
+**Por qué:** AC-6 ya distingue «no hay catálogo» de «los filtros no encuentran nada»; el checkbox
+introduce un tercer caso —hay catálogo y puede haber coincidencias, pero ninguna con saldo— que no
+debe leerse como filtros mal puestos ni como catálogo inexistente. El texto paralelo al de AC-6
+mantiene intacto el contrato literal de los dos mensajes existentes y añade la causa real. Que el
+catálogo vacío prevalezca evita atribuir a la falta de stock una ausencia de datos anterior al
+filtro.
+
+#### D-13 — Sin persistencia entre cargas
+
+El estado vive solo en memoria de la vista: arranca **desmarcado** en cada carga y en cada recarga
+de la página, y no se guarda en la URL, en `localStorage` ni en preferencias de usuario. Tampoco se
+sincroniza entre pestañas ni se restaura desde el detalle de producto.
+
+**Por qué:** es una ayuda de exploración, no una configuración. Persistirlo ocultaría productos del
+catálogo sin señal visible —un usuario posterior creería que no existen— y convertiría la ausencia
+de una fila en una decisión heredada de otra sesión. «Solo stock crítico», el filtro vecino, tampoco
+persiste: mantener el mismo comportamiento evita dos filtros de la misma barra con reglas distintas.
+
+#### D-14 — Control nativo accesible y estilos Tailwind
+
+Se usa un `<input type="checkbox">` nativo con `id="solo-con-stock"`, `name="solo-con-stock"` y un
+`<label>` visible asociado por `for`/`id` con el texto **«Solo con stock»**. Conserva el patrón del
+checkbox existente: anillo `focus-visible` y clases Tailwind, sin CSS quemado ni `styles` en el
+componente. El clic en la etiqueta conmuta el control y el lector de pantalla anuncia nombre y
+estado. No se renombra ni se mueve «Solo stock crítico».
+
+**Por qué:** el patrón ya está probado en la misma barra y cumple AGENTS.md §6 (solo Tailwind, sin
+CSS embebido). Un `div` clicable o un control sin etiqueta rompería teclado y lectores de pantalla;
+un `id` estable permite, además, la prueba DOM del contrato.
+
+### 11.5 Reglas del flujo
+
+1. La pestaña «Existencias» se carga como hoy: el servidor acota por rol y, si corresponde, por
+   sede/departamento. El checkbox arranca desmarcado en cada carga.
+2. Desmarcado, la tabla muestra el catálogo del ámbito —incluidos los productos con
+   `stock_total: 0` y `sedes: []`—, exactamente como antes de esta enmienda.
+3. Marcado, la tabla muestra solo los productos con `stock_total > 0` del conjunto cargado. No se
+   emite una petición nueva ni se agrega un parámetro: el conjunto no se altera, solo se oculta.
+4. El filtro se combina en intersección con el texto, la categoría, «Solo stock crítico» y los
+   filtros organizacionales; no los reemplaza ni los limpia. Cambiar sede o departamento conserva
+   el estado del checkbox y le reaplica el predicado a la nueva respuesta.
+5. Con «Solo stock crítico» marcado a la vez, quedan los productos críticos **con** stock; los
+   críticos en cero desaparecen (la regla vigente marca crítico también con saldo 0 y mínimo ≥ 0).
+6. El panel de categorías cuenta sobre el mismo conjunto que el buscador y los dos checkboxes: al
+   marcar «Solo con stock», el número de cada categoría y el de «Todas» excluyen los productos sin
+   saldo, de modo que el conteo anunciado coincide con lo que la tabla mostrará al pulsar esa
+   categoría.
+7. El botón «Limpiar filtros» se muestra cuando hay algún filtro activo, incluido «Solo con
+   stock»; al pulsarlo desmarca el checkbox y restablece el resto. Si el único filtro activo era de
+   cliente, no se emite una lectura nueva de existencias.
+8. La franja de indicadores no cambia al marcar o desmarcar (D-10): sigue representando el catálogo
+   cargado del ámbito.
+9. El estado vacío sigue la precedencia de D-12; carga y error conservan sus mensajes y su orden
+   actuales, y un fallo del backend no se presenta como «sin stock».
+10. Sin persistencia (D-13): una recarga de la vista vuelve a mostrar todos los productos.
+
+### 11.6 Contrato de la interfaz
+
+| Elemento | Contrato |
+|---|---|
+| Control | Checkbox nativo, `id="solo-con-stock"`, `name="solo-con-stock"`, etiqueta visible «Solo con stock» asociada por `for`, estado inicial `false`, foco visible con anillo y clases Tailwind. |
+| Ubicación | Barra de filtros de la pestaña «Existencias», junto al buscador y a «Solo stock crítico». Visible para Administrador, Bodeguero y Solicitante. |
+| Predicado | `stock_total > 0` sobre cada producto de la última respuesta de `GET /inventario/existencias`, ya acotada por rol y por sede/departamento. |
+| Orden de aplicación | Servidor (rol y filtros organizacionales) → cliente (texto, críticos y «Solo con stock») → categoría. El predicado se aplica antes de la categoría para que el panel cuente lo que la tabla mostrará. |
+| Indicadores | Sin cambios al marcar o desmarcar: siguen midiendo el catálogo cargado (D-10). |
+| Estado vacío | «Ningún insumo con stock coincide con los filtros aplicados.» cuando el checkbox marcado deja la tabla vacía habiendo catálogo; precedencia de D-12. |
+| Contrato del backend | Sin cambios: `GET /inventario/existencias` no gana parámetros ni campos; `stock_total`, `sedes` y `es_critico` conservan su semántica (D-7) y los productos sin saldo siguen en la respuesta. |
+| Autorización | Sin entradas nuevas en la matriz, sin cambios de roles, capacidades ni gating; el control es solo presentación (D-11). |
+| Persistencia | Ninguna (D-13). |
+
+### 11.7 Criterios de aceptación (AC-10…AC-13)
+
+- **AC-10 — Visibilidad, estado inicial y accesibilidad.** DADO un usuario con rol Administrador,
+  Bodeguero o Solicitante, CUANDO abre `/inventario` en la pestaña «Existencias», ENTONCES ve el
+  checkbox «Solo con stock» desmarcado; el control tiene `id="solo-con-stock"`, `name` y `<label>`
+  visible asociada, se conmuta con clic en la etiqueta y con teclado, y muestra anillo
+  `focus-visible`; no hay CSS embebido ni `styles` (solo Tailwind). DADO que la vista se vuelve a
+  cargar o se monta de nuevo, ENTONCES el checkbox vuelve a estar desmarcado: no se persiste en
+  URL, almacenamiento ni preferencias. El Superadmin no accede a la vista.
+  - **Evidencia verificada (T15, 27/Nov/2026):** `frontend/src/app/features/inventario/inventario.component.spec.ts:1615-1631`
+    — bucle `for (const rol of ['Administrador', 'Bodeguero', 'Solicitante'])` que genera el test
+    *««Solo con stock» está visible para {rol} y arranca desmarcado»* (**3 casos**) y
+    *«el checkbox «Solo con stock» declara id, name y label, y no persiste al remontar la vista»*,
+    más `ng build` sin CSS embebido (`main-72C5Q3DY.js`, 339,98 kB
+    iniciales). **4200:** `#solo-con-stock` con `id`/`name`/`<label for>` «Solo con stock»,
+    desmarcado, y conmutación real **Tab + Espacio** con anillo `focus-visible` observado
+    (`box-shadow` azul); recarga sin persistencia. **8080:** el mismo control en la imagen
+    reconstruida. Detalle y capturas en `evidencia/README.md` §12.
+
+- **AC-11 — Filtrado por saldo, sin contrato nuevo y con la franja intacta.** DADO el catálogo
+  cargado del ámbito (por ejemplo, tres productos: dos con `stock_total > 0` y uno en cero con
+  `sedes: []`), CUANDO se marca «Solo con stock», ENTONCES la tabla muestra solo los dos con saldo y
+  desaparece el de cero; el producto sigue en la respuesta —no se refetchea ni se envía un
+  parámetro— y los tres indicadores de la franja («Insumos», «Con existencias» y «Stock crítico»)
+  conservan los valores que tenían antes de marcar. CUANDO se desmarca, ENTONCES vuelven a verse los
+  tres. El contrato de `GET /inventario/existencias` no cambia y no se emite ninguna petición HTTP
+  adicional.
+  - **Evidencia verificada (T15, 27/Nov/2026):** `inventario.component.spec.ts` — *«marcar «Solo con stock»
+    oculta los productos con stock_total 0 sin alterar la franja ni pedir existencias»* y
+    *«desmarcar «Solo con stock» recupera los productos sin saldo»*, con `httpMock` sin peticiones
+    pendientes. **4200 (Solicitante):** 10 filas con 5 ceros → **10 a 5 filas / 0 ceros** al marcar,
+    franja **10 / 5 / 6** idéntica antes y después, y una sola `GET /inventario/existencias` (la de
+    la carga); al recargar, el checkbox vuelve desmarcado y reaparecen las 10 filas. **8080:** mismo
+    10→5 con la imagen reconstruida. El contrato de `GET /inventario/existencias` no cambió.
+    Capturas `t15-03`, `t15-04` y `t15-06`.
+
+- **AC-12 — Combinación con los demás filtros y limpieza.** DADO texto, categoría, «Solo stock
+  crítico» y/o filtros organizacionales activos, CUANDO se marca «Solo con stock», ENTONCES se
+  aplican simultáneamente y quedan solo las filas que cumplen todo, con `stock_total > 0`; con
+  «Solo stock crítico» marcado a la vez quedan los críticos **con** saldo y desaparecen los
+  críticos en cero. Los conteos del panel de categorías excluyen los productos sin saldo. El botón
+  «Limpiar filtros» aparece con el checkbox marcado y, al pulsarlo, lo desmarca, restablece los
+  demás filtros y —solo si había un filtro organizacional activo— vuelve a pedir el agregado del
+  rol; si el único filtro activo era de cliente, no hay lectura nueva.
+  - **Evidencia verificada (T15, 27/Nov/2026):** `inventario.component.spec.ts` — *««Solo con stock» se
+    combina con texto, categoría, críticos y filtros organizacionales»*, *«el panel de categorías
+    excluye los productos sin saldo al marcar «Solo con stock»»*, *««Limpiar filtros» desmarca «Solo
+    con stock» y no pide existencias si el único filtro era de cliente»* y la rama con filtro
+    organizacional activo. **4200 (Administrador):** texto `toner` + categoría «Toner y Cartuchos»
+    + «Solo stock crítico» + «Solo con stock» deja **1 fila** y el panel anuncia «Toner y Cartuchos
+    1 insumos», sin petición nueva; «Limpiar filtros» restablece el estado con 10 filas y sin
+    lectura nueva. Captura `t15-02`; detalle en `evidencia/README.md` §12.
+
+- **AC-13 — Estado vacío diferenciado y sin interferencia con carga/error.** DADO el checkbox
+  marcado y ninguna fila con `stock_total > 0` en el ámbito y filtros vigentes, ENTONCES se muestra
+  «Ningún insumo con stock coincide con los filtros aplicados.» y no el mensaje genérico de filtros
+  ni el de catálogo vacío. DADO que la respuesta cargada no trae ningún producto, ENTONCES se
+  conserva «El catálogo no tiene insumos cargados.» aunque el checkbox esté marcado. Los estados de
+  carga y de error del backend conservan sus mensajes actuales; un error no se presenta como «sin
+  stock».
+  - **Evidencia verificada (T15, 27/Nov/2026):** `inventario.component.spec.ts` — *«sin productos con stock
+    muestra un vacío que distingue la falta de stock»*, *«el vacío de catálogo prevalece sobre el
+    vacío de «Solo con stock»»* y la prueba de error de AC-6 sin cambios. **4200:** con el checkbox
+    marcado y filtros de cliente sin coincidencias (Administrador) o categoría «Limpieza» en el
+    ámbito del Solicitante, la vista muestra **«Ningún insumo con stock coincide con los filtros
+    aplicados.»** con la franja intacta; capturas `t15-01` y `t15-05`. El caso catálogo vacío +
+    checkbox se acredita en el spec (provocarlo en vivo exigiría vaciar el tenant).
+
+### 11.8 Superación, evidencia y cierre
+
+- **La 018 no reescribe su cierre.** El estado histórico `Cerrada (21/Oct/2026)` y la §10 con la
+  evidencia de AC-1…AC-9 quedan intactos: no se reabre su tabla, no se alteran sus conteos
+  (matriz 60→61, suites 1339 SQLite / 1415 gated / 419 `ng test`, capturas del 21/Oct/2026) ni se
+  reescribe el contrato de la 018. Esta §11 es **aditiva** y registra su propia superación: la
+  pieza nueva y su evidencia viven aquí.
+- **AC-1…AC-9 siguen vigentes sin cambios.** El checkbox no modifica la semántica de sede,
+  departamento, criticidad, indicadores ni estados vacíos existentes; cuando está desmarcado, el
+  comportamiento es idéntico al cerrado.
+- **La nota de dependencia al pie de §10 queda satisfecha** por esta enmienda: el checkbox llegó
+  como enmienda de la 018, fuera de la 013 y sin crear una feature nueva. El texto de la nota no se
+  edita porque es registro histórico.
+- **Tareas:** **T14** —pruebas rojas y control «Solo con stock» con su semántica, combinación,
+  conteos, limpieza y estado vacío en la pestaña «Existencias»— y **T15** —verificación y evidencia:
+  `npx ng test --watch=false --browsers=ChromeHeadless`, `npx ng build`, recorrido funcional en
+  4200 y humo en 8080 reconstruido, más la anotación de la enmienda—. Ambas quedaron cerradas el
+  27/Nov/2026; `tasks.md`, `plan.md` §7 y `evidencia/README.md` §12 son los registros vigentes.
+- **Sin cambios de contrato ni de esquema**, por lo que `stack.md` no requiere actualización de
+  contrato (no hay API, parámetro, matriz ni DDL nuevos). Al cerrar la enmienda se anotará en la
+  fila 018 de `roadmap.md` y en `MEMORY.md`, con el grep de coherencia de AGENTS.md §8.5–§8.7.
+- **Cierre de la enmienda** exige, por ser un cambio de frontend, reconstruir la imagen
+  (`docker compose -f docker-compose.yml build frontend` + `up -d frontend`) y verificar los dos
+  puertos, además de la suite y el build en verde.

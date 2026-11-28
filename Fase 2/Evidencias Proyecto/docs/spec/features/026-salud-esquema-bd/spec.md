@@ -180,7 +180,7 @@ La decisión es «lite» porque no se inventan movimientos de apertura para los 
 | Tablas por tenant | 24 | **23** |
 | Token de esquema | `021.1` | **`026.0`** |
 
-`departamento_encargado` sigue siendo la única tabla auxiliar y no se cuenta como entidad. `funcion_institucion`, `mapa_usuario_esquema`, `registro_motivo_constancia` y `version_esquema` siguen siendo estructuras de control/versionado, no entidades de dominio.
+`departamento_encargado` era la única tabla auxiliar y no se contaba como entidad (retirada por la enmienda 012 del 27/Nov/2026; ver la nota de vigencia al final). `funcion_institucion`, `mapa_usuario_esquema`, `registro_motivo_constancia` y `version_esquema` siguen siendo estructuras de control/versionado, no entidades de dominio.
 
 ### D-7 — Paridad ORM obligatoria y helper dialectal para PostgreSQL
 
@@ -319,3 +319,14 @@ Las interfaces `MovimientoCrear` y `MovimientoDashboard` ya no exponen `inventar
 - **Supone que:** el frontend no consume `inventario_id` ni los campos departamentales de la actividad (verificado por `grep`); solo los specs de dashboard los usan como mocks.
 - **No depende de:** Redis, Clerk ni servicios externos. Las pruebas gated de Redis son solo no regresión.
 - **Aprobación requerida:** `docs/spec/stack.md` debe recibir la sección de la Feature 026 antes de tocar modelos, DDL o semilla (`AGENTS.md` §7).
+
+## 10. Nota de vigencia (27/Nov/2026): retiro de `departamento_encargado`
+
+La **enmienda funcional de la Feature 012** (`docs/spec/features/012-gestion-administrativa/spec.md`,
+«Segundo bloque de la enmienda (27/Nov/2026): eliminación del concepto de encargado de
+departamento») **implementada y cerrada el 27/Nov/2026** retiró `control.departamento_encargado`
+y su copia tenant, sus 5 filas de semilla, su modelo/esquemas/servicios/rutas y su vista. El
+estado vigente es **25 tablas en `control`**, **22 por tenant**, **21 entidades de dominio** y
+token **`026.1`**; `departamento_encargado` ya no existe. Las menciones de esta spec a 26/23,
+`026.0` y a `departamento_encargado` como única tabla auxiliar son **históricas de su cierre**
+y quedan superadas por esta nota. La 026 no se reescribe.

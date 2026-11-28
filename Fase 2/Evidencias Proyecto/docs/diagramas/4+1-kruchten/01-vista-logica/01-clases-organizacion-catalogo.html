@@ -57,13 +57,13 @@
       <svg viewBox="0 0 1440 820" xmlns="http://www.w3.org/2000/svg"
            role="img" aria-labelledby="clases-org-title clases-org-desc">
         <title id="clases-org-title">Diagrama de clases de organización y catálogo</title>
-        <desc id="clases-org-desc">Seis clases de organización (Institucion, Sede, Departamento, Usuario, Rol y DepartamentoEncargado) y cuatro de catálogo (Categoria, Producto y los historiales de transición de producto y categoría), con sus asociaciones y cardinalidades.</desc>
+        <desc id="clases-org-desc">Cinco clases de organización (Institucion, Sede, Departamento, Usuario y Rol) y cuatro de catálogo (Categoria, Producto y los historiales de transición de producto y categoría), con sus asociaciones y cardinalidades.</desc>
         <rect width="1440" height="820" fill="#f8fafc"/>
 
         <!-- ===================== ZONAS ===================== -->
         <rect x="40" y="88" width="680" height="620" rx="8" fill="rgba(30,41,59,0.02)" stroke="rgba(30,41,59,0.22)" stroke-width="1"/>
         <text x="60" y="114" fill="#475569" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">ORGANIZACIÓN</text>
-        <text x="700" y="114" fill="#64748b" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">6 CLASES · ÁMBITO TENANT</text>
+        <text x="700" y="114" fill="#64748b" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">5 CLASES · ÁMBITO TENANT</text>
 
         <rect x="744" y="88" width="656" height="620" rx="8" fill="rgba(30,41,59,0.02)" stroke="rgba(30,41,59,0.22)" stroke-width="1"/>
         <text x="764" y="114" fill="#475569" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">CATÁLOGO</text>
@@ -81,10 +81,6 @@
           <path d="M292,560 L322,560 L322,304 L440,304"/>
           <!-- Rol 1 -> N Usuario -->
           <path d="M360,392 L344,392 L344,270 L360,270"/>
-          <!-- Departamento 1 -> N DepartamentoEncargado -->
-          <path d="M150,664 L150,684 L480,684 L480,624"/>
-          <!-- Usuario 1 -> N DepartamentoEncargado -->
-          <path d="M600,240 L648,240 L648,500 L560,500 L560,520"/>
           <!-- Categoria 1 -> N Producto -->
           <path d="M1026,196 L1076,196"/>
           <!-- Categoria 1 -> N HistorialCategoria -->
@@ -100,8 +96,6 @@
           <text x="280" y="334">1</text><text x="350" y="206">N</text>
           <text x="300" y="554">1</text><text x="446" y="298">N</text>
           <text x="366" y="386">1</text><text x="350" y="264">N</text>
-          <text x="158" y="676">1</text><text x="486" y="618">N</text>
-          <text x="608" y="234">1</text><text x="566" y="514">N</text>
           <text x="1022" y="190">1</text><text x="1062" y="190">N</text>
           <text x="858" y="268">1</text><text x="858" y="368">N</text>
           <text x="1198" y="300">1</text><text x="1198" y="376">N</text>
@@ -168,17 +162,6 @@
           <text x="84" y="618" fill="#475569" font-size="8.5" font-family="'Geist Mono', ui-monospace, monospace">institucion_id : VARCHAR(20) <tspan fill="#2563eb">«FK»</tspan></text>
           <text x="84" y="634" fill="#475569" font-size="8.5" font-family="'Geist Mono', ui-monospace, monospace">sede_id : INT <tspan fill="#2563eb">«FK»</tspan> <tspan fill="#64748b">nullable</tspan></text>
           <text x="84" y="650" fill="#475569" font-size="8.5" font-family="'Geist Mono', ui-monospace, monospace">activo : BOOLEAN</text>
-        </g>
-
-        <!-- ===================== DEPARTAMENTO ENCARGADO ===================== -->
-        <g>
-          <rect x="360" y="520" width="240" height="104" rx="6" fill="#ffffff" stroke="rgba(30,41,59,0.25)" stroke-width="1"/>
-          <line x1="360" y1="560" x2="600" y2="560" stroke="rgba(30,41,59,0.12)" stroke-width="1"/>
-          <text x="372" y="535" fill="#64748b" font-size="7.5" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.12em">«AUXILIAR»</text>
-          <text x="372" y="551" fill="#1e293b" font-size="12.5" font-weight="600" font-family="'Geist', system-ui, sans-serif">DepartamentoEncargado</text>
-          <text x="372" y="578" fill="#475569" font-size="8.5" font-family="'Geist Mono', ui-monospace, monospace">departamento_encargado_id <tspan fill="#2563eb">«PK»</tspan></text>
-          <text x="372" y="594" fill="#475569" font-size="8.5" font-family="'Geist Mono', ui-monospace, monospace">departamento_id : INT <tspan fill="#2563eb">«FK»</tspan></text>
-          <text x="372" y="610" fill="#475569" font-size="8.5" font-family="'Geist Mono', ui-monospace, monospace">usuario_id : INT <tspan fill="#2563eb">«FK»</tspan></text>
         </g>
 
         <!-- ===================== CATEGORIA ===================== -->
@@ -252,7 +235,7 @@
         <text x="128" y="770" fill="#64748b" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">asociación 1 — N</text>
         <text x="300" y="770" fill="#64748b" font-size="8" font-family="'Geist Mono', ui-monospace, monospace"><tspan fill="#2563eb">«PK»</tspan> clave primaria · <tspan fill="#2563eb">«FK»</tspan> clave foránea · <tspan fill="#2563eb">«UQ»</tspan> única</text>
         <text x="760" y="770" fill="#64748b" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">Los historiales se escriben en la misma transacción que el cambio de estado.</text>
-        <text x="1400" y="770" fill="#64748b" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">17 ENTIDADES DE DOMINIO · ESTA VISTA: 10</text>
+        <text x="1400" y="770" fill="#64748b" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">21 ENTIDADES DE DOMINIO · ESTA VISTA: 9</text>
       </svg>
     </div>
     <p class="note">

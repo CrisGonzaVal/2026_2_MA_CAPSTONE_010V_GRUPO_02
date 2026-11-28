@@ -3,9 +3,9 @@
 Seam bajo prueba: la interfaz HTTP que consumen el tablero y el detalle
 (`GET /api/v1/tickets/` y `GET /api/v1/tickets/{id}`), nunca la sesion. Cubre:
 
-- **AC-37**: `Pendiente`, `EnRevision`, `Anulado` y `Cerrado` (con y sin
+- **AC-37/AC-63**: `EnRevision`, `Anulado` y `Cerrado` (con y sin
   confirmacion de entrega) exponen `etiqueta_proceso` y `explicacion_proceso`
-  en el listado y en el detalle.
+  en el listado y en el detalle. `Pendiente` ya no tiene etiqueta propia.
 - **AC-38**: en `EnCurso`, la OC activa mas avanzada decide la etiqueta con la
   escala `Recibida` > `Facturada` > `Emitida`; `Cancelada` no cuenta y sin
   cobertura decide `stock_disponible`.
@@ -59,11 +59,8 @@ from tests.funcional.integracion._soporte_sede_011 import (
 )
 
 #: Frases cortas literales de la spec §9.8 (fuente independiente del codigo).
-FRASE_EN_APROBACION = (
-    "En aprobación: pendiente de revisión por Bodega o Administración."
-)
 FRASE_EN_REVISION = (
-    "En revisión: estado heredado; se aprueba con la acción Aprobar."
+    "En revisión: estado inicial; se aprueba con la acción Aprobar."
 )
 FRASE_EN_COMPRA = "En compra: la orden está emitida y pendiente de facturación."
 FRASE_FACTURADO = (
@@ -71,12 +68,12 @@ FRASE_FACTURADO = (
 )
 FRASE_EN_CONFIRMACION_STOCK = (
     "En confirmación de stock local: el stock local está disponible; falta que "
-    "el Bodeguero lo confirme y despache."
+    "el Bodeguero lo confirme y retire."
 )
 FRASE_POR_COMPRAR = "Por comprar: no hay stock suficiente ni compra vigente."
-FRASE_DESPACHADO = "Despachado: pendiente de confirmación de entrega."
+FRASE_RETIRADO = "Retirado: pendiente de confirmación de entrega."
 FRASE_ENTREGADO = "Entregado: confirmado por el solicitante."
-FRASE_RECHAZADO = "Rechazado: el pedido no se despachará."
+FRASE_RECHAZADO = "Rechazado: el pedido no se retirará."
 
 #: Instantes fijos para que el desempate por fecha sea observable y estable.
 FECHA_CONFIRMACION = datetime(2026, 5, 4, 12, 30, 0)
@@ -288,10 +285,9 @@ def _sembrar_ticket_sin_sede(motor, mundo, estado_id: int) -> int:
 @pytest.mark.parametrize(
     ("estado", "etiqueta", "frase"),
     [
-        ("Pendiente", "En aprobación", FRASE_EN_APROBACION),
         ("EnRevision", "En revisión", FRASE_EN_REVISION),
         ("Anulado", "Rechazado", FRASE_RECHAZADO),
-        ("Cerrado", "Despachado", FRASE_DESPACHADO),
+        ("Cerrado", "Retirado", FRASE_RETIRADO),
     ],
 )
 def test_ac_37_listado_y_detalle_exponen_etiqueta_y_frase(
@@ -316,19 +312,19 @@ def test_ac_37_listado_y_detalle_exponen_etiqueta_y_frase(
     )
 
 
-def test_ac_37_alta_pendiente_por_http_expone_en_aprobacion(
+def test_ac_37_alta_en_enrevision_por_http_expone_en_revision(
     cliente_solicitante, motor, mundo
 ):
-    """AC-37: el alta nace en `Pendiente` y su etiqueta es «En aprobación»."""
+    """AC-37/AC-51: el alta nace en `EnRevision` y su etiqueta es «En revisión»."""
     respuesta = cliente_solicitante.post(
         "/api/v1/tickets/",
-        json=payload_alta(mundo, mundo["estados"]["Pendiente"]),
+        json=payload_alta(mundo, mundo["estados"]["EnRevision"]),
     )
     assert respuesta.status_code == 201, respuesta.text
     ticket_id = respuesta.json()["ticket_id"]
 
-    assert abrir_ticket(cliente_solicitante, ticket_id)["etiqueta_proceso"] == "En aprobación"
-    assert _detalle(cliente_solicitante, ticket_id)["etiqueta_proceso"] == "En aprobación"
+    assert abrir_ticket(cliente_solicitante, ticket_id)["etiqueta_proceso"] == "En revisión"
+    assert _detalle(cliente_solicitante, ticket_id)["etiqueta_proceso"] == "En revisión"
 
 
 def test_ac_37_cerrado_con_confirmacion_es_entregado_y_expone_la_linea(
@@ -377,7 +373,7 @@ def test_ac_37_cerrado_con_otro_motivo_no_esta_confirmado(
 
     en_detalle = _detalle(cliente, ticket_id)
     assert en_detalle["entrega_confirmada"] is False
-    assert en_detalle["etiqueta_proceso"] == "Despachado"
+    assert en_detalle["etiqueta_proceso"] == "Retirado"
     assert en_detalle["entrega_confirmada_en"] is None
 
 
@@ -651,18 +647,18 @@ def test_ac_39_el_201_del_alta_publica_el_read_model(
     actuar_como("Solicitante")
     respuesta = cliente.post(
         "/api/v1/tickets/",
-        json=payload_alta(mundo, mundo["estados"]["Pendiente"]),
+        json=payload_alta(mundo, mundo["estados"]["EnRevision"]),
     )
     assert respuesta.status_code == 201, respuesta.text
     cuerpo = respuesta.json()
 
-    assert cuerpo["estado_id"] == mundo["estados"]["Pendiente"]
+    assert cuerpo["estado_id"] == mundo["estados"]["EnRevision"]
     assert (cuerpo["etiqueta_proceso"], cuerpo["explicacion_proceso"]) == (
-        "En aprobación",
-        FRASE_EN_APROBACION,
+        "En revisión",
+        FRASE_EN_REVISION,
     )
     assert cuerpo["stock_disponible"] is False, (
-        "un pedido en `Pendiente` no participa de la simulación de la 020"
+        "un pedido en `EnRevision` no participa de la simulación de la 020"
     )
     assert cuerpo["entrega_confirmada"] is False
     assert cuerpo["estado_orden_cobertura"] is None
@@ -673,7 +669,7 @@ def test_ac_39_el_201_del_alta_publica_el_read_model(
     assert len(historial) == 1, historial
     creacion = historial[0]
     assert creacion["estado_origen_id"] is None
-    assert creacion["estado_destino_id"] == mundo["estados"]["Pendiente"]
+    assert creacion["estado_destino_id"] == mundo["estados"]["EnRevision"]
 
     with sesion(motor) as db:
         estado_persistido = db.execute(
@@ -685,8 +681,8 @@ def test_ac_39_el_201_del_alta_publica_el_read_model(
             .where(Usuario.usuario_id == creacion["usuario_id"])
         ).scalar_one()
 
-    assert estado_persistido == mundo["estados"]["Pendiente"], (
-        "el alta sigue naciendo en `Pendiente` (AC-27)"
+    assert estado_persistido == mundo["estados"]["EnRevision"], (
+        "el alta nace en `EnRevision` (D-27/AC-51)"
     )
 
     # El actor de creación es el Solicitante (rol vigente): no es gestor.
@@ -724,12 +720,12 @@ def test_ac_39_el_201_del_alta_de_un_solicitante_no_registra_gestores(motor, mun
     ) as solicitante:
         respuesta = solicitante.post(
             "/api/v1/tickets/",
-            json=payload_alta(mundo, mundo["estados"]["Pendiente"]),
+            json=payload_alta(mundo, mundo["estados"]["EnRevision"]),
         )
         assert respuesta.status_code == 201, respuesta.text
         cuerpo = respuesta.json()
 
-        assert cuerpo["etiqueta_proceso"] == "En aprobación"
+        assert cuerpo["etiqueta_proceso"] == "En revisión"
         assert cuerpo["gestionado_por_bodeguero"] is None
         assert cuerpo["gestionado_por_administrador"] is None
 
@@ -850,7 +846,7 @@ def test_ac_40_sin_historial_o_sin_rol_gestor_queda_en_none(motor, cliente, mund
         motor,
         solo_solicitante,
         usuario_id=mundo["usuarios_inst01"]["Solicitante"],
-        estado_origen_id=mundo["estados"]["Pendiente"],
+        estado_origen_id=mundo["estados"]["EnRevision"],
         estado_destino_id=mundo["estados"]["EnCurso"],
         fecha=FECHA_RECIENTE,
     )
@@ -894,13 +890,13 @@ def test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos(
     datos = mundo
     administrador_id = datos["usuario_id"]
     bodeguero_id = datos["usuarios_inst01"]["Bodeguero"]
-    pendiente = datos["estados"]["Pendiente"]
+    en_revision = datos["estados"]["EnRevision"]
 
     del_administrador = sembrar_ticket(
         motor,
         datos,
         usuario_id=administrador_id,
-        estado_id=pendiente,
+        estado_id=en_revision,
         asunto="Ticket historico del Administrador",
     )
     _insertar_historial(
@@ -908,13 +904,13 @@ def test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos(
         del_administrador,
         usuario_id=administrador_id,
         estado_origen_id=None,
-        estado_destino_id=pendiente,
+        estado_destino_id=en_revision,
     )
     del_bodeguero = sembrar_ticket(
         motor,
         datos,
         usuario_id=bodeguero_id,
-        estado_id=pendiente,
+        estado_id=en_revision,
         asunto="Ticket historico del Bodeguero",
     )
     _insertar_historial(
@@ -922,7 +918,7 @@ def test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos(
         del_bodeguero,
         usuario_id=bodeguero_id,
         estado_origen_id=None,
-        estado_destino_id=pendiente,
+        estado_destino_id=en_revision,
     )
 
     with cliente_de_rol(motor, datos, "Administrador") as admin:
@@ -934,7 +930,7 @@ def test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos(
         assert en_listado["usuario_id"] == administrador_id
         assert en_detalle["usuario_id"] == administrador_id
         assert detalle_bodeguero["usuario_id"] == bodeguero_id
-        assert en_detalle["etiqueta_proceso"] == "En aprobación"
+        assert en_detalle["etiqueta_proceso"] == "En revisión"
         assert [fila["producto_id"] for fila in en_detalle["detalles"]] == [
             datos["producto_id"]
         ], "los detalles del ticket historico se conservan"
@@ -964,20 +960,20 @@ def test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos(
         )
 
     with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
-        despacho = bodeguero.post(
-            f"/api/v1/tickets/{del_administrador}/despacho",
+        retiro = bodeguero.post(
+            f"/api/v1/tickets/{del_administrador}/retiro",
             json={"usuario_id": bodeguero_id},
         )
-        assert despacho.status_code == 200, despacho.text
-        assert despacho.json()["estado_id"] == datos["estados"]["Cerrado"]
-        assert despacho.json()["usuario_id"] == administrador_id, (
+        assert retiro.status_code == 200, retiro.text
+        assert retiro.json()["estado_id"] == datos["estados"]["Cerrado"]
+        assert retiro.json()["usuario_id"] == administrador_id, (
             "despachar no reasigna el autor historico"
         )
 
     with cliente_de_rol(motor, datos, "Administrador") as admin:
         final = _detalle(admin, del_administrador)
         assert final["usuario_id"] == administrador_id
-        assert final["etiqueta_proceso"] == "Despachado"
+        assert final["etiqueta_proceso"] == "Retirado"
         assert final["entrega_confirmada"] is False
         assert final["gestionado_por_administrador"]["usuario_id"] == administrador_id
         assert final["gestionado_por_bodeguero"]["usuario_id"] == bodeguero_id
@@ -989,7 +985,7 @@ def test_ac_40_tickets_historicos_conservan_su_gestor_y_siguen_operativos(
         assert creacion["usuario_id"] == administrador_id, (
             "la creacion del ticket historico conserva a su autor"
         )
-        assert creacion["estado_destino_id"] == pendiente
+        assert creacion["estado_destino_id"] == en_revision
 
 
 # ---------------------------------------------------------------------------

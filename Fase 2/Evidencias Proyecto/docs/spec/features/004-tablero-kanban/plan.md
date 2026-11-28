@@ -140,3 +140,209 @@ Tests existentes que deben seguir en verde sin reescribirse: `test_smoke` (su ca
 - **Terminal ≠ nombre**: en catálogos degenerados el terminal es la última posición, no `Cerrado`; los tests de la 004 usan la fixture canónica y uno aparte prueba el caso degenerado (§7).
 - **8080 no ve cambios sin reconstruir** la imagen del frontend (`AGENTS.md` §8.6); el backend sí se recarga solo.
 - **Concurrencia**: sin control de versión (límite declarado); dos pestañas lo cubre el recorrido de AC-23.
+
+## 7. Enmienda 27/Nov/2026: filtro de periodo y orden del tablero
+
+Spec: `spec.md` §8 (D-9…D-12, AC-28…AC-30), aprobada por el usuario el 28/Nov/2026; la línea
+`Estado:` de la portada se actualiza al cerrar (T12), porque este plan no edita `spec.md`. Es un
+cambio **solo de frontend**: no toca backend, `ticket.service.ts`, DDL, permisos, matriz ni
+`stack.md`. El tablero sigue con las tres columnas de la 013 §10 (`EnRevision`, `EnCurso` y
+«Terminados»). Este plan se ejecuta con **T11** y **T12**; no reabre AC-2, AC-6, AC-7 ni el cierre
+histórico de la 004.
+
+### 7.1 Inventario de archivos
+
+| Archivo | Qué hace |
+|---|---|
+| `frontend/src/app/features/tickets/tickets.component.ts` | Señales `filtroPeriodo` y `orden`; tipos `PeriodoTablero`/`OrdenTablero`; helper puro `inicioDePeriodo(periodo, ahora)`; periodo en el predicado de `columnas` **antes** de agrupar; comparador de orden **después**, dentro de cada columna; `hayFiltros` con el periodo. |
+| `frontend/src/app/features/tickets/tickets.component.html` | Dos `<select>` nativos con `<label>` visible «Periodo» y «Orden» en la barra de filtros, valores estables y clases Tailwind; sin CSS embebido. |
+| `frontend/src/app/features/tickets/tickets.component.spec.ts` | Reloj fijo con `jasmine.clock().mockDate(...)`; fixture de fechas relativas (hoy, 3, 10, 40 y 400 días); tests de AC-28…AC-30 y regresión de AC-2/AC-6/AC-7. |
+
+**Sin cambios:** `frontend/src/app/features/tickets/services/ticket.service.ts`, cualquier archivo
+de `backend/`, `database/`, `stack.md` y la 013/018. No hay endpoint, parámetro ni DTO nuevos.
+
+### 7.2 Estado y cadena de cálculo
+
+```ts
+type PeriodoTablero = 'todo' | 'hoy' | 'semana' | 'mes' | 'anio';
+type OrdenTablero = 'recientes' | 'antiguos';
+
+readonly filtroPeriodo = signal<PeriodoTablero>('todo');
+readonly orden = signal<OrdenTablero>('recientes');
+```
+
+`hayFiltros` pasa a incluir el periodo: verdadero si `filtroPeriodo() !== 'todo'`, si
+`filtroPrioridad() !== null` o si `busqueda().trim() !== ''`. El orden **no** entra: no recorta
+nada. El `computed` de `columnas` mantiene una sola cadena:
+
+1. **Filtrar** el conjunto cargado con la intersección `prioridad ∧ búsqueda ∧ periodo` (D-11).
+   Un ticket se conserva solo si cumple los tres; «todas», búsqueda vacía y `todo` son inactivos.
+2. **Agrupar** los filtrados en las tres columnas vigentes por `estado_ids` (sin cambio).
+3. **Ordenar** las tarjetas de cada grupo con el comparador que elige `orden()` y recién ahí
+   resolver `TarjetaKanban`.
+
+Los contadores siguen siendo `tarjetas.length` del grupo ya filtrado y ordenado (misma fórmula de
+AC-3): no se agrega una señal de contador. El vacío conserva la distinción de AC-5 y ahora también
+es «por filtros» cuando el único filtro activo es el periodo.
+
+**Descartada:** un `computed` aparte para el periodo aplicado después de agrupar —duplicaría el
+recorrido y abriría la puerta a que contadores y vacío se desincronicen—; ordenar antes de agrupar
+—el `sort` se perdería al repartir en columnas y habría que reordenar igual—.
+
+### 7.3 Periodo: helper puro, calendario local y reloj determinista
+
+`inicioDePeriodo(periodo: PeriodoTablero, ahora: Date): Date | null` es una función pura y
+exportada desde el componente:
+
+| `periodo` | Retorno |
+|---|---|
+| `todo` | `null` (sin recorte) |
+| `hoy` | `new Date(anio, mes, dia)` → `00:00:00.000` local de hoy |
+| `semana` | lunes local de la semana actual: `new Date(anio, mes, dia - ((getDay() + 6) % 7))` |
+| `mes` | `new Date(anio, mes, 1)` → día 1 a las `00:00:00.000` local |
+| `anio` | `new Date(anio, 0, 1)` → 1 de enero a las `00:00:00.000` local |
+
+Se construye por **campos de calendario locales**, nunca restando 24 h ni milisegundos: así el
+borde de lunes, de día 1 y de 1 de enero no se mueve con un cambio de horario, y el desborde de
+mes se resuelve solo (si hoy es martes 1, `dia - 1` cae en el último día del mes anterior). El
+predicado es `new Date(ticket.fecha_creacion).getTime() >= inicio.getTime()`: borde **inclusivo**,
+**sin cota superior** y **sin mirar `fecha_cierre`**. La comparación usa la misma interpretación
+local de la fecha que ya usa la tarjeta al pintarla, de modo que «Hoy» coincide con lo que la
+tarjeta muestra como hoy.
+
+`ahora` se recibe por parámetro (inyectable en las pruebas unitarias del helper). En las pruebas
+de componente se fija el reloj con `jasmine.clock().install()` +
+`jasmine.clock().mockDate(FECHA_FIJA)` en el `beforeEach` del bloque nuevo y se restaura en
+`afterEach`; el componente sigue llamando a `new Date()` en producción. `columnas` es `computed`:
+se recalcula al cambiar `filtroPeriodo`, por lo que el reloj fijado se aplica al leerlo después del
+cambio.
+
+**Descartada:** un `InjectionToken` de reloj en producción —agrega superficie y wiring solo para
+probar—; calcular el borde restando milisegundos (`Date.now() - 7*24*3600*1000`) —falla en cambios
+de horario y en el borde de lunes—; filtrar por `fecha_cierre` o en el backend —D-9 y AC-27—.
+
+### 7.4 Orden: comparador por columna
+
+`ordenarTarjetas(a: Ticket, b: Ticket, orden: OrdenTablero)` (privado) o el comparador inline
+equivalente:
+
+- `recientes`: `Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion)` y, si empatan,
+  `b.ticket_id - a.ticket_id`.
+- `antiguos`: `Date.parse(a.fecha_creacion) - Date.parse(b.fecha_creacion)` y, si empatan,
+  `a.ticket_id - b.ticket_id`.
+
+Se aplica a **cada** grupo, incluida «Terminados». El orden es total porque `ticket_id` es único;
+no hay empates sin resolver. No cambia la pertenencia, los contadores ni `hayFiltros`, y cambiar
+solo el selector no dispara HTTP.
+
+**Descartada:** confiar en el orden de `GET /tickets/` (AC-27 ya entrega recientes, pero no
+antiguos, y la agrupación por estado lo rompe); ordenar una vez el arreglo global antes de agrupar
+—cada columna necesita su propio orden y el reparto lo invalida—.
+
+### 7.5 Filtros, contadores, vacío y alta
+
+- **Intersección:** el periodo se suma al mismo `.filter()` que ya aplica prioridad y búsqueda
+  (plan §3.5), antes de agrupar. No hay un segundo recorrido.
+- **Contadores:** `tarjetas.length` del grupo filtrado (AC-3); no cambia la fórmula.
+- **Vacío:** `hayFiltros()` decide entre «Ningún pedido coincide con los filtros» (periodo,
+  prioridad o búsqueda activos) y «Sin pedidos en esta columna» (sin ninguno), como en AC-5.
+- **Alta (AC-8):** la respuesta del `POST` se inserta en `tickets()` como hoy. Su
+  `fecha_creacion` es el instante de creación, mayor o igual que el inicio de cualquier periodo
+  calendario vigente, así que cae dentro de `hoy`/`semana`/`mes`/`anio` sin lógica especial; el
+  mismo `computed` la agrupa, la ordena y la excluye si prioridad o búsqueda no la admiten. Sin
+  recarga y sin peticiones adicionales.
+- **Sin persistencia:** las señales nacen en `todo` y `recientes` en cada instancia; no se
+  sincronizan con URL ni almacenamiento.
+
+### 7.6 Plantilla y accesibilidad
+
+Se agregan dos `<label>` + `<select>` nativos en la barra de filtros existente, junto a
+«Prioridad» y «Buscar por asunto»:
+
+- **Periodo:** `<label>` visible «Periodo»; opciones con valores `todo`, `hoy`, `semana`, `mes` y
+  `anio` y textos «Todo el tiempo», «Hoy», «Esta semana», «Este mes» y «Este año».
+- **Orden:** `<label>` visible «Orden»; valores `recientes` y `antiguos` con textos «Más
+  recientes» y «Más antiguos».
+
+Ambos usan clases Tailwind como los controles vecinos, sin `styles` ni CSS embebido. El valor se
+lee con `(change)` y se normaliza al tipo de la señal; no se usan `[ngModel]` ni formularios
+reactivos para estos dos controles de presentación. Los `<label>` envuelven al `<select>` (patrón
+ya usado en la barra) para que el nombre accesible quede asociado sin `id` adicional.
+
+**Descartada:** un desplegable propio con `div`/botones —teclado y ARIA a mano sin ganancia—;
+persistir la selección en la URL —D-12—.
+
+### 7.7 Pruebas (`ng test`)
+
+En `tickets.component.spec.ts`, un `describe('periodo y orden del tablero (AC-28…AC-30)')` con
+reloj fijo:
+
+- **Reloj:** `FECHA_FIJA = new Date(2026, 10, 28, 15, 0, 0)` (sábado 28/Nov/2026, hora local).
+  `beforeEach`: `jasmine.clock().install(); jasmine.clock().mockDate(FECHA_FIJA)`;
+  `afterEach`: `jasmine.clock().uninstall()`.
+- **Fixture `TICKETS_PERIODO`** construida con `fechaHaceDias(n)` sobre la fecha fija: `0` (hoy),
+  `3` (25/Nov), `10` (18/Nov), `40` (19/Oct/2026) y `400` (24/Oct/2025), repartidos entre
+  `EnRevision`, `EnCurso` y «Terminados» y con prioridades distintas. La matriz esperada es:
+  `todo` → 5; `hoy` → 1; `semana` (lunes 23/Nov) → 2; `mes` (1/Nov) → 3; `anio` (1/Jan/2026) → 4.
+- **Bordes unitarios del helper:** `inicioDePeriodo` con `FECHA_FIJA` devuelve
+  `new Date(2026, 10, 28)`, `new Date(2026, 10, 23)`, `new Date(2026, 10, 1)` y
+  `new Date(2026, 0, 1)`; `todo` → `null`.
+- **Bordes de componente:** tickets exactamente en el inicio (incluidos) y en `inicio - 1 ms`
+  (excluidos) para hoy, semana, mes y año; un ticket con `fecha_creacion` anterior y
+  `fecha_cierre` dentro del periodo no aparece (D-9); un ticket con fecha posterior al reloj fijo
+  sigue apareciendo (sin cota superior).
+- **Orden:** `recientes` por defecto (AC-2) y `antiguos` en cada columna; desempate con los
+  tickets 3 y 4 de `TICKETS` (misma `FECHA_EMPATE`): `antiguos` → `[3, 4]`, `recientes` → `[4, 3]`;
+  «Terminados» con `TICKETS_013` (tres terminales) en ambos sentidos; `httpMock.expectNone` al
+  cambiar solo el orden.
+- **Combinación y vacío:** `mes` + prioridad + búsqueda deja la intersección; contadores por
+  columna; una columna vacía con solo `semana` activo muestra «Ningún pedido coincide con los
+  filtros»; sin filtros, «Sin pedidos en esta columna».
+- **Alta:** el `POST` se responde con un `Ticket` cuya `fecha_creacion` es la fecha fija (no el
+  `ticketRespuesta` de 2026-10-07, que quedaría fuera de `hoy`/`semana`/`mes`), se elige `hoy` y se
+  comprueba que aparece sin recarga, ordenado y sujeto a prioridad/búsqueda; al remontar el
+  componente, `filtroPeriodo()` vuelve a `todo` y `orden()` a `recientes`.
+- **Regresión:** los tests de AC-2, AC-6 y AC-7 no se reescriben; el fixture `TICKETS` con fechas
+  de octubre de 2026 sigue funcionando porque el valor por defecto es `todo`.
+
+No se toca `inventario.component.spec.ts` ni ninguna suite fuera de tickets.
+
+### 7.8 Cobertura AC → pieza
+
+| AC | Pieza principal |
+|---|---|
+| AC-28 | `inicioDePeriodo` + predicado de `columnas` + selector de periodo; tests de matriz y bordes |
+| AC-29 | Comparador de orden por columna + selector de orden; tests de ambos sentidos y desempate |
+| AC-30 | `computed` único, `hayFiltros`, contadores, vacío y alta; tests de combinación y remontaje |
+| AC-2, AC-6, AC-7 | Sin cambios: quedan como regresión; `recientes` es su valor por defecto |
+
+### 7.9 Riesgos
+
+- **Zona horaria:** `fecha_creacion` llega sin marca de zona y se interpreta local, igual que la
+  pinta la tarjeta. El helper construye bordes locales; no se convierte a UTC ni se resta una
+  duración fija. Un test fija el reloj para que el borde no dependa de la hora de ejecución.
+- **Bordes de lunes, día 1 y 1 de enero:** se prueban explícitamente con el reloj fijo en sábado
+  28/Nov/2026; el cálculo por campos (`dia - desplazamiento`) cubre el cruce de mes.
+- **Doble orden (filtro vs presentación):** el periodo filtra antes de agrupar; el orden se aplica
+  solo al final, dentro de cada columna. Un test verifica que cambiar el orden no altera
+  contadores, vacío ni peticiones.
+- **No romper el alta ni los contadores:** el alta se sigue insertando en `tickets()` y el
+  `computed` la procesa; los contadores conservan `tarjetas.length`. Los tests de AC-3 y AC-8 se
+  ejecutan como regresión.
+- **Fixtures viejas con «hoy»:** `TICKETS` y `TICKETS_FILTROS` usan fechas de octubre de 2026; no
+  deben usarse para probar `hoy`/`semana` sin recalcularlas. La fixture nueva es relativa al reloj
+  fijo.
+
+### 7.10 Línea base y cierre
+
+- **Frontend:** `npx ng test --watch=false --browsers=ChromeHeadless` con
+  `$env:CHROME_BIN = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"`; línea base
+  **685 SUCCESS / 0 failed** (tras la corrección del shell). Bundle vigente
+  **`main-SHBQMIGH.js`**.
+- **Backend:** sin cambios; línea base SQLite **2163 passed / 127 skipped / 0 failed**. No se
+  ejecuta `pytest` como criterio de esta enmienda, pero no debe alterarse.
+- **Cierre:** T12 verifica `ng build`, 4200 con periodos y orden, 8080 reconstruido con
+  `--force-recreate frontend`, evidencia en `004-tablero-kanban/evidencia/README.md`, anotación de
+  la fila 004 en `roadmap.md` y `MEMORY.md`, y grep de coherencia. La 004 conserva su cierre
+  histórico: esta enmienda se registra como adición, no como reapertura. La línea `Estado:` de
+  `spec.md` la actualiza T12 al cerrar; este plan no la edita.

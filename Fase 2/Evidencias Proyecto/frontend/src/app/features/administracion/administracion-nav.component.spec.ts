@@ -15,10 +15,11 @@ import { AdministracionService } from './services/administracion.service';
  * Se monta el **layout real** (`AdministracionComponent`, con su
  * `<app-administracion-nav />` y su `<router-outlet />`) sobre las **rutas
  * reales** de `administracion.routes.ts`, y se navega de verdad a cada una de
- * las cuatro rutas hijas. Así se prueba el contrato observable de AC-15
- * (tablist, cuatro tabs, una sola seleccionada y tabbable, IDs estables),
+ * las tres rutas hijas. Así se prueba el contrato observable de AC-15
+ * (tablist, tres tabs, una sola seleccionada y tabbable, IDs estables),
  * AC-17 (panel asociado por `aria-labelledby`) y AC-18 (deep links y destinos
- * intactos), sin duplicar los tests de cada vista hija.
+ * intactos), sin duplicar los tests de cada vista hija. La cuarta pestaña se
+ * retiró con el Bloque B (AC-38): aquí solo se fijan los tres destinos vigentes.
  *
  * La sección de teclado (E17-2) cubre AC-16 sobre el mismo montaje real: flechas
  * izquierda/derecha con recorrido circular, foco DOM en el enlace destino, ruta
@@ -62,12 +63,6 @@ describe('navegación de administración como pestañas ARIA (enmienda T-17)', (
       vista: 'app-administracion-usuarios',
       etiqueta: 'Usuarios',
     },
-    {
-      href: '/administracion/encargados',
-      id: 'pestana-administracion-encargados',
-      vista: 'app-administracion-encargados',
-      etiqueta: 'Encargados',
-    },
   ];
 
   /**
@@ -79,7 +74,6 @@ describe('navegación de administración como pestañas ARIA (enmienda T-17)', (
     listarDepartamentos: () => of([]),
     listarUsuarios: () => of([]),
     listarRoles: () => of([]),
-    listarEncargados: () => of([]),
   };
 
   beforeEach(async () => {
@@ -174,8 +168,8 @@ describe('navegación de administración como pestañas ARIA (enmienda T-17)', (
 
       const pestanas = pestanasDe(raiz);
       expect(pestanas.length)
-        .withContext(`deben existir exactamente cuatro pestañas en ${esperada.href}`)
-        .toBe(4);
+        .withContext(`deben existir exactamente tres pestañas en ${esperada.href}`)
+        .toBe(3);
 
       // Solo la pestaña de la ruta activa está seleccionada.
       const seleccionadas = pestanas.filter(
@@ -198,10 +192,10 @@ describe('navegación de administración como pestañas ARIA (enmienda T-17)', (
         .toBe(esperada.id);
       const noTabbables = pestanas.filter((pestana) => pestana.getAttribute('tabindex') === '-1');
       expect(noTabbables.length)
-        .withContext(`las otras tres pestañas deben quedar fuera del orden de tabulación`)
-        .toBe(3);
+        .withContext(`las otras dos pestañas deben quedar fuera del orden de tabulación`)
+        .toBe(2);
 
-      // Estado explícito de las cuatro, sin atributos ausentes.
+      // Estado explícito de las tres, sin atributos ausentes.
       for (const pestana of pestanas) {
         const activa = pestana.id === esperada.id;
         expect(pestana.getAttribute('aria-selected'))
@@ -241,24 +235,23 @@ describe('navegación de administración como pestañas ARIA (enmienda T-17)', (
     });
   }
 
-  it('AC-15/AC-18: las cuatro pestañas son anchors reales con su href y sus IDs estables', async () => {
+  it('AC-15/AC-18: las tres pestañas son anchors reales con su href y sus IDs estables', async () => {
     const { raiz } = await abrir(PESTANAS[0].href);
 
     const pestanas = pestanasDe(raiz);
     expect(pestanas.length)
-      .withContext('deben existir exactamente cuatro pestañas')
-      .toBe(4);
+      .withContext('deben existir exactamente tres pestañas')
+      .toBe(3);
 
     // Son enlaces, no botones: conservan apertura en pestaña nueva y demás
     // comportamiento nativo del navegador.
-    expect(pestanas.map((pestana) => pestana.tagName)).toEqual(['A', 'A', 'A', 'A']);
+    expect(pestanas.map((pestana) => pestana.tagName)).toEqual(['A', 'A', 'A']);
 
     // Cada pestaña enlaza a su ruta hija real, en el orden de la barra.
     expect(pestanas.map((pestana) => pestana.getAttribute('href'))).toEqual([
       '/administracion/sedes',
       '/administracion/departamentos',
       '/administracion/usuarios',
-      '/administracion/encargados',
     ]);
 
     // Los IDs son estables y no dependen de la ruta activa.
@@ -266,13 +259,12 @@ describe('navegación de administración como pestañas ARIA (enmienda T-17)', (
       'pestana-administracion-sedes',
       'pestana-administracion-departamentos',
       'pestana-administracion-usuarios',
-      'pestana-administracion-encargados',
     ]);
 
     // Los textos siguen siendo los de siempre.
     expect(
       pestanas.map((pestana) => (pestana.textContent ?? '').replace(/\s+/g, ' ').trim()),
-    ).toEqual(['Sedes', 'Departamentos', 'Usuarios', 'Encargados']);
+    ).toEqual(['Sedes', 'Departamentos', 'Usuarios']);
   });
 
   it('AC-17: la entrada /administracion redirige a sedes y su panel apunta a esa pestaña', async () => {
@@ -296,7 +288,7 @@ describe('navegación de administración como pestañas ARIA (enmienda T-17)', (
 
   // --- Teclado y navegación nativa (E17-2, AC-16/AC-18/AC-19) ---------------
 
-  describe('AC-16: flechas con recorrido circular sobre los cuatro destinos', () => {
+  describe('AC-16: flechas con recorrido circular sobre los tres destinos', () => {
     // El orden del recorrido es el de `enlaces` (orden visual de la barra).
     PESTANAS.forEach((origen, indice) => {
       const siguiente = PESTANAS[(indice + 1) % PESTANAS.length];

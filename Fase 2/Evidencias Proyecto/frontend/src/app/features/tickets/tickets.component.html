@@ -81,9 +81,11 @@
               </dd>
             </dl>
 
-            <label class="block space-y-1">
+            <label for="alta-prioridad" class="block space-y-1">
               <span class="text-xs font-semibold text-slate-700">Prioridad</span>
               <select
+                id="alta-prioridad"
+                name="prioridad"
                 formControlName="prioridad_id"
                 class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
               >
@@ -101,8 +103,9 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div class="block space-y-1">
               <span class="text-xs font-semibold text-slate-700">Estado inicial</span>
-              <!-- Enmienda AC-27: todo pedido nace en `Pendiente`; el campo es
-                   informativo y el backend responde 409 si llega otro estado. -->
+              <!-- Enmienda 26/Nov/2026 (D-35/AC-51): todo pedido nace en
+                   `EnRevision`; el campo es informativo y el backend responde
+                   409 si llega otro estado. -->
               <div
                 class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700 flex items-center justify-between gap-2"
               >
@@ -114,16 +117,18 @@
               <span class="text-[11px] text-slate-400 block">
                 Todo pedido nuevo nace en este estado; no se puede cambiar.
               </span>
-              @if (!estadoPendiente()) {
+              @if (!estadoEnRevision()) {
                 <span class="text-xs text-rose-600 block">
-                  El catálogo no contiene el estado Pendiente: no se puede crear un pedido.
+                  El catálogo no contiene el estado EnRevision: no se puede crear un pedido.
                 </span>
               }
             </div>
 
-            <label class="block space-y-1">
+            <label for="alta-asunto" class="block space-y-1">
               <span class="text-xs font-semibold text-slate-700">Asunto</span>
               <input
+                id="alta-asunto"
+                name="asunto"
                 type="text"
                 formControlName="asunto"
                 maxlength="150"
@@ -142,9 +147,11 @@
             </label>
           </div>
 
-          <label class="block space-y-1">
+          <label for="alta-descripcion" class="block space-y-1">
             <span class="text-xs font-semibold text-slate-700">Descripción (opcional)</span>
             <textarea
+              id="alta-descripcion"
+              name="descripcion"
               formControlName="descripcion"
               rows="2"
               maxlength="500"
@@ -175,6 +182,8 @@
                 <div class="flex items-start gap-2" [formGroupName]="i">
                   <div class="flex-1 space-y-1">
                     <select
+                      [id]="'alta-producto-' + i"
+                      [name]="'producto-' + i"
                       formControlName="producto_id"
                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
                     >
@@ -193,6 +202,8 @@
                     }
                   </div>
                   <input
+                    [id]="'alta-cantidad-' + i"
+                    [name]="'cantidad-' + i"
                     type="number"
                     formControlName="cantidad_solicitada"
                     min="1"
@@ -258,11 +269,13 @@
     </div>
   } @else {
     <div
-      class="flex flex-col sm:flex-row sm:items-end gap-4 bg-white border border-slate-200 rounded-xl px-4 py-3"
+      class="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-4 bg-white border border-slate-200 rounded-xl px-4 py-3"
     >
-      <label class="flex flex-col space-y-1 text-xs font-semibold text-slate-700">
+      <label for="filtro-prioridad" class="flex flex-col space-y-1 text-xs font-semibold text-slate-700">
         <span>Prioridad</span>
         <select
+          id="filtro-prioridad"
+          name="prioridad"
           value="{{ filtroPrioridad() ?? '' }}"
           (change)="cambiarPrioridad($any($event.target).value)"
           class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 sm:min-w-[12rem]"
@@ -274,9 +287,29 @@
         </select>
       </label>
 
-      <label class="flex flex-col space-y-1 text-xs font-semibold text-slate-700 flex-1">
+      <label for="filtro-periodo" class="flex flex-col space-y-1 text-xs font-semibold text-slate-700">
+        <span>Periodo</span>
+        <select
+          id="filtro-periodo"
+          name="periodo"
+          data-testid="filtro-periodo"
+          [value]="filtroPeriodo()"
+          (change)="cambiarPeriodo($any($event.target).value)"
+          class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 sm:min-w-[11rem]"
+        >
+          <option value="todo">Todo el tiempo</option>
+          <option value="hoy">Hoy</option>
+          <option value="semana">Esta semana</option>
+          <option value="mes">Este mes</option>
+          <option value="anio">Este año</option>
+        </select>
+      </label>
+
+      <label for="filtro-busqueda" class="flex flex-col space-y-1 text-xs font-semibold text-slate-700 flex-1">
         <span>Buscar por asunto</span>
         <input
+          id="filtro-busqueda"
+          name="busqueda"
           type="search"
           aria-label="Buscar pedidos por asunto"
           placeholder="Filtrar por asunto…"
@@ -285,11 +318,29 @@
           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
         />
       </label>
+
+      <label for="filtro-orden" class="flex flex-col space-y-1 text-xs font-semibold text-slate-700">
+        <span>Orden</span>
+        <select
+          id="filtro-orden"
+          name="orden"
+          data-testid="filtro-orden"
+          [value]="orden()"
+          (change)="cambiarOrden($any($event.target).value)"
+          class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 sm:min-w-[10rem]"
+        >
+          <option value="recientes">Más recientes</option>
+          <option value="antiguos">Más antiguos</option>
+        </select>
+      </label>
     </div>
 
-    <!-- D-24 (AC-41): tres columnas operativas + una terminal agrupada,
-         «Terminados», que suma `Cerrado` y `Anulado`. -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+    <!-- D-24 (AC-41): dos columnas operativas (`EnRevision`, `EnCurso`) + una
+         terminal agrupada, «Terminados», que suma `Cerrado` y `Anulado`. -->
+    <div
+      data-testid="tablero-pedidos"
+      class="grid grid-cols-1 md:grid-cols-3 gap-6"
+    >
       @for (columna of columnas(); track columna.clave) {
         <div class="bg-slate-200/60 p-4 rounded-xl flex flex-col space-y-4">
           <div class="flex justify-between items-center">

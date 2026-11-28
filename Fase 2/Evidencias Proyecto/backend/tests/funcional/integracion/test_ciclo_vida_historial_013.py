@@ -68,7 +68,7 @@ def _cliente_bodeguero(motor, datos):
 
 def _crear_ticket_via_api(cliente, datos) -> int:
     respuesta = cliente.post(
-        "/api/v1/tickets/", json=payload_alta(datos, datos["estados"]["Pendiente"])
+        "/api/v1/tickets/", json=payload_alta(datos, datos["estados"]["EnRevision"])
     )
     assert respuesta.status_code == 201, respuesta.text
     return respuesta.json()["ticket_id"]
@@ -94,7 +94,7 @@ def test_alta_registra_fila_de_creacion_con_origen_nulo_ac_9(motor, datos_013):
         assert fila["estado_origen_id"] is None, (
             "solo la creacion tiene origen nulo"
         )
-        assert fila["estado_destino_id"] == datos_013["estados"]["Pendiente"]
+        assert fila["estado_destino_id"] == datos_013["estados"]["EnRevision"]
         assert fila["usuario_id"] == solicitante, "el actor es el creador"
         assert fila["motivo"] is None, "la creacion no exige motivo"
         assert fila["fecha_transicion"] is not None
@@ -108,15 +108,15 @@ def test_cambio_de_estado_suma_exactamente_una_fila_ac_9(motor, datos_013):
     with _cliente_administrador(motor, datos_013) as cliente:
         cambio = cliente.patch(
             f"/api/v1/tickets/{ticket_id}/estado",
-            json={"estado_id": datos_013["estados"]["EnRevision"]},
+            json={"estado_id": datos_013["estados"]["EnCurso"]},
         )
         assert cambio.status_code == 200, cambio.text
 
         historial = leer_historial(cliente, ticket_id)
         assert len(historial) == 2, historial
         nueva = historial[0]
-        assert nueva["estado_origen_id"] == datos_013["estados"]["Pendiente"]
-        assert nueva["estado_destino_id"] == datos_013["estados"]["EnRevision"]
+        assert nueva["estado_origen_id"] == datos_013["estados"]["EnRevision"]
+        assert nueva["estado_destino_id"] == datos_013["estados"]["EnCurso"]
         assert nueva["motivo"] is None, "el cambio de estado no exige motivo"
 
 
@@ -160,7 +160,7 @@ def test_orden_mas_reciente_primero_con_desempate_por_id_ac_10(
         ticket_id = _crear_ticket_via_api(cliente, datos_013)
 
     with _cliente_administrador(motor, datos_013) as cliente:
-        for destino in ("EnRevision", "EnCurso"):
+        for destino in ("EnCurso",):
             respuesta = cliente.patch(
                 f"/api/v1/tickets/{ticket_id}/estado",
                 json={"estado_id": datos_013["estados"][destino]},
@@ -168,7 +168,7 @@ def test_orden_mas_reciente_primero_con_desempate_por_id_ac_10(
             assert respuesta.status_code == 200, respuesta.text
 
         historial = leer_historial(cliente, ticket_id)
-        assert len(historial) == 3, historial
+        assert len(historial) == 2, historial
         assert historial == sorted(
             historial,
             key=lambda fila: (fila["fecha_transicion"], fila["historial_transicion_id"]),
@@ -177,7 +177,6 @@ def test_orden_mas_reciente_primero_con_desempate_por_id_ac_10(
         assert [fila["estado_destino_id"] for fila in historial] == [
             datos_013["estados"]["EnCurso"],
             datos_013["estados"]["EnRevision"],
-            datos_013["estados"]["Pendiente"],
         ]
 
 
@@ -207,17 +206,17 @@ def test_transicion_aceptada_persiste_estado_y_fila_juntos_ac_11(
     with _cliente_administrador(motor, datos_013) as cliente:
         respuesta = cliente.patch(
             f"/api/v1/tickets/{ticket_id}/estado",
-            json={"estado_id": datos_013["estados"]["EnRevision"]},
+            json={"estado_id": datos_013["estados"]["EnCurso"]},
         )
 
         assert respuesta.status_code == 200, respuesta.text
         assert abrir_ticket(cliente, ticket_id)["estado_id"] == (
-            datos_013["estados"]["EnRevision"]
+            datos_013["estados"]["EnCurso"]
         )
         filas = leer_historial(cliente, ticket_id)
         assert any(
-            fila["estado_origen_id"] == datos_013["estados"]["Pendiente"]
-            and fila["estado_destino_id"] == datos_013["estados"]["EnRevision"]
+            fila["estado_origen_id"] == datos_013["estados"]["EnRevision"]
+            and fila["estado_destino_id"] == datos_013["estados"]["EnCurso"]
             for fila in filas
         ), "sin la fila del historial el estado no puede darse por persistido"
 
@@ -234,7 +233,7 @@ def test_si_la_fila_no_puede_registrarse_el_estado_no_cambia_ac_11(
     """
     exigir_ruta(RUTA_HISTORIAL, "GET")
     ticket_id = sembrar_ticket(
-        motor, datos_013, estado_id=datos_013["estados"]["Pendiente"]
+        motor, datos_013, estado_id=datos_013["estados"]["EnRevision"]
     )
 
     with motor.begin() as conexion:
@@ -255,7 +254,7 @@ def test_si_la_fila_no_puede_registrarse_el_estado_no_cambia_ac_11(
     # que es exactamente lo que AC-11 exige: el estado no puede quedar cambiado.
     with sesion(motor) as db:
         estado_persistido = db.get(Ticket, ticket_id).estado_id
-    assert estado_persistido == datos_013["estados"]["Pendiente"], (
+    assert estado_persistido == datos_013["estados"]["EnRevision"], (
         "si la fila no pudo registrarse, el estado no puede quedar cambiado"
     )
 
@@ -282,7 +281,7 @@ def test_anulacion_de_legado_no_inventa_fila_de_creacion_ac_12(
 ):
     """AC-12: la anulacion de un legado registra solo SU fila, sin creacion."""
     ticket_id = sembrar_ticket(
-        motor, datos_013, estado_id=datos_013["estados"]["Pendiente"]
+        motor, datos_013, estado_id=datos_013["estados"]["EnRevision"]
     )
 
     with _cliente_solicitante(motor, datos_013) as cliente:
@@ -297,4 +296,4 @@ def test_anulacion_de_legado_no_inventa_fila_de_creacion_ac_12(
             "sin filas inventadas: solo la anulacion real; "
             f"historial: {historial}"
         )
-        assert historial[0]["estado_origen_id"] == datos_013["estados"]["Pendiente"]
+        assert historial[0]["estado_origen_id"] == datos_013["estados"]["EnRevision"]

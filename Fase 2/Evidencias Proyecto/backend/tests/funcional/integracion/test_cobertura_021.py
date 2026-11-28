@@ -602,7 +602,7 @@ def test_simulacion_excluye_otra_sede_sin_sede_y_estados_no_en_curso(motor, mund
 
     incluido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=2)
     _crear_ticket_021(motor, mundo, estado="EnRevision", cantidad=9)
-    _crear_ticket_021(motor, mundo, estado="Pendiente", cantidad=9)
+    _crear_ticket_021(motor, mundo, estado="EnRevision", cantidad=9)
     _crear_ticket_021(
         motor, mundo, estado="EnCurso", cantidad=7, sede_id=otra_sede_id
     )
@@ -619,7 +619,7 @@ def test_necesidades_enriquecidas_con_comprometido_borrador_y_pedidos(motor, mun
     fijar_stock_sede(motor, mundo, mundo["producto_id"], 0)
     proveedor_id = _crear_proveedor_control(motor, rut="96.021.020-4")
     pedido = _crear_ticket_021(motor, mundo, estado="EnCurso", cantidad=4)
-    _crear_ticket_021(motor, mundo, estado="Pendiente", cantidad=9)
+    _crear_ticket_021(motor, mundo, estado="EnRevision", cantidad=9)
     _crear_orden_con_detalle(
         motor, mundo, proveedor_id=proveedor_id, cantidad=3, estado="Emitida"
     )
@@ -1432,19 +1432,19 @@ def test_detalle_http_incluye_asignaciones_y_cadena(motor, mundo):
 _PREVIEW = ("POST", "/api/v1/compras/cobertura/preview")
 
 
-def test_matriz_declara_el_preview_con_su_rol_y_la_matriz_llega_a_75():
+def test_matriz_declara_el_preview_con_su_rol_y_la_matriz_llega_a_72():
     """T9/AC-10/AC-12: una sola operacion nueva, solo Administrador.
 
-    Total vigente: 75 (73 de la 021 + la aprobacion de la ampliacion 25/Nov/2026
-    de la 013 en T21 + su confirmacion de entrega en T22).
+    Total vigente: 72 (75 tras la ampliacion 25/Nov/2026 de la 013, menos las
+    tres operaciones que retira la enmienda 27/Nov/2026 de la 012).
     """
     assert set(permisos.MATRIZ_PERMISOS[_PREVIEW]) == {"Administrador"}
     assert capacidades.capacidad_de_operacion(*_PREVIEW) == "compras"
-    assert len(permisos.MATRIZ_PERMISOS) == 75
+    assert len(permisos.MATRIZ_PERMISOS) == 72
 
 
-def test_openapi_publica_el_preview_y_75_operaciones(cliente):
-    """T9/AC-12: la ruta nueva existe con su contrato y el total vigente es 75."""
+def test_openapi_publica_el_preview_y_72_operaciones(cliente):
+    """T9/AC-12: la ruta nueva existe con su contrato y el total vigente es 72."""
     contrato = cliente.get("/openapi.json").json()
     operacion = contrato["paths"]["/api/v1/compras/cobertura/preview"]["post"]
     assert "200" in operacion["responses"]
@@ -1457,7 +1457,7 @@ def test_openapi_publica_el_preview_y_75_operaciones(cliente):
         for metodo in metodos
         if metodo.lower() in {"get", "post", "put", "patch", "delete"}
     )
-    assert total == 75
+    assert total == 72
 
 
 def test_preview_con_capacidad_compras_apagada_responde_403(motor, mundo):

@@ -4,7 +4,7 @@ Seam bajo prueba: la **interfaz HTTP** del `app` real (`TestClient`), como en
 toda la suite. Este modulo recorre de punta a punta el flujo de la §9 aprobada
 (AC-28…AC-49) sobre el mundo de fixtures de la 013:
 
-``Pendiente`` --Aprobar (Administrador)--> ``EnCurso`` --Despachar
+``EnRevision`` --Aprobar (Administrador)--> ``EnCurso`` --Despachar
 (Bodeguero/Administrador, con stock)--> ``Cerrado`` --Confirmar entrega
 (Solicitante dueño)--> ``Cerrado`` con etiqueta «Entregado».
 
@@ -23,12 +23,12 @@ Cubre ademas:
   Administrador (AC-28/AC-36/AC-49);
 * los **tickets historicos** con autoria de Administrador/Bodeguero, sembrados
   por ORM (enmienda 007 del 26/Nov/2026, D-16/E26N-6), sin confirmacion
-  posible: el pedido queda «Despachado» para siempre (AC-43/D-26);
+  posible: el pedido queda «Retirado» para siempre (AC-43/D-26);
 * la matriz de errores 401/403/404/409 de aprobacion y confirmacion
   (AC-43/AC-45/AC-46).
 
 La etiqueta de la **aprobacion** y de la **confirmacion** viene en el cuerpo del
-200 (es lo que promete la spec §9.4/§9.9). El alta, el despacho y el `PATCH`
+200 (es lo que promete la spec §9.4/§9.9). El alta, el retiro y el `PATCH`
 devuelven el ORM con los campos derivados en su valor por defecto (plan §9.1,
 decision 9), de modo que sus etiquetas se observan por el read model
 (`GET /tickets/` / `GET /tickets/{id}`), nunca por el cuerpo de la mutacion.
@@ -62,7 +62,7 @@ from tests.funcional.integracion._soporte_ciclo_vida_catalogo_014 import (
 RUTA_TICKETS = "/api/v1/tickets/"
 RUTA_APROBACION = "/api/v1/tickets/{ticket_id}/aprobacion"
 RUTA_CONFIRMACION = "/api/v1/tickets/{ticket_id}/confirmacion-entrega"
-RUTA_DESPACHO = "/api/v1/tickets/{ticket_id}/despacho"
+RUTA_RETIRO = "/api/v1/tickets/{ticket_id}/retiro"
 RUTA_ESTADO = "/api/v1/tickets/{ticket_id}/estado"
 RUTA_NECESIDADES = "/api/v1/compras/necesidades"
 RUTA_ORDENES = "/api/v1/compras/ordenes"
@@ -72,12 +72,12 @@ MOTIVO_APROBACION = "Aprobación del pedido"
 MOTIVO_CONFIRMACION = "Entrega confirmada por el solicitante"
 
 #: Etiquetas de proceso de la spec §9.8, transcritas a mano.
-ETIQUETA_EN_APROBACION = "En aprobación"
+ETIQUETA_EN_REVISION = "En revisión"
 ETIQUETA_EN_CONFIRMACION_STOCK = "En confirmación de stock local"
 ETIQUETA_POR_COMPRAR = "Por comprar"
 ETIQUETA_EN_COMPRA = "En compra"
 ETIQUETA_FACTURADO = "Facturado"
-ETIQUETA_DESPACHADO = "Despachado"
+ETIQUETA_RETIRADO = "Retirado"
 ETIQUETA_ENTREGADO = "Entregado"
 
 #: Cantidad de los pedidos de fixture (el detalle del alta usa 3).
@@ -117,7 +117,7 @@ def _ticket_en_listado(cliente, ticket_id: int) -> dict:
 def _alta(cliente, datos: dict, *, asunto: str = "Pedido del e2e 013") -> int:
     respuesta = cliente.post(
         RUTA_TICKETS,
-        json=payload_alta(datos, datos["estados"]["Pendiente"], asunto=asunto),
+        json=payload_alta(datos, datos["estados"]["EnRevision"], asunto=asunto),
     )
     assert respuesta.status_code == 201, respuesta.text
     return respuesta.json()["ticket_id"]
@@ -127,9 +127,9 @@ def _aprobar(cliente, ticket_id: int):
     return cliente.post(f"/api/v1/tickets/{ticket_id}/aprobacion")
 
 
-def _despachar(cliente, ticket_id: int, usuario_id: int):
+def _retirar(cliente, ticket_id: int, usuario_id: int):
     return cliente.post(
-        f"/api/v1/tickets/{ticket_id}/despacho",
+        f"/api/v1/tickets/{ticket_id}/retiro",
         json={"usuario_id": usuario_id},
     )
 
@@ -164,7 +164,7 @@ def _filas_por_motivo(historial: list[dict], motivo: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_flujo_completo_con_stock_aprobacion_despacho_y_confirmacion(motor, datos_013):
+def test_flujo_completo_con_stock_aprobacion_retiro_y_confirmacion(motor, datos_013):
     """AC-29/30/33/37/39/40/42/45/46: el camino feliz de punta a punta."""
     datos = datos_013
     producto_id = datos["producto_id"]
@@ -175,27 +175,27 @@ def test_flujo_completo_con_stock_aprobacion_despacho_y_confirmacion(motor, dato
     stock_inicial = leer_stock_sede(motor, sede_id, producto_id)
     assert stock_inicial == 50, "precondicion del mundo 013"
 
-    # 1. Alta por el Solicitante: nace Pendiente y la etiqueta «En aprobación»
+    # 1. Alta por el Solicitante: nace EnRevision y la etiqueta «En revisión»
     #    se lee por el read model (el 201 devuelve el ORM, plan §9.1 decision 9).
     with cliente_de_rol(motor, datos, "Solicitante") as solicitante:
         alta = solicitante.post(
             RUTA_TICKETS,
-            json=payload_alta(datos, datos["estados"]["Pendiente"]),
+            json=payload_alta(datos, datos["estados"]["EnRevision"]),
         )
         assert alta.status_code == 201, alta.text
         ticket_id = alta.json()["ticket_id"]
-        assert alta.json()["estado_id"] == datos["estados"]["Pendiente"]
+        assert alta.json()["estado_id"] == datos["estados"]["EnRevision"]
         assert alta.json()["fecha_cierre"] is None
 
         detalle = _detalle(solicitante, ticket_id)
         assert detalle["usuario_id"] == solicitante_id, (
             "la autoria es la identidad de la sesion"
         )
-        assert detalle["etiqueta_proceso"] == ETIQUETA_EN_APROBACION
+        assert detalle["etiqueta_proceso"] == ETIQUETA_EN_REVISION
         assert detalle["explicacion_proceso"]
         assert detalle["fecha_cierre"] is None
         assert _ticket_en_listado(solicitante, ticket_id)["etiqueta_proceso"] == (
-            ETIQUETA_EN_APROBACION
+            ETIQUETA_EN_REVISION
         ), "la etiqueta coincide entre listado y detalle (AC-39)"
 
     # 2. El Bodeguero no aprueba: 403 por matriz, sin mutar el pedido.
@@ -203,7 +203,7 @@ def test_flujo_completo_con_stock_aprobacion_despacho_y_confirmacion(motor, dato
         veto = _aprobar(bodeguero, ticket_id)
         assert veto.status_code == 403, veto.text
         assert _detalle(bodeguero, ticket_id)["estado_id"] == (
-            datos["estados"]["Pendiente"]
+            datos["estados"]["EnRevision"]
         ), "un 403 no puede aprobar el pedido"
 
     # 3. El Administrador aprueba: 200, EnCurso, etiqueta con stock, una fila
@@ -230,7 +230,7 @@ def test_flujo_completo_con_stock_aprobacion_despacho_y_confirmacion(motor, dato
         )
         fila = filas[0]
         assert fila["ticket_id"] == ticket_id
-        assert fila["estado_origen_id"] == datos["estados"]["Pendiente"]
+        assert fila["estado_origen_id"] == datos["estados"]["EnRevision"]
         assert fila["estado_destino_id"] == datos["estados"]["EnCurso"]
         assert fila["usuario_id"] == administrador_id, (
             "el actor es el Administrador de la sesion"
@@ -244,29 +244,29 @@ def test_flujo_completo_con_stock_aprobacion_despacho_y_confirmacion(motor, dato
     # 4. El Bodeguero despacha con su usuario_id: 200 Cerrado, fecha_cierre,
     #    stock rebajado y una SALIDA auditada.
     with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
-        despacho = _despachar(bodeguero, ticket_id, bodeguero_id)
-        assert despacho.status_code == 200, despacho.text
-        cuerpo = despacho.json()
+        retiro = _retirar(bodeguero, ticket_id, bodeguero_id)
+        assert retiro.status_code == 200, retiro.text
+        cuerpo = retiro.json()
         assert cuerpo["estado_id"] == datos["estados"]["Cerrado"]
         assert cuerpo["fecha_cierre"] is not None
 
         assert leer_stock_sede(motor, sede_id, producto_id) == (
             stock_inicial - CANTIDAD_PEDIDO
-        ), "el despacho rebaja el stock de la sede"
+        ), "el retiro rebaja el stock de la sede"
         assert contar_en(
             motor, "MovimientoInventario", tipo_movimiento="SALIDA"
         ) == 1, "una SALIDA por detalle (un detalle)"
 
         detalle = _detalle(bodeguero, ticket_id)
-        assert detalle["etiqueta_proceso"] == ETIQUETA_DESPACHADO, (
-            "Cerrado sin confirmacion es «Despachado»"
+        assert detalle["etiqueta_proceso"] == ETIQUETA_RETIRADO, (
+            "Cerrado sin confirmacion es «Retirado»"
         )
         assert detalle["entrega_confirmada"] is False
         assert detalle["gestionado_por_bodeguero"]["usuario_id"] == bodeguero_id
         assert detalle["gestionado_por_administrador"]["usuario_id"] == (
             administrador_id
         )
-        fecha_cierre_despacho = detalle["fecha_cierre"]
+        fecha_cierre_retiro = detalle["fecha_cierre"]
 
     # 5. Administrador y Bodeguero no confirman (403); el Solicitante dueño si.
     with cliente_de_rol(motor, datos, "Administrador") as admin:
@@ -315,7 +315,7 @@ def test_flujo_completo_con_stock_aprobacion_despacho_y_confirmacion(motor, dato
 
         detalle = _detalle(solicitante, ticket_id)
         assert detalle["estado_id"] == datos["estados"]["Cerrado"]
-        assert detalle["fecha_cierre"] == fecha_cierre_despacho, (
+        assert detalle["fecha_cierre"] == fecha_cierre_retiro, (
             "la confirmacion no sella ni borra fecha_cierre"
         )
         assert detalle["etiqueta_proceso"] == ETIQUETA_ENTREGADO
@@ -356,11 +356,11 @@ def test_aprobacion_sin_stock_aparece_en_compras_y_la_oc_mueve_la_etiqueta(
     with cliente_de_rol(motor, datos, "Solicitante") as solicitante:
         ticket_id = _alta(solicitante, datos, asunto="Pedido sin stock del e2e")
 
-    # Antes de aprobar, el pedido Pendiente no es demanda de Compras.
+    # Antes de aprobar, el pedido EnRevision no es demanda de Compras.
     with cliente_de_rol(motor, datos, "Administrador") as admin:
         necesidades = _necesidades(admin)
         assert _necesidad_de(necesidades, sede_id, producto_id) is None, (
-            "un pedido Pendiente no suma demanda ni aparece en Compras"
+            "un pedido EnRevision no suma demanda ni aparece en Compras"
         )
 
     # Aprobar siempre deja EnCurso; sin stock, la etiqueta es «Por comprar».
@@ -452,14 +452,14 @@ def test_aprobacion_sin_stock_aparece_en_compras_y_la_oc_mueve_la_etiqueta(
         assert detalle["estado_orden_cobertura"] == "Recibida"
         assert detalle["etiqueta_proceso"] == ETIQUETA_EN_CONFIRMACION_STOCK
 
-    # El flujo cierra por el despacho, con el usuario del Bodeguero de la sede.
+    # El flujo cierra por el retiro, con el usuario del Bodeguero de la sede.
     with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
-        despacho = _despachar(bodeguero, ticket_id, bodeguero_id)
-        assert despacho.status_code == 200, despacho.text
-        assert despacho.json()["estado_id"] == datos["estados"]["Cerrado"]
+        retiro = _retirar(bodeguero, ticket_id, bodeguero_id)
+        assert retiro.status_code == 200, retiro.text
+        assert retiro.json()["estado_id"] == datos["estados"]["Cerrado"]
 
         detalle = _detalle(bodeguero, ticket_id)
-        assert detalle["etiqueta_proceso"] == ETIQUETA_DESPACHADO
+        assert detalle["etiqueta_proceso"] == ETIQUETA_RETIRADO
 
 
 # ---------------------------------------------------------------------------
@@ -495,11 +495,11 @@ def test_caso_10_equivalente_omitido_en_compras_y_cierra_normal(
             f"no es un fallo: {necesidades}"
         )
 
-    # El pedido cubierto por stock cierra normal: despacho y confirmacion.
+    # El pedido cubierto por stock cierra normal: retiro y confirmacion.
     with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
-        despacho = _despachar(bodeguero, ticket_id, bodeguero_id)
-        assert despacho.status_code == 200, despacho.text
-        assert despacho.json()["estado_id"] == datos["estados"]["Cerrado"]
+        retiro = _retirar(bodeguero, ticket_id, bodeguero_id)
+        assert retiro.status_code == 200, retiro.text
+        assert retiro.json()["estado_id"] == datos["estados"]["Cerrado"]
         assert leer_stock_sede(motor, sede_id, producto_id) == 64 - CANTIDAD_PEDIDO
 
     with cliente_de_rol(motor, datos, "Solicitante") as solicitante:
@@ -515,33 +515,33 @@ def test_caso_10_equivalente_omitido_en_compras_y_cierra_normal(
 
 def test_patch_de_legado_solo_administrador_y_cierre_reservado(motor, datos_013):
     """AC-28/AC-36/AC-49: Bodeguero 403; Administrador 200 en un paso y 409 al
-    intentar el cierre reservado al despacho."""
+    intentar el cierre reservado al retiro."""
     datos = datos_013
     ticket_id = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
 
     with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
         veto = bodeguero.patch(
             f"/api/v1/tickets/{ticket_id}/estado",
-            json={"estado_id": datos["estados"]["EnRevision"]},
+            json={"estado_id": datos["estados"]["EnCurso"]},
         )
         assert veto.status_code == 403, veto.text
         assert _detalle(bodeguero, ticket_id)["estado_id"] == (
-            datos["estados"]["Pendiente"]
+            datos["estados"]["EnRevision"]
         ), "el 403 del Bodeguero no puede mover el pedido"
 
     with cliente_de_rol(motor, datos, "Administrador") as admin:
         avance = admin.patch(
             f"/api/v1/tickets/{ticket_id}/estado",
-            json={"estado_id": datos["estados"]["EnRevision"]},
+            json={"estado_id": datos["estados"]["EnCurso"]},
         )
         assert avance.status_code == 200, avance.text
-        assert avance.json()["estado_id"] == datos["estados"]["EnRevision"], (
-            "el PATCH conserva su regla de un paso y no auto-avanza a EnCurso"
+        assert avance.json()["estado_id"] == datos["estados"]["EnCurso"], (
+            "el PATCH conserva su regla de un paso y no auto-avanza a Cerrado"
         )
 
-    # El cierre EnCurso -> Cerrado sigue reservado al despacho (005 intacta).
+    # El cierre EnCurso -> Cerrado sigue reservado al retiro (005 intacta).
     en_curso = sembrar_ticket(
         motor, datos, estado_id=datos["estados"]["EnCurso"], asunto="Cierre reservado"
     )
@@ -552,8 +552,8 @@ def test_patch_de_legado_solo_administrador_y_cierre_reservado(motor, datos_013)
         )
         assert cierre.status_code == 409, cierre.text
         assert cierre.json()["detail"] == (
-            "El cierre requiere despacho; use "
-            f"POST /api/v1/tickets/{en_curso}/despacho"
+            "El cierre requiere retiro; use "
+            f"POST /api/v1/tickets/{en_curso}/retiro"
         )
         assert _detalle(admin, en_curso)["estado_id"] == (
             datos["estados"]["EnCurso"]
@@ -565,12 +565,12 @@ def test_patch_de_legado_solo_administrador_y_cierre_reservado(motor, datos_013)
 # ---------------------------------------------------------------------------
 
 
-def test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmacion(
+def test_tickets_historicos_sin_rol_solicitante_quedan_retirados_sin_confirmacion(
     motor, datos_013
 ):
     """AC-43/D-26: un ticket historico con autoria Administrador o Bodeguero
-    (dueño sin rol Solicitante) no tiene confirmacion posible; tras el despacho
-    permanece «Despachado».
+    (dueño sin rol Solicitante) no tiene confirmacion posible; tras el retiro
+    permanece «Retirado».
 
     Enmienda 007 del 26/Nov/2026 (D-16/E26N-6): la autoria se **siembra por
     ORM**, no se crea con el alta (que ya solo ejerce el Solicitante,
@@ -585,7 +585,7 @@ def test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmac
         motor,
         datos,
         usuario_id=administrador_id,
-        estado_id=datos["estados"]["Pendiente"],
+        estado_id=datos["estados"]["EnRevision"],
         asunto="Ticket historico del Administrador (e2e 013)",
     )
 
@@ -594,17 +594,19 @@ def test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmac
         assert detalle["usuario_id"] == administrador_id, (
             "la autoria historica es la del Administrador y no se reasigna"
         )
-        assert detalle["etiqueta_proceso"] == ETIQUETA_EN_APROBACION
+        assert detalle["etiqueta_proceso"] == ETIQUETA_EN_REVISION
 
         aprobacion = _aprobar(admin, ticket_administrador)
         assert aprobacion.status_code == 200, aprobacion.text
 
-        despacho = _despachar(admin, ticket_administrador, administrador_id)
-        assert despacho.status_code == 200, despacho.text
-        assert despacho.json()["estado_id"] == datos["estados"]["Cerrado"]
+    with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
+        retiro = _retirar(bodeguero, ticket_administrador, bodeguero_id)
+        assert retiro.status_code == 200, retiro.text
+        assert retiro.json()["estado_id"] == datos["estados"]["Cerrado"]
 
+    with cliente_de_rol(motor, datos, "Administrador") as admin:
         # El Administrador no tiene la operacion de confirmacion (403 por
-        # matriz); el pedido se queda «Despachado» para siempre.
+        # matriz); el pedido se queda «Retirado» para siempre.
         confirmacion = _confirmar(admin, ticket_administrador)
         assert confirmacion.status_code == 403, confirmacion.text
 
@@ -612,7 +614,7 @@ def test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmac
         assert detalle["usuario_id"] == administrador_id
         assert detalle["estado_id"] == datos["estados"]["Cerrado"]
         assert detalle["entrega_confirmada"] is False
-        assert detalle["etiqueta_proceso"] == ETIQUETA_DESPACHADO
+        assert detalle["etiqueta_proceso"] == ETIQUETA_RETIRADO
         assert _filas_por_motivo(
             leer_historial(admin, ticket_administrador), MOTIVO_CONFIRMACION
         ) == [], "no se inventa una confirmacion por otro rol"
@@ -627,7 +629,7 @@ def test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmac
         motor,
         datos,
         usuario_id=bodeguero_id,
-        estado_id=datos["estados"]["Pendiente"],
+        estado_id=datos["estados"]["EnRevision"],
         asunto="Ticket historico del Bodeguero (e2e 013)",
     )
 
@@ -640,13 +642,13 @@ def test_tickets_historicos_sin_rol_solicitante_quedan_despachados_sin_confirmac
         assert aprobacion.status_code == 200, aprobacion.text
 
     with cliente_de_rol(motor, datos, "Bodeguero") as bodeguero:
-        despacho = _despachar(bodeguero, ticket_bodeguero, bodeguero_id)
-        assert despacho.status_code == 200, despacho.text
+        retiro = _retirar(bodeguero, ticket_bodeguero, bodeguero_id)
+        assert retiro.status_code == 200, retiro.text
         assert _confirmar(bodeguero, ticket_bodeguero).status_code == 403
         detalle = _detalle(bodeguero, ticket_bodeguero)
         assert detalle["usuario_id"] == bodeguero_id
         assert detalle["entrega_confirmada"] is False
-        assert detalle["etiqueta_proceso"] == ETIQUETA_DESPACHADO
+        assert detalle["etiqueta_proceso"] == ETIQUETA_RETIRADO
 
 
 # ---------------------------------------------------------------------------
@@ -664,7 +666,7 @@ def test_aprobacion_y_confirmacion_de_pedido_ajeno_responden_404(motor, datos_01
         institucion_id=datos["inst_ajena"],
         sede_id=datos["sede_ajena_id"],
         producto_id=datos["producto_homonimo_ajeno_id"],
-        estado_id=datos["estados"]["Pendiente"],
+        estado_id=datos["estados"]["EnRevision"],
         asunto="Pedido ajeno de INST02",
     )
     ajeno_cerrado = sembrar_ticket(
@@ -697,14 +699,14 @@ def test_confirmacion_exige_cerrado_y_no_duplica_la_fila(motor, datos_013):
     datos = datos_013
     solicitante_id = datos["usuarios_inst01"]["Solicitante"]
 
-    # Un pedido Pendiente del propio Solicitante no se puede confirmar.
-    pendiente = sembrar_ticket(
-        motor, datos, estado_id=datos["estados"]["Pendiente"]
+    # Un pedido EnRevision del propio Solicitante no se puede confirmar.
+    en_revision = sembrar_ticket(
+        motor, datos, estado_id=datos["estados"]["EnRevision"]
     )
     with cliente_de_rol(motor, datos, "Solicitante") as solicitante:
-        respuesta = _confirmar(solicitante, pendiente)
+        respuesta = _confirmar(solicitante, en_revision)
         assert respuesta.status_code == 409, respuesta.text
-        assert leer_historial(solicitante, pendiente) == [], (
+        assert leer_historial(solicitante, en_revision) == [], (
             "el 409 de no Cerrado no puede escribir historial"
         )
 

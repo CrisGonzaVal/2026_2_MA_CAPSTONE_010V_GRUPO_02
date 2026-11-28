@@ -60,7 +60,9 @@ OPERACIONES_020: dict[tuple[str, str], set[str]] = {
 
 CAPACIDADES_020 = {clave: "compras" for clave in OPERACIONES_020}
 
-TOTAL_OPERACIONES_020 = 75
+#: Cardinalidad vigente de la matriz (75 tras la ampliacion de la 013, menos las
+#: tres operaciones que retira la enmienda 27/Nov/2026 de la 012).
+TOTAL_OPERACIONES_020 = 72
 
 _RESPUESTAS_COMUNES = {"200", "401", "403", "404", "409", "422"}
 
@@ -183,10 +185,10 @@ def test_matriz_declara_las_diez_operaciones_con_sus_roles():
         )
 
 
-def test_matriz_tiene_exactamente_75_operaciones_tras_021():
-    """Plan §4/DT-13: la 020 deja 72 filas, la 021 suma el preview (73) y la
+def test_matriz_tiene_exactamente_72_operaciones_tras_021():
+    """Plan §4/DT-13: la 020 deja 72 filas, la 021 suma el preview (73), la
     ampliacion 25/Nov/2026 de la 013 la aprobacion y la confirmacion de entrega
-    (73 -> 75)."""
+    (73 -> 75) y la enmienda 27/Nov/2026 de la 012 retira tres (75 -> 72)."""
     total = len(permisos.MATRIZ_PERMISOS)
     assert total == TOTAL_OPERACIONES_020, (
         f"la matriz debe tener {TOTAL_OPERACIONES_020} operaciones tras la 021; "
@@ -201,7 +203,7 @@ def test_capacidad_compras_asociada_a_las_diez_operaciones():
         assert obtenida == esperada, (clave, obtenida, esperada)
 
 
-def test_openapi_publica_las_diez_rutas_y_75_operaciones(cliente):
+def test_openapi_publica_las_diez_rutas_y_72_operaciones(cliente):
     """Plan §4: las 10 rutas existen; el total vive en `TOTAL_OPERACIONES_020`."""
     contrato = cliente.get("/openapi.json").json()
     for metodo, ruta in OPERACIONES_020:

@@ -720,7 +720,7 @@ def test_dashboard_global_aborta_si_un_tenant_no_esta_en_version(mundo_multitena
 # el resultado vendria de otro esquema y la prueba lo delataria.
 
 
-def _identidad_tenant_a(mundo) -> object:
+def _identidad_tenant_a(mundo, rol: str = "Administrador") -> object:
     """Identidad de Tenant A con su rol cargado (autorizacion y ambito reales)."""
     modelos = importlib.import_module("app.models")
     from app.services.auth_service import IdentidadAutenticada
@@ -733,8 +733,8 @@ def _identidad_tenant_a(mundo) -> object:
         departamento_id=mundo["ids_a"]["departamento_id"],
         rol_id=1,
     )
-    usuario.rol = modelos.Rol(nombre_rol="Administrador")
-    return IdentidadAutenticada(usuario=usuario, sub="sub-ac3-a")
+    usuario.rol = modelos.Rol(nombre_rol=rol)
+    return IdentidadAutenticada(usuario=usuario, sub=f"sub-ac3-a-{rol.lower()}")
 
 
 @contextmanager
@@ -830,7 +830,7 @@ def test_tenant_adversario_por_cuerpo_no_escribe_otro_tenant(mundo_multitenant):
     """
     from app.api import dependencies
 
-    identidad = _identidad_tenant_a(mundo_multitenant)
+    identidad = _identidad_tenant_a(mundo_multitenant, rol="Bodeguero")
     with _cliente_http(
         mundo_multitenant, {dependencies.get_current_user: lambda: identidad}
     ) as cliente:

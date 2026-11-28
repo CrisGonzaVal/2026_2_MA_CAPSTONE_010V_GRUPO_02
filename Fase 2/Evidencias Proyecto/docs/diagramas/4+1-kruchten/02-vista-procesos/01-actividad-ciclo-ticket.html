@@ -36,11 +36,22 @@
     }
     .note strong { font-family: var(--font-sans); font-style: normal; font-weight: 600; color: var(--color-ink); }
     .colophon { margin-top: 0.5rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); }
+    .banner-historico {
+      margin-bottom: 1rem; padding: 0.75rem 1rem; border-left: 4px solid #b45309;
+      background: #fffbeb; color: #78350f; font-size: 0.9rem; line-height: 1.45; border-radius: 4px;
+    }
+    .banner-historico code { font-family: var(--font-mono); font-size: 0.82rem; }
     @media print { .diagram-container { overflow-x: visible; } svg { min-width: 0; } }
   </style>
 </head>
 <body>
   <div class="frame">
+    <div class="banner-historico" role="note">
+      <strong>Diagrama histórico.</strong> El catálogo vigente tiene cuatro estados
+      (<code>EnRevision</code>, <code>EnCurso</code>, <code>Cerrado</code>, <code>Anulado</code>)
+      y la acción de cierre es «Registrar retiro»
+      (<code>POST /api/v1/tickets/{ticket_id}/retiro</code>); ver Feature 013 §10.
+    </div>
     <p class="eyebrow">4+1 · vista de procesos · UML activity</p>
     <h1>Actividad · ciclo de vida del ticket</h1>
     <p class="subtitle">

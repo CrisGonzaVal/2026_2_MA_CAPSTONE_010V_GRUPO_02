@@ -33,7 +33,7 @@ from app.schemas.ticket_schema import (
     DetalleTicketCrear,
     TicketActualizarEstado,
     TicketCrear,
-    TicketDespacho,
+    TicketRetiro,
     TicketEditar,
     TicketMotivo,
 )
@@ -169,7 +169,7 @@ def test_ticket_crear_sigue_aceptando_e_ignorando_usuario_id():
 
 
 # ---------------------------------------------------------------------------
-# TicketEditar, TicketActualizarEstado y TicketDespacho
+# TicketEditar, TicketActualizarEstado y TicketRetiro
 # ---------------------------------------------------------------------------
 
 
@@ -213,14 +213,14 @@ def test_actualizar_estado_rechaza_id_no_positivo_y_campos_extra():
     assert _campos(error.value) == {"campo_extra"}
 
 
-def test_despacho_rechaza_usuario_no_positivo_y_campos_extra():
+def test_retiro_rechaza_usuario_no_positivo_y_campos_extra():
     with pytest.raises(ValidationError) as error:
-        TicketDespacho(usuario_id=0)
+        TicketRetiro(usuario_id=0)
 
     assert _campos(error.value) == {"usuario_id"}
 
     with pytest.raises(ValidationError) as error:
-        TicketDespacho(usuario_id=1, campo_extra=1)
+        TicketRetiro(usuario_id=1, campo_extra=1)
 
     assert _campos(error.value) == {"campo_extra"}
 

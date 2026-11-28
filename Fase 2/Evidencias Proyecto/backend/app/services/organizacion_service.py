@@ -1,9 +1,9 @@
 """Servicio de asignaciones organizacionales (Feature 011, T7).
 
 Superficie minima para que el modelo organizacional sea operable sin CRUD de
-sedes (eso es la Feature 012): consulta de sedes del tenant, asignacion de sede a
-departamento y a un Bodeguero, y asociacion/retiro/listado de encargados de
-departamento (tabla puente `departamento_encargado`, spec D-4).
+sedes (eso es la Feature 012): consulta de sedes del tenant y asignacion de sede a
+departamento y a un Bodeguero. La enmienda 27/Nov/2026 de la 012 retira la tabla
+puente auxiliar y sus operaciones; las asignaciones de sede siguen vigentes.
 
 Reglas de dominio (AGENTS §6: la logica vive aqui, no en el router):
 
@@ -11,13 +11,8 @@ Reglas de dominio (AGENTS §6: la logica vive aqui, no en el router):
     a partir de la identidad ya autenticada; nunca de la peticion. Un recurso
     inexistente **o ajeno** se oculta con **404** (patron Feature 008, spec §4.12);
     un recurso de otra institucion no se toca.
-  * Una precondicion organizacional o una asociacion incompatible/duplicada
-    responde **409** sin mutacion: asignar sede a un usuario que no es Bodeguero,
-    encargado con rol distinto de Solicitante, encargado de otro departamento o
-    asociacion repetida.
-  * El listado de encargados solo devuelve asociaciones **vigentes y compatibles**
-    (usuario existente, rol Solicitante y pertenencia al departamento); una
-    asociacion obsoleta no se borra pero tampoco se muestra ni concede nada.
+  * Una precondicion organizacional o una asignacion incompatible responde
+    **409** sin mutacion: asignar sede a un usuario que no es Bodeguero.
 """
 
 from __future__ import annotations
@@ -34,7 +29,6 @@ from sqlalchemy.orm import Session
 from app.core import permisos, security
 from app.models import (
     Departamento,
-    DepartamentoEncargado,
     MapaUsuarioEsquema,
     Rol,
     Sede,
@@ -49,10 +43,15 @@ from app.schemas.organizacion_schema import (
 from app.schemas.usuario_schema import UsuarioEdicion
 from app.services import ambito_service, motivo_service
 from app.services.auth_service import IdentidadAutenticada, correo_del_actor
+from app.services.departamento_suministros import (
+    es_departamento_suministros,
+    resolver_departamento_suministros,
+)
 
 _ADMINISTRADOR = permisos.RolConocido.ADMINISTRADOR.value
 
 _BODEGUERO = permisos.RolConocido.BODEGUERO.value
+
 _SOLICITANTE = permisos.RolConocido.SOLICITANTE.value
 
 _DETALLE_DEPARTAMENTO = "Departamento inexistente o fuera del ambito del usuario"
@@ -213,113 +212,6 @@ def asignar_sede_a_usuario(
     db.commit()
     db.refresh(usuario)
     return usuario
-
-
-# ---------------------------------------------------------------------------
-# Encargados de departamento (N:N, spec D-4)
-# ---------------------------------------------------------------------------
-
-
-def _consulta_encargados(db: Session, departamento_id: int):
-    """Asociaciones compatibles vigentes: usuario Solicitante del departamento."""
-    return (
-        db.query(Usuario)
-        .join(DepartamentoEncargado, DepartamentoEncargado.usuario_id == Usuario.usuario_id)
-        .join(Rol, Rol.rol_id == Usuario.rol_id)
-        .filter(
-            DepartamentoEncargado.departamento_id == departamento_id,
-            Usuario.departamento_id == departamento_id,
-            Rol.nombre_rol == _SOLICITANTE,
-        )
-        .order_by(Usuario.usuario_id)
-    )
-
-
-def listar_encargados(
-    db: Session,
-    departamento_id: int,
-    identidad: IdentidadAutenticada | None = None,
-) -> List[Usuario]:
-    """Encargados vigentes y compatibles de un departamento del tenant."""
-    institucion_id = ambito_service.alcance_institucional(db, identidad)
-    _departamento_en_alcance(db, departamento_id, institucion_id)
-    return _consulta_encargados(db, departamento_id).all()
-
-
-def asociar_encargado(
-    db: Session,
-    departamento_id: int,
-    usuario_id: int,
-    identidad: IdentidadAutenticada | None = None,
-) -> Usuario:
-    """Asocia un Solicitante del mismo departamento como encargado (AC-4).
-
-    El usuario debe existir en el tenant (404 si no o si es ajeno) y ser
-    compatible (409 si su rol no es Solicitante, si pertenece a otro departamento
-    o si la asociacion ya existe). No concede ningun privilegio adicional.
-    """
-    institucion_id = ambito_service.alcance_institucional(db, identidad)
-    _departamento_en_alcance(db, departamento_id, institucion_id)
-    usuario = _usuario_en_alcance(db, usuario_id, institucion_id)
-    if _nombre_rol(db, usuario) != _SOLICITANTE:
-        raise _conflicto(
-            "El encargado de departamento debe ser un usuario Solicitante"
-        )
-    if usuario.departamento_id != departamento_id:
-        raise _conflicto(
-            "El encargado debe pertenecer al mismo departamento que asocia"
-        )
-    existente = (
-        db.query(DepartamentoEncargado)
-        .filter(
-            DepartamentoEncargado.departamento_id == departamento_id,
-            DepartamentoEncargado.usuario_id == usuario_id,
-        )
-        .first()
-    )
-    if existente is not None:
-        raise _conflicto("El usuario ya es encargado de este departamento")
-    asociacion = DepartamentoEncargado(
-        departamento_id=departamento_id, usuario_id=usuario_id
-    )
-    db.add(asociacion)
-    try:
-        db.commit()
-    except IntegrityError as exc:  # carrera contra la unicidad de la tabla puente
-        db.rollback()
-        raise _conflicto("El usuario ya es encargado de este departamento") from exc
-    db.refresh(usuario)
-    return usuario
-
-
-def retirar_encargado(
-    db: Session,
-    departamento_id: int,
-    usuario_id: int,
-    identidad: IdentidadAutenticada | None = None,
-) -> None:
-    """Retira la asociacion departamento/encargado (AC-5).
-
-    Afecta solo a la pareja indicada; otras asociaciones del usuario con otros
-    departamentos no se tocan. Una asociacion inexistente responde **404**.
-    """
-    institucion_id = ambito_service.alcance_institucional(db, identidad)
-    _departamento_en_alcance(db, departamento_id, institucion_id)
-    asociacion = (
-        db.query(DepartamentoEncargado)
-        .filter(
-            DepartamentoEncargado.departamento_id == departamento_id,
-            DepartamentoEncargado.usuario_id == usuario_id,
-        )
-        .first()
-    )
-    if asociacion is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asociacion de encargado inexistente",
-        )
-    db.delete(asociacion)
-    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -724,38 +616,102 @@ def editar_usuario(
     cambios es idempotente y no exige ni genera justificacion. Respeta el rol
     asignable del creador (D-6/AC-10), el ambito institucional (404 para un
     usuario o departamento ajeno) y el contrato (422 en payload invalido).
+
+    Enmienda 012 (D-12/D-13): el rol destino se resuelve una vez contra `rol`.
+    Un Bodeguero no elige departamento: cualquier id positivo del cliente se
+    ignora y se resuelve «Suministros» en la institucion del usuario/actor, de
+    modo que el departamento resuelto participa del cambio efectivo (un legacy
+    en «Biblioteca» exige motivo al pasar a «Suministros»). Un rol distinto de
+    Bodeguero exige `departamento_id` (422 si falta), conserva el 403/404 de un
+    departamento ajeno y rechaza «Suministros» con 422. Desde Bodeguero solo se
+    permite pasar a Solicitante. La edicion nunca toca `usuario.sede_id` y no
+    consulta encargados; el 409 del ultimo Administrador activo se conserva.
     """
     from app.services.usuario_service import _validar_rol_asignable
 
     _validar_rol_asignable(db, datos.rol_id, identidad)
     institucion_actor = ambito_service.alcance_institucional(db, identidad)
     usuario = _usuario_en_alcance(db, usuario_id, institucion_actor)
-    _departamento_en_alcance(db, datos.departamento_id, institucion_actor)
+
+    # El nombre del rol destino se resuelve una sola vez, antes de validar el
+    # departamento, porque la presencia y la validez de este dependen del rol
+    # (D-12/D-13).
+    rol_destino = db.get(Rol, datos.rol_id)
+    nombre_rol_destino = None if rol_destino is None else rol_destino.nombre_rol
+    nombre_rol_actual = _nombre_rol(db, usuario)
+
+    # D-13: desde Bodeguero solo se permite pasar a Solicitante. El
+    # Administrador ya no puede asignar roles administrativos
+    # (`_validar_rol_asignable`); esta guarda cierra el camino del alcance
+    # global de control sin reabrir la matriz.
+    if (
+        nombre_rol_actual == _BODEGUERO
+        and usuario.rol_id != datos.rol_id
+        and nombre_rol_destino != _SOLICITANTE
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Un Bodeguero solo puede cambiar al rol Solicitante",
+        )
+
     sesion_control = db_control if db_control is not None else db
-    institucion = _institucion_de_mutacion(db, usuario, identidad, institucion_id)
-    if institucion_id is not None:
-        departamento_destino = db.get(Departamento, datos.departamento_id)
+
+    if nombre_rol_destino == _BODEGUERO:
+        # D-8/D-13: el Bodeguero no elige departamento. Cualquier id positivo
+        # del cliente (propio, ajeno o inexistente) se ignora; la institucion
+        # sale del usuario/actor y «Suministros» se resuelve en ella.
+        institucion = _institucion_de_mutacion(
+            db, usuario, identidad, institucion_id
+        )
+        departamento_destino_id = resolver_departamento_suministros(
+            db, institucion
+        ).departamento_id
+    else:
+        if datos.departamento_id is None:
+            # D-12: la presencia la valida el servicio, porque el nombre del rol
+            # solo se conoce aqui; el 422 llega antes de toda mutacion.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="El departamento es obligatorio para el rol indicado",
+            )
+        # Se conservan las validaciones vigentes de existencia y ambito
+        # (404 para un departamento inexistente o ajeno) antes de mirar el
+        # nombre, de modo que un id ajeno no revele como se llama (D-12).
+        departamento_destino = _departamento_en_alcance(
+            db, datos.departamento_id, institucion_actor
+        )
+        institucion = _institucion_de_mutacion(
+            db, usuario, identidad, institucion_id
+        )
         if (
-            departamento_destino is None
-            or departamento_destino.institucion_id != institucion_id
+            institucion_id is not None
+            and departamento_destino.institucion_id != institucion_id
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="El departamento indicado esta fuera de la institucion",
             )
+        if es_departamento_suministros(departamento_destino):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "El departamento Suministros se asigna automaticamente a los "
+                    "Bodegueros y no puede elegirse para otro rol"
+                ),
+            )
+        departamento_destino_id = departamento_destino.departamento_id
 
     cambio_efectivo = (
         usuario.nombre != datos.nombre
         or usuario.apellido != datos.apellido
-        or usuario.departamento_id != datos.departamento_id
+        or usuario.departamento_id != departamento_destino_id
         or usuario.rol_id != datos.rol_id
     )
     # Continuidad administrativa (D-7/AC-12): degradar al unico Administrador
     # activo a un rol no administrativo responde 409 antes de mutar usuario,
     # mapa o motivo. No bloquea ediciones que preservan el rol ni degradaciones
     # cuando queda otro Administrador activo.
-    if usuario.rol_id != datos.rol_id and _nombre_rol(db, usuario) == _ADMINISTRADOR:
-        rol_destino = db.get(Rol, datos.rol_id)
+    if usuario.rol_id != datos.rol_id and nombre_rol_actual == _ADMINISTRADOR:
         if (
             rol_destino is None or rol_destino.nombre_rol != _ADMINISTRADOR
         ) and _es_ultimo_administrador_activo(db, sesion_control, usuario):
@@ -790,7 +746,7 @@ def editar_usuario(
 
     usuario.nombre = datos.nombre
     usuario.apellido = datos.apellido
-    usuario.departamento_id = datos.departamento_id
+    usuario.departamento_id = departamento_destino_id
     usuario.rol_id = datos.rol_id
     db.commit()
     db.refresh(usuario)
@@ -896,9 +852,6 @@ def cambiar_estado_usuario(
         return mapa
 
     if not activo:
-        motivo_bloqueo = _dependencias_usuario(db, usuario_id)
-        if motivo_bloqueo is not None:
-            raise _conflicto(motivo_bloqueo)
         if _es_ultimo_administrador_activo(db, db_control, usuario):
             raise _conflicto(
                 "No se puede dar de baja al ultimo Administrador activo de la "
@@ -941,18 +894,3 @@ def _nombre_esquema_institucion(institucion_id: str) -> str:
     from app.services.tenant_service import nombre_esquema_para_institucion
 
     return nombre_esquema_para_institucion(institucion_id)
-
-
-def _dependencias_usuario(db: Session, usuario_id: int) -> str | None:
-    """Motivo por el que desactivar el usuario es inseguro, o `None`."""
-    asociacion = (
-        db.query(DepartamentoEncargado)
-        .filter(DepartamentoEncargado.usuario_id == usuario_id)
-        .first()
-    )
-    if asociacion is not None:
-        return (
-            "No se puede desactivar el usuario: es encargado de uno o mas "
-            "departamentos; retire sus asociaciones antes"
-        )
-    return None

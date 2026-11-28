@@ -32,7 +32,8 @@ api_router.include_router(tickets.router)
 api_router.include_router(dashboard.router)
 # Feature 010: aprovisionamiento de instituciones (portal de control).
 api_router.include_router(control.router)
-# Feature 011: asignaciones organizacionales minimas (sede y encargados).
+# Feature 011: asignaciones organizacionales minimas (sede de departamento y de
+# Bodeguero; la tabla puente auxiliar se retiro con la enmienda 012 de 27/Nov/2026).
 api_router.include_router(organizacion.router)
 # Feature 020: reabastecimiento externo y compras (proveedores, OC y recepcion).
 api_router.include_router(compras.router)

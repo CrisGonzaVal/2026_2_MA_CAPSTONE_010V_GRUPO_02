@@ -123,6 +123,14 @@ export class InventarioComponent implements OnInit {
   readonly consulta = signal('');
   readonly categoriaSeleccionada = signal<number | null>(null);
   readonly soloCriticos = signal(false);
+  /**
+   * Filtro de presentación «Solo con stock» (enmienda 018 §11, D-9).
+   *
+   * Arranca en `false` en cada instancia y no se persiste (D-13). No viaja al
+   * servidor: oculta en cliente los productos cuyo `stock_total` es 0 sobre la
+   * respuesta ya acotada por rol y filtros organizacionales.
+   */
+  readonly soloConStock = signal(false);
 
   readonly cargando = signal(true);
   readonly mensajeError = signal<string | null>(null);
@@ -190,17 +198,25 @@ export class InventarioComponent implements OnInit {
   readonly errorHistorial = signal<string | null>(null);
 
   /**
-   * Insumos que pasan el texto y el filtro de criticos, todavia SIN aplicar la
-   * categoria. Es la base de dos cosas: las filas visibles y los conteos del
-   * panel. Si el panel contara sobre las filas ya filtradas por categoria, al
-   * elegir "Papeleria" las demas categorias marcarian 0 y el panel dejaria de
-   * poder navegar.
+   * Insumos que pasan el texto, «Solo con stock» y el filtro de criticos,
+   * todavia SIN aplicar la categoria. Es la base de dos cosas: las filas
+   * visibles y los conteos del panel. Si el panel contara sobre las filas ya
+   * filtradas por categoria, al elegir "Papeleria" las demas categorias
+   * marcarian 0 y el panel dejaria de poder navegar.
+   *
+   * El predicado de stock vive aqui (y no en un computed intermedio) para que
+   * `conteoPorCategoria` y «Todas» cuenten exactamente lo que la tabla mostrara
+   * al marcar el checkbox (enmienda 018 §11.6, D-9/AC-12).
    */
   readonly insumosCoincidentes = computed(() => {
     const texto = this.normalizar(this.consulta());
     const soloCriticos = this.soloCriticos();
+    const soloConStock = this.soloConStock();
 
     return this.insumos().filter((insumo) => {
+      if (soloConStock && insumo.stock_total <= 0) {
+        return false;
+      }
       if (soloCriticos && !insumo.es_critico) {
         return false;
       }
@@ -257,8 +273,35 @@ readonly totalCriticos = computed(() => this.insumos().filter((insumo) => insumo
       this.consulta().trim().length > 0 ||
       this.categoriaSeleccionada() !== null ||
       this.soloCriticos() ||
+      this.soloConStock() ||
       this.filtrosOrganizacionalesActivos(),
   );
+
+  /**
+   * Mensaje del estado vacío de la tabla, con la precedencia de D-12:
+   *
+   * 1. Si hay filas visibles, no hay mensaje.
+   * 2. Con «Solo con stock» marcado: catálogo vacío conserva el mensaje de
+   *    catálogo; si hay catálogo, el vacío propio de stock.
+   * 3. Sin el checkbox: con filtros, el vacío genérico de AC-6; sin filtros, el
+   *    de catálogo inexistente.
+   *
+   * La decisión vive aquí (y no en `@if` anidados de la plantilla) para tener
+   * una única fuente y no reabrir el contrato literal de AC-6.
+   */
+  readonly mensajeVacio = computed<string | null>(() => {
+    if (this.insumosVisibles().length > 0) {
+      return null;
+    }
+    if (this.soloConStock()) {
+      return this.insumos().length === 0
+        ? 'El catálogo no tiene insumos cargados.'
+        : 'Ningún insumo con stock coincide con los filtros aplicados.';
+    }
+    return this.hayFiltros()
+      ? 'Ningún insumo coincide con los filtros aplicados.'
+      : 'El catálogo no tiene insumos cargados.';
+  });
 
   readonly categoriaActual = computed(
     () => this.categorias().find((categoria) => categoria.categoria_id === this.categoriaSeleccionada())?.nombre_cat ?? null,
@@ -365,6 +408,7 @@ readonly totalCriticos = computed(() => this.insumos().filter((insumo) => insumo
     this.consulta.set('');
     this.categoriaSeleccionada.set(null);
     this.soloCriticos.set(false);
+    this.soloConStock.set(false);
     this.sedeSeleccionada.set(null);
     this.departamentoSeleccionado.set(null);
 

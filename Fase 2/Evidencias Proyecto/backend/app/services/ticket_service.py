@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, case, delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
@@ -35,13 +36,18 @@ from app.schemas.ticket_schema import (
     SolicitanteRespuesta,
     TicketCrear,
     TicketDetalleRespuesta,
-    TicketDespacho,
+    TicketRetiro,
     TicketEditar,
     TicketRespuesta,
 )
 from app.services import ambito_service, compra_service
 from app.services.auth_service import IdentidadAutenticada
-from app.services.inventario_service import TIPO_SALIDA, es_stock_critico
+from app.services.inventario_service import (
+    TIPO_ENTRADA,
+    TIPO_SALIDA,
+    es_stock_critico,
+    sede_del_alcance_por_rol,
+)
 from app.services.ticket_proceso import (
     MOTIVO_APROBACION,
     MOTIVO_CONFIRMACION_ENTREGA,
@@ -53,14 +59,12 @@ from app.services.ticket_proceso import (
 #: vida. Se buscan por nombre (case-insensitive) y nunca por id fijo (D-1,
 #: plan §3.2). `Cerrado` y `Anulado` son los dos terminales de la 013,
 #: resueltos por nombre canonico y nunca por su posicion en el catalogo
-#: (spec D-4, enmienda AC-26); `Pendiente` es el unico estado editable.
+#: (spec D-4, enmienda AC-26).
 NOMBRE_ESTADO_EN_CURSO = "encurso"
 NOMBRE_ESTADO_CERRADO = "cerrado"
 NOMBRE_ESTADO_ANULADO = "anulado"
-NOMBRE_ESTADO_PENDIENTE = "pendiente"
-#: `EnRevision` es un estado **heredado** de la ampliacion del 25/Nov/2026: el
-#: flujo nuevo no lo produce, pero la aprobacion debe aceptar los pedidos que ya
-#: estan en el (spec §9.1/§9.3, AC-29/AC-47).
+#: `EnRevision` es el unico estado inicial y el unico estado editable del flujo
+#: vigente (enmienda 26/Nov/2026, D-27/D-28). `Pendiente` deja de existir.
 NOMBRE_ESTADO_EN_REVISION = "enrevision"
 
 #: Longitud maxima del motivo de anulacion/rechazo (D-6): la escala del
@@ -69,11 +73,19 @@ NOMBRE_ESTADO_EN_REVISION = "enrevision"
 #: 404/409 del orden AC-7.
 LONGITUD_MAXIMA_MOTIVO = 500
 
-#: Observacion literal de auditoria de cada salida de despacho (D-6). El formato
-#: solo lleva ids enteros y etiquetas fijas, por lo que cabe en el `VARCHAR(250)`
-#: de `movimiento_inventario.observacion`.
-PLANTILLA_OBSERVACION_DESPACHO = (
-    "Despacho ticket_id={ticket_id}; "
+#: Observacion literal de auditoria de cada salida de retiro (D-29/AC-57). El
+#: formato solo lleva ids enteros y etiquetas fijas, por lo que cabe en el
+#: `VARCHAR(250)` de `movimiento_inventario.observacion`.
+PLANTILLA_OBSERVACION_RETIRO = (
+    "Salida por retiro del ticket #{ticket_id}; "
+    "detalle_id={detalle_ticket_id}; "
+    "producto_id={producto_id}"
+)
+
+#: Observacion literal de cada entrada de devolucion de la anulacion del retiro
+#: (D-32/AC-58). Igual que la salida, solo lleva ids enteros y etiquetas fijas.
+PLANTILLA_OBSERVACION_DEVOLUCION = (
+    "Devolución por anulación del retiro del ticket #{ticket_id}; "
     "detalle_id={detalle_ticket_id}; "
     "producto_id={producto_id}"
 )
@@ -94,6 +106,10 @@ _ESTADO_ORDEN_RECIBIDA = "Recibida"
 #: resuelve por nombre y el catalogo no impone capitalizacion.
 _ROL_GESTOR_BODEGUERO = "Bodeguero"
 _ROL_GESTOR_ADMINISTRADOR = "Administrador"
+#: Rol que puede anular administrativamente un retiro (D-33/AC-58). La matriz
+#: concede `/anulacion` al Solicitante dueño, pero la rama `Cerrado` es
+#: exclusiva del Administrador y el servicio la comprueba por nombre de rol.
+_ROL_ADMINISTRADOR = "Administrador"
 _ROLES_GESTORES = {
     _ROL_GESTOR_BODEGUERO.casefold(),
     _ROL_GESTOR_ADMINISTRADOR.casefold(),
@@ -463,6 +479,12 @@ def _cargar_confirmaciones_por_ticket(
 
     `Cerrado` se resuelve una vez por nombre (menor id ante duplicados) y la
     consulta junta al actor para exponer la linea «Entregado el … por …».
+
+    Enmienda 26/Nov/2026 (D-34/AC-61): la confirmacion es un evento **mientras
+    el pedido sigue en `Cerrado`**. Una anulacion administrativa posterior deja
+    la fila intacta (es inmutable), pero su pedido ya no puede presentarse como
+    entregado; por eso la lectura se limita a los tickets cuyo estado vigente
+    sigue siendo el `Cerrado` canonico.
     """
     if not ticket_ids:
         return {}
@@ -483,7 +505,12 @@ def _cargar_confirmaciones_por_ticket(
             Usuario,
             Usuario.usuario_id == HistorialTransicionTicket.usuario_id,
         )
+        .join(
+            Ticket,
+            Ticket.ticket_id == HistorialTransicionTicket.ticket_id,
+        )
         .where(HistorialTransicionTicket.ticket_id.in_(ticket_ids))
+        .where(Ticket.estado_id == cerrado.estado_id)
         .where(HistorialTransicionTicket.estado_origen_id == cerrado.estado_id)
         .where(HistorialTransicionTicket.estado_destino_id == cerrado.estado_id)
         .where(HistorialTransicionTicket.motivo == MOTIVO_CONFIRMACION_ENTREGA)
@@ -739,7 +766,7 @@ def _verificar_productos(
     Feature 014 (AC-4/AC-9): la disponibilidad es el predicado conjunto
     `producto.activo AND categoria.activo`. Un producto no disponible responde
     **409** (existe, pero no se puede pedir). `permitidos_inactivos` es el
-    conjunto de ids que la edicion de un ticket `Pendiente` conserva porque ya
+    conjunto de ids que la edicion de un ticket `EnRevision` conserva porque ya
     figuran en sus detalles actuales; el alta no lo usa (siempre vacio). Las dos
     pasadas (existencia/pertenencia y luego disponibilidad) garantizan que el
     conjunto completo se valide **antes** de tocar los detalles.
@@ -892,13 +919,13 @@ def crear_ticket(
     reglas de estado inicial -> escritura transaccional. La sede se resuelve
     siempre por `usuario.departamento_id`, nunca como fallback a `usuario.sede_id`.
 
-    Enmienda post-cierre de la 013 (spec AC-27): todo ticket nace en
-    `Pendiente`, resuelto por nombre canonico; cualquier otro `estado_id`
+    Enmienda 26/Nov/2026 de la 013 (D-27/D-28/AC-51): todo ticket nace en
+    `EnRevision`, resuelto por nombre canonico; cualquier otro `estado_id`
     responde **409** (precondicion, no 404/422) antes del primer `add()`, sin
-    dejar ticket ni detalle parciales, y un catalogo sin `Pendiente` tambien
+    dejar ticket ni detalle parciales, y un catalogo sin `EnRevision` tambien
     deniega cerrado (409). Queda derogado el alta directa en `Cerrado` y su
     sellado de `fecha_cierre` (004 AC-17): `Cerrado` solo se alcanza por el
-    despacho de la 005. Ademas la creacion inserta su fila de historial
+    retiro. Ademas la creacion inserta su fila de historial
     (origen nulo, destino = estado inicial, actor = identidad o
     `ticket.usuario_id`; decision 9) en la misma transaccion del ticket (AC-9,
     AC-11).
@@ -906,9 +933,8 @@ def crear_ticket(
     Correccion post-cierre T31 (AC-39/AC-41): devuelve `TicketRespuesta` con el
     read model de proceso ya poblado, no el ORM. El tablero inserta el `201` sin
     reconsultar el listado, de modo que la tarjeta del pedido nuevo necesita la
-    misma `etiqueta_proceso` que el listado (antes llegaba vacia y el tablero
-    caia al nombre canonico «Pendiente» hasta la siguiente recarga). El alta
-    sigue naciendo en `Pendiente` (AC-27); lo unico que cambia es la respuesta.
+    misma `etiqueta_proceso` que el listado. El alta sigue naciendo en
+    `EnRevision`; lo unico que cambia es la respuesta.
     """
     # Enmienda D-33/D-7: autoatribucion **incondicional y primera**. La autoria es
     # siempre la identidad autenticada, cualquiera sea el rol y el valor enviado
@@ -938,30 +964,30 @@ def crear_ticket(
     # del solicitante. Se resuelve **antes** de escribir; sin sede el alta es 409.
     sede_ticket = _sede_vigente_de_solicitante(db, solicitante)
 
-    # Enmienda post-cierre (spec AC-27): el estado inicial es siempre
-    # `Pendiente`, resuelto por nombre canonico (menor `estado_id` ante
+    # Enmienda 26/Nov/2026 (D-27/AC-51): el estado inicial es siempre
+    # `EnRevision`, resuelto por nombre canonico (menor `estado_id` ante
     # duplicados, plan §3.2). El `estado_id` del DTO es obligatorio y debe ser
     # ese id; cualquier otro responde 409 antes del primer `add()` para no
-    # dejar ticket ni detalle parciales. Sin `Pendiente` en el catalogo el alta
+    # dejar ticket ni detalle parciales. Sin `EnRevision` en el catalogo el alta
     # deniega cerrado (409), como el resto de las reglas por nombre.
     estados = db.execute(
         select(EstadoTicket).order_by(EstadoTicket.estado_id)
     ).scalars().all()
-    estado_pendiente = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_PENDIENTE)
-    if estado_pendiente is None:
+    estado_inicial = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_EN_REVISION)
+    if estado_inicial is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "El catalogo de estados no contiene 'Pendiente': el alta no "
+                "El catalogo de estados no contiene 'EnRevision': el alta no "
                 "puede resolver su estado inicial"
             ),
         )
-    if datos.estado_id != estado_pendiente.estado_id:
+    if datos.estado_id != estado_inicial.estado_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "El estado inicial de un ticket nuevo debe ser 'Pendiente' "
-                f"(estado_id={estado_pendiente.estado_id}); se recibio "
+                "El estado inicial de un ticket nuevo debe ser 'EnRevision' "
+                f"(estado_id={estado_inicial.estado_id}); se recibio "
                 f"estado_id={datos.estado_id}"
             ),
         )
@@ -1112,7 +1138,7 @@ def actualizar_estado_ticket(
             detail=(
                 "El ticket esta en 'Anulado', estado terminal del que ninguna "
                 "operacion lo saca; la anulacion y el rechazo solo se aplican "
-                "desde 'Pendiente' o 'EnRevision'"
+                "desde 'EnRevision'"
             ),
         )
 
@@ -1127,9 +1153,9 @@ def actualizar_estado_ticket(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "El ticket esta en 'Cerrado', estado terminal por nombre: el "
-                "cierre es definitivo y no admite ninguna salida; el despacho "
+                "cierre es definitivo y no admite ninguna salida; el retiro "
                 "transaccional es el unico camino a el, use "
-                f"POST /api/v1/tickets/{ticket_id}/despacho"
+                f"POST /api/v1/tickets/{ticket_id}/retiro"
             ),
         )
 
@@ -1176,8 +1202,8 @@ def actualizar_estado_ticket(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "El cierre requiere despacho; use "
-                f"POST /api/v1/tickets/{ticket_id}/despacho"
+                "El cierre requiere retiro; use "
+                f"POST /api/v1/tickets/{ticket_id}/retiro"
             ),
         )
 
@@ -1221,53 +1247,60 @@ def _resolver_estado_por_nombre(estados, nombre: str):
     return next((e for e in estados if e.nombre.casefold() == objetivo), None)
 
 
-def despachar_ticket(
+def registrar_retiro_ticket(
     db: Session,
     ticket_id: int,
-    datos: TicketDespacho,
+    datos: TicketRetiro,
     identidad: IdentidadAutenticada | None = None,
 ) -> Ticket:
-    """Despacha un ticket aprobado: rebaja stock, cierra y audita en una ACID.
+    """Registra el retiro de un ticket aprobado: rebaja stock, cierra y audita.
 
-    El orden de validacion es contractual (`spec.md` §5, plan §3.1-§3.3) y
-    **ninguna** comprobacion de negocio escribe: primero se adquiere el bloqueo
-    de la fila del ticket y se comprueba su existencia; despues el actor; luego
-    el catalogo de estados y la elegibilidad; a continuacion los detalles, las
-    referencias de producto, la unicidad de inventario y la suficiencia del
-    stock total; solo entonces se muta y se hace un **unico** `commit()`.
+    Sustituye a `despachar_ticket` de la 005 (D-29/AC-55) y conserva su cuerpo
+    ACID: el orden de validacion es contractual (`spec.md` §5, plan §3.1-§3.3) y
+    **ninguna** comprobacion de negocio escribe. Primero se resuelve la sede del
+    Bodeguero (`sede_del_alcance_por_rol`: sin sede -> 409), luego se adquiere el
+    bloqueo de la fila del ticket y se comprueba su existencia y el ambito
+    institucional; despues el actor, el catalogo de estados y la elegibilidad; a
+    continuacion los detalles, las referencias de producto, la unicidad de
+    stock y la suficiencia del stock total; solo entonces se muta y se hace un
+    **unico** `commit()`.
 
-    El bloqueo (`with_for_update()`) serializa dos despachos del mismo ticket
+    Ambito (D-30/AC-56): un ticket de otra sede responde **404 identico** al
+    inexistente (el rol si tiene la operacion; el recurso es el que no esta en
+    su alcance) y un ticket sin `sede_id` responde **409**.
+
+    El bloqueo (`with_for_update()`) serializa dos retiros del mismo ticket
     (D-9): la segunda peticion espera y, tras el commit de la primera, relee el
     estado `Cerrado` y responde 409 sin crear salidas. SQLite ignora
     `FOR UPDATE`; la garantia concurrente se verifica en PostgreSQL real.
 
     Cada detalle genera su propio `MovimientoInventario` `SALIDA` con la
-    cantidad solicitada y la observacion literal D-6 (D-7), aunque varias lineas
+    cantidad solicitada y la observacion literal D-29, aunque varias lineas
     compartan producto: el stock se valida **agregado** por producto antes de
     escribir. La rebaja, las cantidades entregadas, el cierre y las salidas son
     una sola transaccion; cualquier fallo de escritura o commit revierte todo y
     se propaga (`constitucion.md` §3).
 
     Feature 007 (D-5/AC-6): tras comprobar la existencia se verifica el alcance
-    del rol; un ticket de otra institucion (Administrador/Bodeguero) o ajeno al
-    Solicitante responde 404 antes de tocar stock, estado o auditoria, de modo
-    que la denegacion no muta la transaccion de despacho.
+    del rol; un ticket de otra institucion responde 404 antes de tocar stock,
+    estado o auditoria, de modo que la denegacion no muta la transaccion.
 
     Feature 008 (D-2/D-4/AC-12): el ticket se ancla a la institucion de su
     solicitante y tanto el producto de cada detalle como el stock que se rebaja
     deben pertenecer a esa misma institucion. Una referencia cruzada es una
-    inconsistencia que impide resolver el despacho: responde **409**, se evalua
+    inconsistencia que impide resolver el retiro: responde **409**, se evalua
     antes de cualquier escritura y, como el resto de rechazos, no deja stock,
     entrega, estado ni auditoria parciales en la unica transaccion.
 
-    Feature 011 (spec D-5/AC-9): el despacho usa **exclusivamente** la instantanea
-    `ticket.sede_id`, nunca la asignacion vigente del departamento; rebaja solo el
-    `StockSede` de esa sede y enlaza el movimiento nuevo por `stock_sede_id`, que
-    desde la Feature 026 es el unico destino posible. Un ticket sin instantanea
-    (legado sin migrar) responde 409. La sede se bloquea con `FOR UPDATE` junto al
-    ticket para serializar despachos concurrentes; SQLite ignora el bloqueo y la
-    garantia real se verifica en PostgreSQL.
+    Feature 011 (spec D-5/AC-9): el retiro usa **exclusivamente** la instantanea
+    `ticket.sede_id`, nunca la asignacion vigente del departamento; rebaja solo
+    el `StockSede` de esa sede y enlaza el movimiento nuevo por `stock_sede_id`,
+    que desde la Feature 026 es el unico destino posible.
     """
+    # D-30: la sede del Bodeguero acota el retiro. El helper responde 409 si el
+    # actor no tiene sede, antes de revelar nada del ticket.
+    sede_bodeguero = sede_del_alcance_por_rol(db, identidad)
+
     ticket = db.execute(
         select(Ticket).where(Ticket.ticket_id == ticket_id).with_for_update()
     ).scalar_one_or_none()
@@ -1275,6 +1308,20 @@ def despachar_ticket(
         raise _ticket_no_encontrado()
 
     _verificar_alcance_de_ticket(db, ticket, identidad)
+
+    # D-30: el ticket debe ser de la sede del Bodeguero. Un ticket de otra sede
+    # se oculta con el mismo 404 del inexistente y un ticket sin instantanea de
+    # sede es una precondicion ausente (409).
+    if ticket.sede_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "El ticket no tiene una sede asignada (instantanea); "
+                "no se puede retirar sin una sede"
+            ),
+        )
+    if ticket.sede_id != sede_bodeguero:
+        raise _ticket_no_encontrado()
 
     # Institucion del ticket (la de su solicitante): todo detalle y el stock que
     # se rebaje debe pertenecer a ella (D-2, AC-12).
@@ -1296,7 +1343,7 @@ def despachar_ticket(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "El catalogo de estados no contiene los nombres requeridos para "
-                f"despachar ({NOMBRE_ESTADO_EN_CURSO}/{NOMBRE_ESTADO_CERRADO})"
+                f"retirar ({NOMBRE_ESTADO_EN_CURSO}/{NOMBRE_ESTADO_CERRADO})"
             ),
         )
 
@@ -1304,7 +1351,7 @@ def despachar_ticket(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"El ticket no esta en '{estado_en_curso.nombre}': el despacho "
+                f"El ticket no esta en '{estado_en_curso.nombre}': el retiro "
                 "solo se realiza desde ese estado"
             ),
         )
@@ -1317,26 +1364,18 @@ def despachar_ticket(
     if not detalles:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="El ticket no tiene detalles que despachar",
+            detail="El ticket no tiene detalles que retirar",
         )
 
-    # Feature 011 (spec D-5/AC-9): el despacho usa **exclusivamente** la sede
-    # almacenada en el ticket, nunca la asignacion vigente del departamento. Un
-    # ticket legado sin instantanea no se despacha.
+    # Feature 011 (spec D-5/AC-9): el retiro usa **exclusivamente** la sede
+    # almacenada en el ticket, nunca la asignacion vigente del departamento.
+    # `ticket.sede_id` ya se valido contra la sede del Bodeguero y contra nulo.
     sede_ticket = ticket.sede_id
-    if sede_ticket is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "El ticket no tiene una sede asignada (instantanea); "
-                "no se puede despachar sin una sede"
-            ),
-        )
 
     ids_producto = sorted({detalle.producto_id for detalle in detalles})
 
     # El saldo vigente se lee de `stock_sede` y se bloquea con `FOR UPDATE` en la
-    # misma transaccion (patron de la Feature 005): dos despachos concurrentes del
+    # misma transaccion (patron de la Feature 005): dos retiros concurrentes del
     # mismo ticket o de la misma sede se serializan. SQLite ignora `FOR UPDATE`;
     # la concurrencia real se verifica en PostgreSQL.
     filas_stock = db.execute(
@@ -1413,7 +1452,7 @@ def despachar_ticket(
                 MovimientoInventario(
                     tipo_movimiento=TIPO_SALIDA,
                     cantidad=detalle.cantidad_solicitada,
-                    observacion=PLANTILLA_OBSERVACION_DESPACHO.format(
+                    observacion=PLANTILLA_OBSERVACION_RETIRO.format(
                         ticket_id=ticket.ticket_id,
                         detalle_ticket_id=detalle.detalle_ticket_id,
                         producto_id=detalle.producto_id,
@@ -1428,9 +1467,9 @@ def despachar_ticket(
         if ticket.fecha_cierre is None:
             ticket.fecha_cierre = datetime.utcnow()
 
-        # AC-5/AC-9 (013): el despacho es una mutacion del ciclo de vida y
+        # AC-5/AC-9 (013): el retiro es una mutacion del ciclo de vida y
         # suma su fila de historial en la MISMA transaccion ACID que la rebaja
-        # de stock; el despacho no exige motivo (motivo nulo).
+        # de stock; el retiro no exige motivo (motivo nulo).
         _registrar_transicion(
             db,
             ticket,
@@ -1456,10 +1495,11 @@ def aprobar_ticket(
 ) -> TicketRespuesta:
     """Aprueba un pedido y lo deja **siempre** en `EnCurso` (spec D-15/D-16).
 
-    Ampliacion del 25/Nov/2026 (§9.3, AC-29/AC-30/AC-46). Es una operacion
-    semantica propia del Administrador Institucional: el origen es `Pendiente`
-    o `EnRevision` (heredado) y el destino es el `EnCurso` canonico resuelto por
-    **nombre** (casefold, menor `estado_id` ante duplicados), con stock o sin el.
+    Ampliacion del 25/Nov/2026 (§9.3, AC-29/AC-30/AC-46) y enmienda del
+    26/Nov/2026 (D-28/AC-52): es una operacion semantica propia del
+    Administrador Institucional. El unico origen es `EnRevision` y el destino es
+    el `EnCurso` canonico resuelto por **nombre** (casefold, menor `estado_id`
+    ante duplicados), con stock o sin el.
 
     El orden de validacion es el vigente para las mutaciones de ticket:
 
@@ -1468,15 +1508,15 @@ def aprobar_ticket(
        (patron de la 005): dos aprobaciones concurrentes producen una sola
        transicion y la segunda responde 409. SQLite ignora el bloqueo.
     2. El catalogo contiene `EnCurso`; sin el, **409** fail-closed.
-    3. El estado actual es `Pendiente` o `EnRevision`; cualquier otro (incluido
-       `EnCurso`, `Cerrado`, `Anulado` o un estado fuera del catalogo) responde
-       **409** sin escribir.
+    3. El estado actual es `EnRevision`; cualquier otro (incluido `EnCurso`,
+       `Cerrado`, `Anulado` o un estado fuera del catalogo) responde **409**
+       sin escribir.
 
     La aprobacion **no evalua stock, no reserva y no incluye el pedido en
     ninguna simulacion** (D-17); el stock solo decide la etiqueta de proceso
     posterior. Tampoco toca `fecha_cierre`, el inventario, los movimientos ni
-    Compras: el despacho de la 005 sigue siendo la validacion real y el unico
-    camino a `Cerrado` (D-18).
+    Compras: el retiro sigue siendo la validacion real y el unico camino a
+    `Cerrado` (D-18).
 
     Escribe **exactamente una** fila de historial con el origen real, destino
     `EnCurso`, actor = identidad de sesion, `motivo` literal
@@ -1501,7 +1541,7 @@ def aprobar_ticket(
     estado_en_curso = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_EN_CURSO)
     if estado_en_curso is None:
         # Fail-closed: sin el destino canonico la operacion no puede resolver
-        # su estado; 409 y no 500 (mismo criterio que despacho y anulacion).
+        # su estado; 409 y no 500 (mismo criterio que retiro y anulacion).
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -1510,22 +1550,18 @@ def aprobar_ticket(
             ),
         )
 
-    estado_pendiente = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_PENDIENTE)
     estado_en_revision = _resolver_estado_por_nombre(
         estados, NOMBRE_ESTADO_EN_REVISION
     )
-    origenes_elegibles = {
-        estado.estado_id
-        for estado in (estado_pendiente, estado_en_revision)
-        if estado is not None
-    }
-    if ticket.estado_id not in origenes_elegibles:
+    if (
+        estado_en_revision is None
+        or ticket.estado_id != estado_en_revision.estado_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "La aprobacion solo se aplica a tickets en 'Pendiente' o "
-                "'EnRevision' (estado heredado); el pedido ya esta aprobado o "
-                "es terminal"
+                "La aprobacion solo se aplica a tickets en 'EnRevision'; el "
+                "pedido ya esta aprobado o es terminal"
             ),
         )
 
@@ -1672,38 +1708,234 @@ def confirmar_entrega_ticket(
     return _respuesta_ticket_con_proceso(db, ticket)
 
 
+def _validar_motivo_operacion(motivo: str | None) -> None:
+    """Motivo obligatorio y acotado a `LONGITUD_MAXIMA_MOTIVO` -> **422**.
+
+    Se valida en el servicio y **despues** de las comprobaciones de recurso y
+    estado, para respetar el orden 404 -> 409 -> 422 (D-6/AC-7).
+    """
+    if (
+        not isinstance(motivo, str)
+        or not motivo.strip()
+        or len(motivo) > LONGITUD_MAXIMA_MOTIVO
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "El motivo es obligatorio y no puede exceder "
+                f"{LONGITUD_MAXIMA_MOTIVO} caracteres"
+            ),
+        )
+
+
+def _es_choque_de_unicidad_de_stock(error: IntegrityError) -> bool:
+    """`True` si el error es la carrera de creacion de `stock_sede` (D-40.3).
+
+    El servicio traduce esa carrera a **409** (patron de la 026) en lugar de
+    dejarla caer como 500. Cualquier otro `IntegrityError` se relanza para que
+    el manejador global lo clasifique (o lo convierta en 500 si es desconocido).
+    """
+    texto = str(getattr(error, "orig", error)).lower()
+    if "stock_sede" not in texto:
+        return False
+    return "duplicate" in texto or "unique" in texto
+
+
+def _devolver_stock_de_anulacion(
+    db: Session, ticket: Ticket, detalles: List[DetalleTicket]
+) -> None:
+    """Devuelve una `ENTRADA` por detalle entregado y resetea las cantidades.
+
+    Se ejecuta **dentro** de la transaccion de la anulacion (sin commit propio):
+    bloquea la fila `stock_sede` de la sede del ticket por `producto_id` y, si
+    falta, la crea con `stock_actual = 0` siguiendo el patron de la recepcion de
+    la 020, para luego incrementarla. La devolucion **no** exige
+    `producto.activo` ni `sede.activo`: la mercaderia ya salio y la auditoria
+    debe reflejarla (excepcion acotada de la 020).
+    """
+    institucion_ticket = _institucion_de_ticket(db, ticket)
+    for detalle in detalles:
+        fila = db.execute(
+            select(StockSede)
+            .where(
+                StockSede.sede_id == ticket.sede_id,
+                StockSede.producto_id == detalle.producto_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if fila is None:
+            fila = StockSede(
+                sede_id=ticket.sede_id,
+                producto_id=detalle.producto_id,
+                institucion_id=institucion_ticket,
+                stock_actual=0,
+            )
+            db.add(fila)
+            db.flush()
+        fila.stock_actual += detalle.cantidad_entregada
+
+        db.add(
+            MovimientoInventario(
+                tipo_movimiento=TIPO_ENTRADA,
+                cantidad=detalle.cantidad_entregada,
+                observacion=PLANTILLA_OBSERVACION_DEVOLUCION.format(
+                    ticket_id=ticket.ticket_id,
+                    detalle_ticket_id=detalle.detalle_ticket_id,
+                    producto_id=detalle.producto_id,
+                ),
+                stock_sede_id=fila.stock_sede_id,
+            )
+        )
+        detalle.cantidad_entregada = 0
+
+
+def _anular_retiro_administrativo(
+    db: Session,
+    ticket: Ticket,
+    motivo: str | None,
+    identidad: IdentidadAutenticada | None,
+    estado_anulado: EstadoTicket,
+    estado_cerrado: EstadoTicket,
+) -> Ticket:
+    """Rama `Cerrado` de la anulacion: devuelve el stock y cierra el pedido.
+
+    Precondiciones en el orden contractual (plan §10.5): rol **409**, sin
+    confirmacion previa **409** (D-34), con sede **409** (D-40.2) y motivo
+    valido **422**. La confirmacion es inmutable: su fila no se borra ni se
+    reescribe. La mutacion es una sola transaccion con `commit` unico y
+    `rollback` ante cualquier excepcion.
+    """
+    if permisos.nombre_rol_de(identidad) != _ROL_ADMINISTRADOR:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "La anulacion del retiro es una operacion administrativa: solo "
+                "el Administrador puede devolver el stock de un pedido "
+                "'Cerrado'"
+            ),
+        )
+
+    # D-34: la confirmacion del Solicitante cierra la puerta a la anulacion. La
+    # consulta corre dentro del bloqueo del ticket; la fila no se toca.
+    confirmacion_previa = db.execute(
+        select(HistorialTransicionTicket.historial_transicion_id)
+        .where(HistorialTransicionTicket.ticket_id == ticket.ticket_id)
+        .where(
+            HistorialTransicionTicket.estado_origen_id == estado_cerrado.estado_id
+        )
+        .where(
+            HistorialTransicionTicket.estado_destino_id == estado_cerrado.estado_id
+        )
+        .where(HistorialTransicionTicket.motivo == MOTIVO_CONFIRMACION_ENTREGA)
+        .limit(1)
+    ).first()
+    if confirmacion_previa is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "La entrega de este pedido ya fue confirmada por el "
+                "solicitante: el retiro no puede anularse"
+            ),
+        )
+
+    # D-40.2: sin sede no hay destino al que devolver la mercaderia.
+    if ticket.sede_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "El ticket no tiene una sede asignada (instantanea): no hay "
+                "destino para devolver el stock del retiro"
+            ),
+        )
+
+    _validar_motivo_operacion(motivo)
+
+    detalles = db.execute(
+        select(DetalleTicket)
+        .where(DetalleTicket.ticket_id == ticket.ticket_id)
+        .where(DetalleTicket.cantidad_entregada > 0)
+        .order_by(DetalleTicket.detalle_ticket_id)
+    ).scalars().all()
+
+    try:
+        _devolver_stock_de_anulacion(db, ticket, detalles)
+
+        ticket.estado_id = estado_anulado.estado_id
+        # D-32: un `Anulado` no conserva `fecha_cierre`; la fecha del retiro
+        # queda en la fila `EnCurso -> Cerrado` del historial.
+        ticket.fecha_cierre = None
+
+        _registrar_transicion(
+            db,
+            ticket,
+            estado_origen_id=estado_cerrado.estado_id,
+            estado_destino_id=estado_anulado.estado_id,
+            identidad=identidad,
+            motivo=motivo,
+        )
+
+        db.commit()
+        db.refresh(ticket)
+    except IntegrityError as error:
+        db.rollback()
+        if _es_choque_de_unicidad_de_stock(error):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "El saldo de la sede para un producto del retiro ya existe: "
+                    "reintente la anulacion"
+                ),
+            ) from error
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+    return ticket
+
+
 def _cambiar_a_anulado(
     db: Session,
     ticket_id: int,
     motivo: str | None,
     identidad: IdentidadAutenticada | None = None,
+    *,
+    tipo_operacion: Literal["anulacion", "rechazo"],
 ) -> Ticket:
     """Anula un ticket con motivo, atomicamente. Helper unico de la 013.
 
-    Comparte el camino de la anulacion y el rechazo (plan decision 6): la
-    distincion de roles vive en la matriz de permisos, no en el servicio. El
-    orden de validacion es estricto (spec §5 invariante 2, AC-7) y **ninguna**
-    comprobacion escribe hasta la mutacion final:
+    La anulacion y el rechazo comparten camino y estado destino (`Anulado`);
+    `tipo_operacion` decide si la rama administrativa del retiro esta
+    disponible (enmienda 26/Nov/2026, D-32/D-33/D-40). El orden de validacion
+    es el contractual (spec §5, plan §10.5) y **ninguna** comprobacion escribe
+    hasta la mutacion final:
 
     1. El ticket existe y esta en el alcance del rol -> **404** (inexistente y
-       ajeno, identicos; D-8).
-    2. El catalogo contiene `Anulado` (si no, **409**, spec §6) y el estado
-       actual admite la operacion: solo `Pendiente` y `EnRevision`; `EnCurso`,
-       `Cerrado` y `Anulado` responden **409** (D-3), como tambien un estado
-       ya borrado del catalogo (defensa fail-closed).
-    3. El motivo es valido (no vacio y hasta `LONGITUD_MAXIMA_MOTIVO`) ->
-       **422** (D-6). Se valida **aqui** y no en Pydantic (decision 3): el
-       schema de entrada lo define T8 y la validacion en el servicio es lo que
-       respeta el orden 404 -> 409 -> 422 ante problemas simultaneos.
+       ajeno, identicos; D-8). La fila se bloquea con `with_for_update()` desde
+       el inicio: dos anulaciones concurrentes se serializan y la segunda relee
+       `Anulado` (SQLite ignora el bloqueo; el gated lo verifica en PostgreSQL).
+    2. El catalogo contiene `Anulado` (si no, **409**) y el ticket no esta ya
+       en ese estado (**409**).
+    3. `EnCurso` y cualquier estado fuera de `EnRevision`/`Cerrado` responden
+       **409**. `Cerrado` solo entra por `anulacion`: un `/rechazo` sobre un
+       retiro responde **409** sin devolver stock (D-40.1).
+    4. La rama `Cerrado` exige rol `Administrador` (**409**), ausencia de
+       confirmacion previa (**409**, D-34), `ticket.sede_id` no nulo (**409**,
+       D-40.2) y un motivo valido (**422**), en ese orden.
+    5. El motivo se valida al final tambien en la rama `EnRevision` (**422**,
+       D-6), despues de 404 y 409.
 
-    La mutacion es una sola transaccion: el estado del ticket y su fila de
-    historial con el **motivo literal** (AC-9/AC-11); si la fila no puede
-    escribirse, el estado no cambia. `fecha_cierre` queda **nula** (D-5: no es
-    un cierre por despacho) y no se escribe stock ni movimiento de inventario
-    (la anulacion no mueve existencias).
+    En `Cerrado` la mutacion devuelve el stock (una `ENTRADA` por detalle
+    entregado), resetea `cantidad_entregada`, deja `fecha_cierre` nula y
+    registra `Cerrado -> Anulado` con el motivo literal (D-32). En
+    `EnRevision` solo cambia el estado y suma su fila: no escribe stock ni
+    `fecha_cierre` (D-5). Ambas ramas comparten el `commit` unico y el
+    `rollback` ante excepcion.
     """
-    ticket = db.get(Ticket, ticket_id)
-    if not ticket:
+    ticket = db.execute(
+        select(Ticket).where(Ticket.ticket_id == ticket_id).with_for_update()
+    ).scalar_one_or_none()
+    if ticket is None:
         raise _ticket_no_encontrado()
 
     _verificar_alcance_de_ticket(db, ticket, identidad)
@@ -1729,46 +1961,45 @@ def _cambiar_a_anulado(
             detail="El ticket ya esta en 'Anulado'",
         )
 
-    # D-3: desde `EnCurso` el unico cierre valido es el despacho de la 005;
-    # `Cerrado` y `Anulado` son terminales. Todo lo que no sea `Pendiente` o
-    # `EnRevision` (incluido un estado ya borrado del catalogo) es inadmisible.
-    estado_en_curso = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_EN_CURSO)
-    estado_cerrado = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_CERRADO)
-    estados_inadmisibles = {
-        estado.estado_id
-        for estado in (estado_en_curso, estado_cerrado, estado_anulado)
-        if estado is not None
-    }
-    estado_actual_conocido = any(
-        e.estado_id == ticket.estado_id for e in estados
+    estado_en_revision = _resolver_estado_por_nombre(
+        estados, NOMBRE_ESTADO_EN_REVISION
     )
-    if not estado_actual_conocido or ticket.estado_id in estados_inadmisibles:
+    estado_cerrado = _resolver_estado_por_nombre(estados, NOMBRE_ESTADO_CERRADO)
+
+    # D-32/D-40.1: la rama administrativa solo existe para la anulacion; el
+    # rechazo conserva el 409 de estado y nunca devuelve stock.
+    if (
+        ticket.estado_id == estado_cerrado.estado_id
+        and tipo_operacion == "anulacion"
+    ):
+        return _anular_retiro_administrativo(
+            db,
+            ticket,
+            motivo,
+            identidad,
+            estado_anulado,
+            estado_cerrado,
+        )
+
+    if (
+        estado_en_revision is None
+        or ticket.estado_id != estado_en_revision.estado_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "El estado actual no admite anulacion ni rechazo: solo se "
-                "admiten 'Pendiente' o 'EnRevision'"
+                "admite 'EnRevision'"
             ),
         )
 
-    if (
-        not isinstance(motivo, str)
-        or not motivo.strip()
-        or len(motivo) > LONGITUD_MAXIMA_MOTIVO
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=(
-                "El motivo es obligatorio y no puede exceder "
-                f"{LONGITUD_MAXIMA_MOTIVO} caracteres"
-            ),
-        )
+    _validar_motivo_operacion(motivo)
 
     try:
         estado_origen_id = ticket.estado_id
         ticket.estado_id = estado_anulado.estado_id
         # D-5: `fecha_cierre` NO se sella; la anulacion no es un cierre por
-        # despacho y no escribe stock ni movimientos.
+        # retiro y no escribe stock ni movimientos.
 
         # AC-9/AC-11: la fila del historial con el motivo literal viaja en la
         # MISMA transaccion que el cambio de estado.
@@ -1797,10 +2028,13 @@ def anular_ticket(
     identidad: IdentidadAutenticada | None = None,
 ) -> Ticket:
     """Anulacion de un ticket (spec D-1/D-3/D-6; matriz 013: Solicitante y
-    Administrador). Delega en `_cambiar_a_anulado`: la distincion entre
-    anulacion y rechazo es de matriz y de registro, no de camino.
+    Administrador). Delega en `_cambiar_a_anulado` con `tipo_operacion`
+    `anulacion`: es la unica que abre la rama administrativa del retiro
+    (D-32/D-33) y devuelve stock desde `Cerrado`.
     """
-    return _cambiar_a_anulado(db, ticket_id, motivo, identidad)
+    return _cambiar_a_anulado(
+        db, ticket_id, motivo, identidad, tipo_operacion="anulacion"
+    )
 
 
 def rechazar_ticket(
@@ -1812,8 +2046,11 @@ def rechazar_ticket(
     """Rechazo de un ticket (spec D-1/D-3/D-6; matriz 013: Bodeguero y
     Administrador). Comparte `_cambiar_a_anulado` con la anulacion; el estado
     destino es el mismo (`Anulado`) y solo difieren roles y semantica publica.
+    Sobre un `Cerrado` responde 409 sin devolver stock (D-40.1).
     """
-    return _cambiar_a_anulado(db, ticket_id, motivo, identidad)
+    return _cambiar_a_anulado(
+        db, ticket_id, motivo, identidad, tipo_operacion="rechazo"
+    )
 
 
 def editar_ticket(
@@ -1822,15 +2059,15 @@ def editar_ticket(
     datos: TicketEditar,
     identidad: IdentidadAutenticada | None = None,
 ) -> Ticket:
-    """Edita asunto, descripcion, prioridad y detalles de un ticket `Pendiente`.
+    """Edita asunto, descripcion, prioridad y detalles de un ticket `EnRevision`.
 
-    Feature 013 (spec D-9, plan decision 7, AC-13…AC-16). El orden de
-    validacion es estricto y **ninguna** comprobacion escribe hasta la
-    mutacion final:
+    Feature 013 (spec D-9, plan decision 7, AC-13…AC-16) y enmienda del
+    26/Nov/2026 (D-28/AC-53). El orden de validacion es estricto y **ninguna**
+    comprobacion escribe hasta la mutacion final:
 
     1. El ticket existe y esta en el alcance del rol -> **404** (inexistente y
        ajeno, identicos; D-8).
-    2. El ticket esta en `Pendiente` (resuelto por nombre canonico; si el
+    2. El ticket esta en `EnRevision` (resuelto por nombre canonico; si el
        catalogo no lo contiene, fail-closed) -> si no, **409** sin tocar
        cabecera ni detalles (AC-14).
     3. Validacion total del payload: la prioridad existe (**404** nombrando la
@@ -1864,13 +2101,16 @@ def editar_ticket(
     estados = db.execute(
         select(EstadoTicket).order_by(EstadoTicket.estado_id)
     ).scalars().all()
-    estado_pendiente = _resolver_estado_por_nombre(
-        estados, NOMBRE_ESTADO_PENDIENTE
+    estado_en_revision = _resolver_estado_por_nombre(
+        estados, NOMBRE_ESTADO_EN_REVISION
     )
-    if estado_pendiente is None or ticket.estado_id != estado_pendiente.estado_id:
+    if (
+        estado_en_revision is None
+        or ticket.estado_id != estado_en_revision.estado_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="La edicion solo se aplica a tickets en estado 'Pendiente'",
+            detail="La edicion solo se aplica a tickets en estado 'EnRevision'",
         )
 
     institucion_ticket = _institucion_de_ticket(db, ticket)
@@ -1902,7 +2142,7 @@ def editar_ticket(
         # Reemplazo del conjunto completo de detalles (D-9): se borran los
         # previos y se insertan los nuevos en la MISMA transaccion que la
         # cabecera; sin escritura parcial (AC-15). `cantidad_entregada` en 0
-        # es la misma regla del alta: en `Pendiente` nada fue entregado.
+        # es la misma regla del alta: en `EnRevision` nada fue entregado.
         db.execute(
             delete(DetalleTicket).where(
                 DetalleTicket.ticket_id == ticket.ticket_id

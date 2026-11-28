@@ -70,7 +70,7 @@ LEADS = {
     ),
     "03-administrador-administracion": (
         "El Administrador es el único rol que gestiona la estructura institucional. Sedes, "
-        "departamentos, usuarios y encargados son la base sobre la que se apoyan inventario, "
+        "departamentos y usuarios son la base sobre la que se apoyan inventario, "
         "pedidos y compras."
     ),
     "04-administrador-inventario-catalogo": (
@@ -87,11 +87,11 @@ LEADS = {
         "excepcionales. Cada decisión deja estado, motivo e historial."
     ),
     "07-bodeguero-pedidos-despacho": (
-        "El Bodeguero opera el Kanban y prepara el despacho. Su alcance es la sede: no elige otra "
+        "El Bodeguero opera el Kanban y prepara el retiro. Su alcance es la sede: no elige otra "
         "sede ni edita el pedido."
     ),
     "08-bodeguero-inventario": (
-        "La consulta de inventario del Bodeguero es operativa: sirve para preparar despachos y "
+        "La consulta de inventario del Bodeguero es operativa: sirve para preparar retiros y "
         "detectar faltantes. El saldo es de la sede, no del departamento."
     ),
     "09-bodeguero-recepcion-compras": (
@@ -120,7 +120,7 @@ ROUTES = {
     "02-superadmin-alta-institucion": ["/control/alta"],
     "03-administrador-administracion": [
         "/administracion/sedes", "/administracion/departamentos",
-        "/administracion/usuarios", "/administracion/encargados",
+        "/administracion/usuarios",
     ],
     "04-administrador-inventario-catalogo": [
         "/inventario", "/inventario/:productoId", "API /inventario/movimientos",
@@ -131,7 +131,7 @@ ROUTES = {
     ],
     "06-administrador-pedidos": ["/tickets", "/tickets/:id"],
     "07-bodeguero-pedidos-despacho": [
-        "/tickets", "/tickets/:id", "API POST /tickets/:id/despacho",
+        "/tickets", "/tickets/:id", "API POST /tickets/:id/retiro",
     ],
     "08-bodeguero-inventario": ["/dashboard", "/inventario", "/inventario/:productoId"],
     "09-bodeguero-recepcion-compras": [
@@ -151,10 +151,10 @@ SUMMARIES = {
     "04-administrador-inventario-catalogo": ("Catálogo y stock", "Filtros y ciclo de vida", "Stock confiable"),
     "05-administrador-compras": ("Necesidad neta", "Emitir la OC", "OC facturada"),
     "06-administrador-pedidos": ("Pedido en Kanban", "Aprobar, rechazar o editar", "Estado auditado"),
-    "07-bodeguero-pedidos-despacho": ("Pedido en Kanban", "Preparar el despacho", "Pedido cerrado"),
+    "07-bodeguero-pedidos-despacho": ("Pedido en Kanban", "Preparar el retiro", "Pedido cerrado"),
     "08-bodeguero-inventario": ("Sede y productos", "Detectar el crítico", "Prioridad de compra"),
     "09-bodeguero-recepcion-compras": ("OC facturada", "Confirmar la recepción", "Stock y pedidos habilitados"),
-    "10-solicitante-crear-pedido": ("Necesidad del departamento", "Crear el pedido", "Pedido en Pendiente"),
+    "10-solicitante-crear-pedido": ("Necesidad del departamento", "Crear el pedido", "Pedido en En revisión"),
     "11-solicitante-seguimiento": ("Pedido propio", "Editar o anular", "Seguimiento con historial"),
 }
 
@@ -172,8 +172,8 @@ CHECKS = {
         "La invitación llega al correo designado.",
     ],
     "03-administrador-administracion": [
-        "Cada usuario tiene rol y sede coherentes.",
-        "Cada departamento tiene su bodega de despacho.",
+        "Cada usuario tiene rol y ámbito coherentes.",
+        "Los departamentos operativos tienen su bodega operativa; «Suministros» es la excepción automática, sin sede.",
     ],
     "04-administrador-inventario-catalogo": [
         "El saldo por sede cuadra con productos y movimientos.",
@@ -188,8 +188,8 @@ CHECKS = {
         "Un pedido anulado no se puede reactivar.",
     ],
     "07-bodeguero-pedidos-despacho": [
-        "El pedido en En curso queda listo para despacho.",
-        "El despacho rebaja stock y cierra el pedido.",
+        "El pedido en En curso queda listo para el retiro.",
+        "El retiro rebaja stock y cierra el pedido.",
     ],
     "08-bodeguero-inventario": [
         "El Bodeguero no ve existencias de otras sedes.",
@@ -197,10 +197,10 @@ CHECKS = {
     ],
     "09-bodeguero-recepcion-compras": [
         "La OC pasa a Recibida y el stock sube.",
-        "Los pedidos cubiertos quedan listos para despacho.",
+        "Los pedidos cubiertos quedan listos para el retiro.",
     ],
     "10-solicitante-crear-pedido": [
-        "El pedido nace en Pendiente y no descuenta stock.",
+        "El pedido nace en En revisión y no descuenta stock.",
         "El autor es la sesión, no un selector.",
     ],
     "11-solicitante-seguimiento": [
@@ -217,7 +217,7 @@ ACTOR_LIMITS = {
     ],
     "Administrador institucional": [
         "No crea instituciones ni asigna administradores.",
-        "No despacha ni recibe compras desde la interfaz.",
+        "No registra el retiro ni recibe compras desde la interfaz.",
         "No ajusta stock desde un formulario; usa la API de movimientos.",
     ],
     "Bodeguero": [
@@ -227,8 +227,8 @@ ACTOR_LIMITS = {
     ],
     "Solicitante": [
         "No opera inventario, compras ni el Kanban.",
-        "No edita un pedido fuera de Pendiente.",
-        "No anula fuera de Pendiente o En revisión.",
+        "No edita un pedido fuera de En revisión.",
+        "No anula fuera de En revisión.",
     ],
 }
 
@@ -267,12 +267,12 @@ ACTORS = [
             "el tenant completo, no una sola sede."
         ),
         "bullets": [
-            "Único rol que administra sedes, departamentos, usuarios y encargados.",
+            "Único rol que administra sedes, departamentos y usuarios.",
             "Gestiona el ciclo de vida del catálogo y consulta el inventario con filtros.",
             "Crea, emite, factura y cancela órdenes de compra; opera el ciclo del pedido.",
         ],
         "funcs": [
-            ("Administración", "/administracion/*", "Sedes, departamentos, usuarios y encargados."),
+            ("Administración", "/administracion/*", "Sedes, departamentos y usuarios."),
             ("Dashboard", "/dashboard", "Indicadores, alertas y actividad reciente."),
             ("Inventario", "/inventario", "Existencias, filtros, detalle y catálogo."),
             ("Pedidos", "/tickets", "Kanban, detalle, estados, edición, rechazo y anulación."),
@@ -291,20 +291,20 @@ ACTORS = [
         "name": "Bodeguero",
         "eyebrow": "ACTOR 3 DE 4 · OPERACIÓN DE SEDE",
         "lead": (
-            "El Bodeguero es el operador de la sede. Prepara y despacha pedidos, consulta el stock "
+            "El Bodeguero es el operador de la sede. Prepara y registra el retiro de pedidos, consulta el stock "
             "físico y recibe las compras facturadas. No administra la organización, el catálogo ni "
             "las órdenes de compra."
         ),
         "bullets": [
-            "Opera el Kanban de su sede: avanza, retrocede y rechaza pedidos con motivo.",
+            "Opera el Kanban de su sede: rechaza pedidos con motivo y registra el retiro de los aprobados.",
             "Consulta inventario y detecta productos críticos; la sede la fija el servidor.",
             "Recibe OC facturadas de su sede y desbloquea los pedidos cubiertos.",
         ],
         "funcs": [
             ("Dashboard", "/dashboard", "Stock, pedidos activos y alertas de la sede."),
             ("Inventario", "/inventario", "Existencias, filtros y detalle por producto."),
-            ("Pedidos", "/tickets", "Kanban, detalle, avance, retroceso y rechazo."),
-            ("Despacho", "API /tickets/:id/despacho", "Rebaja stock y cierra el pedido."),
+            ("Pedidos", "/tickets", "Kanban, detalle y rechazo; el retiro se registra en el detalle."),
+            ("Retiro", "API /tickets/:id/retiro", "Rebaja stock y cierra el pedido; solo Bodeguero de la sede."),
             ("Recepción", "/compras/recepcion", "OC facturadas de la sede; confirmación irreversible."),
             ("Movimientos", "API /inventario/movimientos", "Ajustes de stock; sin formulario en la UI."),
         ],
@@ -333,8 +333,8 @@ ACTORS = [
             ("Inventario", "/inventario", "Catálogo y disponibilidad; sin filtros de sede."),
             ("Pedidos", "/tickets", "Kanban propio y alta con el modal “+ Crear pedido”."),
             ("Detalle", "/tickets/:id", "Estado, ítems, cobertura e historial."),
-            ("Editar", "/tickets/:id", "Solo en Pendiente, y solo el pedido propio."),
-            ("Anular", "/tickets/:id", "Pendiente o En revisión, con motivo."),
+            ("Editar", "/tickets/:id", "Solo en En revisión, y solo el pedido propio."),
+            ("Anular", "/tickets/:id", "Solo en En revisión, con motivo."),
         ],
         "flows": ["10-solicitante-crear-pedido", "11-solicitante-seguimiento"],
     },
@@ -347,17 +347,17 @@ MATRIX = [
     ("Gobierno de instituciones y capacidades", "Sí", "—", "—", "—"),
     ("Alta de institución", "Sí", "—", "—", "—"),
     ("Administrar sedes y departamentos", "—", "Sí", "—", "—"),
-    ("Administrar usuarios y encargados", "—", "Sí", "—", "—"),
+    ("Administrar usuarios y roles", "—", "Sí", "—", "—"),
     ("Consultar inventario y productos", "—", "Sí", "Sí", "Sí"),
     ("Filtrar inventario por sede/departamento", "—", "Sí", "Sí (sede fija)", "—"),
     ("Gestionar catálogo y ciclo de vida", "—", "Sí", "—", "—"),
     ("Registrar movimientos de stock", "—", "API", "API", "—"),
     ("Crear pedido", "—", "—", "—", "Sí (principal)"),
-    ("Avanzar o retroceder pedido", "—", "Sí", "Sí", "—"),
+    ("Aprobar pedido", "—", "Sí", "—", "—"),
     ("Rechazar pedido con motivo", "—", "Sí", "Sí", "—"),
-    ("Editar pedido", "—", "Sí", "—", "Propio (Pendiente)"),
-    ("Anular pedido con motivo", "—", "Sí", "—", "Propio (Pendiente / En revisión)"),
-    ("Despachar pedido", "—", "API", "API", "—"),
+    ("Editar pedido", "—", "Sí", "—", "Propio (En revisión)"),
+    ("Anular pedido con motivo", "—", "Sí", "—", "Propio (En revisión)"),
+    ("Registrar retiro de pedido", "—", "—", "Sí", "—"),
     ("Gestionar compras y órdenes de compra", "—", "Sí", "—", "—"),
     ("Recibir compras facturadas", "—", "—", "Sí", "—"),
     ("Catálogo global de proveedores", "API", "—", "—", "—"),
@@ -367,10 +367,10 @@ MATRIX = [
 ]
 
 API_ONLY = [
-    ("Movimiento de stock", "POST /api/v1/inventario/movimientos", "Administrador y Bodeguero",
-     "No hay formulario de ajuste en Inventario; el saldo se mueve por despacho y recepción."),
-    ("Despacho de pedido", "POST /api/v1/tickets/{ticket_id}/despacho", "Administrador y Bodeguero",
-     "El detalle bloquea el avance desde En curso; el cierre y la rebaja los ejecuta el despacho."),
+    ("Movimiento de stock", "POST /api/v1/inventario/movimientos", "Solo Bodeguero",
+     "No hay formulario de ajuste en Inventario; el saldo se mueve por retiro y recepción."),
+    ("Retiro de pedido", "POST /api/v1/tickets/{ticket_id}/retiro", "Solo Bodeguero (de la sede)",
+     "El detalle expone «Registrar retiro» al Bodeguero de la sede cuando el pedido está En curso y hay stock; el cierre y la rebaja los ejecuta el retiro."),
     ("Catálogo global de proveedores", "GET/POST /api/v1/compras/proveedores", "Superadmin",
      "El portal `/control` no tiene pantalla de proveedores; el Administrador da de alta los suyos desde la OC."),
     ("Operación de pedidos del Superadmin", "API de tickets", "Superadmin (sin UI)",
@@ -777,7 +777,7 @@ def add_document_map(doc: Document):
         ("4. Flujo común de acceso", "Login Clerk, resolución de identidad y ruta inicial."),
         ("5. Superadmin", "Gobierno SaaS y alta de institución."),
         ("6. Administrador", "Administración, inventario, compras y pedidos."),
-        ("7. Bodeguero", "Pedidos y despacho, inventario y recepción de compras."),
+        ("7. Bodeguero", "Pedidos y retiro, inventario y recepción de compras."),
         ("8. Solicitante", "Alta de pedido y seguimiento."),
         ("9. Matriz de funciones", "Qué puede hacer cada actor, incluidas las operaciones API."),
         ("10. Funciones sin pantalla", "Límites conocidos entre la UI y la API."),
@@ -998,7 +998,7 @@ def add_propósito(doc: Document):
     add_h3(doc, "Qué incluye")
     add_bullets(doc, [
         "Los cuatro actores del sistema y su superficie real de navegación.",
-        "12 flujos funcionales: acceso, gobierno SaaS, administración, inventario, compras, pedidos, despacho, recepción y seguimiento.",
+        "12 flujos funcionales: acceso, gobierno SaaS, administración, inventario, compras, pedidos, retiro, recepción y seguimiento.",
         "Una matriz de funciones por actor y una lista explícita de operaciones que hoy viven solo en la API.",
         "La trazabilidad de cada flujo a rutas, roles, componentes y evidencias del repositorio.",
     ])
@@ -1025,7 +1025,7 @@ def add_actores(doc: Document):
     rows = [
         ("Superadmin", "Global (SaaS)", "`/control`", "Instituciones, capacidades, administradores y métricas globales."),
         ("Administrador", "Una institución", "`/administracion`, `/inventario`, `/tickets`, `/compras`", "Organización, catálogo, pedidos y compras."),
-        ("Bodeguero", "Una sede", "`/dashboard`, `/inventario`, `/tickets`, `/compras/recepcion`", "Stock físico, Kanban, despacho y recepción."),
+        ("Bodeguero", "Una sede", "`/dashboard`, `/inventario`, `/tickets`, `/compras/recepcion`", "Stock físico, Kanban, retiro y recepción."),
         ("Solicitante", "Su departamento", "`/dashboard`, `/inventario`, `/tickets`", "Consulta, alta y seguimiento de pedidos."),
     ]
     add_small_table(doc, ["Actor", "Alcance", "Superficie", "Funciones clave"], rows, [4.2, 4.2, 9.0, 7.8], 8.5)
@@ -1042,8 +1042,8 @@ def add_actores(doc: Document):
     add_bullets(doc, [
         "El Superadmin no lee dashboard, inventario ni pedidos de un tenant desde la 017. Su gobierno de administradores vive en `/control`.",
         "El Administrador solo puede asignar roles Bodeguero o Solicitante; no crea otro Administrador ni un Superadmin.",
-        "El Bodeguero no elige sede: el servidor fija la suya. El Solicitante no filtra por sede ni despacha.",
-        "El despacho y el ajuste de stock existen en la API; la UI no expone un botón o formulario para todas esas operaciones.",
+        "El Bodeguero no elige sede: el servidor fija la suya. El Solicitante no filtra por sede ni registra el retiro.",
+        "El retiro existe en el detalle para el Bodeguero de la sede; el ajuste manual de stock sigue solo en la API.",
     ])
 
 
@@ -1146,7 +1146,7 @@ def add_cierre(doc: Document):
     ])
 
     add_h3(doc, "Observaciones")
-    para(doc, "El sistema cubre el ciclo completo de abastecimiento: el Solicitante pide, el Administrador decide y compra, el Bodeguero recibe y despacha, y el Superadmin gobierna el SaaS. La documentación separa lo que ya tiene interfaz de lo que hoy solo existe en la API, para que la revisión funcional sea honesta y accionable.", 10, False, False, MUTED, space_after=4)
+    para(doc, "El sistema cubre el ciclo completo de abastecimiento: el Solicitante pide, el Administrador decide y compra, el Bodeguero recibe y registra el retiro, y el Superadmin gobierna el SaaS. La documentación separa lo que ya tiene interfaz de lo que hoy solo existe en la API, para que la revisión funcional sea honesta y accionable.", 10, False, False, MUTED, space_after=4)
 
     add_note(doc, "Trabajo realizado en la rama `ricardo` y publicado en `origin/main` y `origin/ricardo`. No se modificó el código de producto; el cambio se limita a documentación y diagramas.")
 

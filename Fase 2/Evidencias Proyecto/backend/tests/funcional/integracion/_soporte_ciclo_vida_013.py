@@ -163,13 +163,13 @@ def exigir_capacidad_asociada(metodo: str, ruta: str) -> None:
 def instalar_catalogo_ciclo_vida(motor, nombres=None) -> dict[str, int]:
     """Reemplaza el catalogo de estados por los `nombres` pedidos.
 
-    Por defecto instala el canonico de la 013 con `Anulado` al final del
-    orden (es la quinta fila de la semilla, preservando el orden lineal de la
-    004, D-4). Devuelve `{nombre exacto: id}`; las claves son los nombres tal
-    cual, de modo que `Anulado` y `anulado` (casing) no colisionan.
+    Por defecto instala el canonico de la enmienda 26/Nov/2026 (D-27/D-36):
+    `EnRevision`, `EnCurso`, `Cerrado` y `Anulado`, en ese orden de ids.
+    Devuelve `{nombre exacto: id}`; las claves son los nombres tal cual, de
+    modo que `Anulado` y `anulado` (casing) no colisionan.
     """
     if nombres is None:
-        nombres = ("Pendiente", "EnRevision", "EnCurso", "Cerrado", "Anulado")
+        nombres = ("EnRevision", "EnCurso", "Cerrado", "Anulado")
     db = sessionmaker(bind=motor)()
     try:
         db.query(EstadoTicket).delete()
@@ -236,7 +236,7 @@ def sembrar_ticket(
             estado_id=(
                 estado_id
                 if estado_id is not None
-                else datos["estados"]["Pendiente"]
+                else datos["estados"]["EnRevision"]
             ),
             asunto=asunto,
             descripcion="Sembrado para las pruebas de la Feature 013.",

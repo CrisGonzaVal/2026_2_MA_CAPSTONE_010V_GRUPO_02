@@ -1,16 +1,13 @@
 """T2 (Feature 013): anulacion/rechazo, guards de `PATCH /estado` y orden (AC-1…AC-7).
 
 Seam bajo prueba: la **interfaz HTTP** (`TestClient`), como en toda la suite.
-El catalogo es el canonico de la 013 (`Pendiente → EnRevision → EnCurso →
-Cerrado`, mas `Anulado` al final, fuera del flujo lineal) y los tickets se
-siembran por ORM para poder estar en cualquier estado.
+El catalogo es el canonico de la enmienda 26/Nov/2026 (`EnRevision → EnCurso →
+Cerrado`, mas `Anulado` fuera del flujo lineal) y los tickets se siembran por
+ORM para poder estar en cualquier estado.
 
-Fase ROJA de TDD: las rutas `/anulacion` y `/rechazo` y los guards de
-`PATCH /estado` hacia/desde `Anulado` aun no existen (los cablea T7), de modo
-que las pruebas caen en rojo por esas ausencias (404 del router o detalle sin
-dirigir a la operacion), nunca por imports, fixtures ni sintaxis. Las pruebas
-de regresion de la 004/005 (cierre reservado, despacho) ya pasan hoy y deben
-seguirlo pasando tras T7-T9.
+Las pruebas de regresion de la 004/005 (cierre reservado, retiro) siguen
+pasando hasta el rename de T35; el detalle 409 del cierre ya dirige al retiro
+(D-29/AC-60).
 """
 
 from __future__ import annotations
@@ -56,6 +53,7 @@ def _cliente_bodeguero(motor, datos):
         "Bodeguero",
         departamento_id=datos["departamento_id"],
         usuario_id=datos["usuarios_inst01"]["Bodeguero"],
+        sede_id=datos["sede_id"],
     )
 
 
@@ -75,16 +73,16 @@ def _anular_o_rechazar(cliente, ticket_id: int, operacion: str, motivo: str):
 
 
 # ---------------------------------------------------------------------------
-# AC-1: anulacion desde Pendiente/EnRevision -> 200 con efectos completos
+# AC-1: anulacion desde EnRevision -> 200 con efectos completos
 # ---------------------------------------------------------------------------
 
 
-def test_anulacion_desde_pendiente_responde_200_con_historial_ac_1(
+def test_anulacion_desde_enrevision_responde_200_con_historial_ac_1(
     motor, datos_013
 ):
     """AC-1: 200, ticket `Anulado`, `fecha_cierre` nula y fila con motivo literal."""
     ticket_id = sembrar_ticket(
-        motor, datos_013, estado_id=datos_013["estados"]["Pendiente"]
+        motor, datos_013, estado_id=datos_013["estados"]["EnRevision"]
     )
     solicitante = datos_013["usuarios_inst01"]["Solicitante"]
     motivo = "Se anula por duplicado con otra solicitud"
@@ -115,7 +113,7 @@ def test_anulacion_desde_pendiente_responde_200_con_historial_ac_1(
         )
         fila = historial[0]
         assert CAMPOS_HISTORIAL <= set(fila), sorted(fila)
-        assert fila["estado_origen_id"] == datos_013["estados"]["Pendiente"]
+        assert fila["estado_origen_id"] == datos_013["estados"]["EnRevision"]
         assert fila["estado_destino_id"] == datos_013["estados"]["Anulado"]
         assert fila["usuario_id"] == solicitante, "el actor es el Solicitante"
         assert fila["motivo"] == motivo, "el motivo se persiste literal"
@@ -123,7 +121,7 @@ def test_anulacion_desde_pendiente_responde_200_con_historial_ac_1(
 
 
 def test_anulacion_desde_en_revision_tambien_es_200_ac_1(motor, datos_013):
-    """AC-1: `EnRevision` tambien admite la anulacion (D-3, ambos inclusive)."""
+    """AC-1/AC-54: `EnRevision` es el unico origen que admite la anulacion."""
     ticket_id = sembrar_ticket(
         motor, datos_013, estado_id=datos_013["estados"]["EnRevision"]
     )
@@ -178,10 +176,10 @@ def test_anulacion_desde_estado_inadmisible_responde_409_sin_efectos_ac_2(
 # ---------------------------------------------------------------------------
 
 
-def test_rechazo_por_bodeguero_desde_pendiente_es_200_ac_3(motor, datos_013):
+def test_rechazo_por_bodeguero_desde_enrevision_es_200_ac_3(motor, datos_013):
     """AC-3: el Bodeguero rechaza con motivo y el ticket queda `Anulado`."""
     ticket_id = sembrar_ticket(
-        motor, datos_013, estado_id=datos_013["estados"]["Pendiente"]
+        motor, datos_013, estado_id=datos_013["estados"]["EnRevision"]
     )
     motivo = "Sin stock disponible en la sede para esta solicitud"
 
@@ -245,7 +243,7 @@ def test_patch_estado_no_lleva_a_anulado_y_dirige_a_la_operacion_ac_4(
 ):
     """AC-4/D-4: hacia `Anulado` responde 409 cuyo detalle dirige a la operacion."""
     ticket_id = sembrar_ticket(
-        motor, datos_013, estado_id=datos_013["estados"]["Pendiente"]
+        motor, datos_013, estado_id=datos_013["estados"]["EnRevision"]
     )
 
     with _cliente_administrador(motor, datos_013) as cliente:
@@ -260,7 +258,7 @@ def test_patch_estado_no_lleva_a_anulado_y_dirige_a_la_operacion_ac_4(
             f"el 409 debe dirigir a la operacion correspondiente; detal: {detalle}"
         )
         assert abrir_ticket(cliente, ticket_id)["estado_id"] == (
-            datos_013["estados"]["Pendiente"]
+            datos_013["estados"]["EnRevision"]
         )
 
 
@@ -271,7 +269,7 @@ def test_patch_estado_no_sale_de_anulado_ac_4(motor, datos_013):
     )
 
     with _cliente_administrador(motor, datos_013) as cliente:
-        for destino in ("EnRevision", "Pendiente", "EnCurso", "Cerrado"):
+        for destino in ("EnRevision", "EnCurso", "Cerrado"):
             respuesta = cliente.patch(
                 f"/api/v1/tickets/{ticket_id}/estado",
                 json={"estado_id": datos_013["estados"][destino]},
@@ -283,12 +281,12 @@ def test_patch_estado_no_sale_de_anulado_ac_4(motor, datos_013):
 
 
 # ---------------------------------------------------------------------------
-# AC-5: despacho intacto y su fila de historial
+# AC-5: retiro intacto y su fila de historial
 # ---------------------------------------------------------------------------
 
 
-def test_en_curso_a_cerrado_sigue_reservado_al_despacho_ac_5(motor, datos_013):
-    """AC-5/AC-15-005: el 409 y su detalle literal quedan intactos (regresion).
+def test_en_curso_a_cerrado_sigue_reservado_al_retiro_ac_5(motor, datos_013):
+    """AC-5/AC-60: el 409 del cierre reservado dirige al retiro.
 
     Ampliacion 25/Nov/2026 (AC-49): el `PATCH /estado` de legado se ejerce con
     el Administrador, que es el unico rol al que se concede.
@@ -305,39 +303,39 @@ def test_en_curso_a_cerrado_sigue_reservado_al_despacho_ac_5(motor, datos_013):
 
     assert respuesta.status_code == 409, respuesta.text
     assert respuesta.json()["detail"] == (
-        "El cierre requiere despacho; use "
-        f"POST /api/v1/tickets/{ticket_id}/despacho"
+        "El cierre requiere retiro; use "
+        f"POST /api/v1/tickets/{ticket_id}/retiro"
     )
 
 
-def test_despacho_registra_su_transicion_en_el_historial_ac_5(motor, datos_013):
-    """AC-5/AC-9: el despacho de la 005 es una mutacion y suma su fila."""
+def test_retiro_registra_su_transicion_en_el_historial_ac_5(motor, datos_013):
+    """AC-5/AC-9: el retiro de la 005 es una mutacion y suma su fila."""
     ticket_id = sembrar_ticket(
         motor, datos_013, estado_id=datos_013["estados"]["EnCurso"]
     )
 
     with _cliente_bodeguero(motor, datos_013) as cliente:
-        despacho = cliente.post(
-            f"/api/v1/tickets/{ticket_id}/despacho",
+        retiro = cliente.post(
+            f"/api/v1/tickets/{ticket_id}/retiro",
             json={"usuario_id": datos_013["usuarios_inst01"]["Bodeguero"]},
         )
-        assert despacho.status_code == 200, despacho.text
-        assert despacho.json()["fecha_cierre"] is not None, (
-            "el despacho sigue sellando fecha_cierre (004/005 intactos)"
+        assert retiro.status_code == 200, retiro.text
+        assert retiro.json()["fecha_cierre"] is not None, (
+            "el retiro sigue sellando fecha_cierre (004/005 intactos)"
         )
 
         historial = leer_historial(cliente, ticket_id)
         assert len(historial) == 1, (
-            "exactamente la fila del despacho (ticket sembrado por ORM, sin "
+            "exactamente la fila del retiro (ticket sembrado por ORM, sin "
             f"creacion via API); historial: {historial}"
         )
         fila = historial[0]
         assert fila["estado_origen_id"] == datos_013["estados"]["EnCurso"]
         assert fila["estado_destino_id"] == datos_013["estados"]["Cerrado"]
-        assert fila["motivo"] is None, "el despacho no exige motivo"
+        assert fila["motivo"] is None, "el retiro no exige motivo"
 
 
-def test_despacho_de_un_anulado_responde_409_sin_movimientos_ac_5(
+def test_retiro_de_un_anulado_responde_409_sin_movimientos_ac_5(
     motor, datos_013
 ):
     """AC-5: un ticket `Anulado` no es despachable (409, estado no elegible)."""
@@ -351,7 +349,7 @@ def test_despacho_de_un_anulado_responde_409_sin_movimientos_ac_5(
 
     with _cliente_bodeguero(motor, datos_013) as cliente:
         respuesta = cliente.post(
-            f"/api/v1/tickets/{ticket_id}/despacho",
+            f"/api/v1/tickets/{ticket_id}/retiro",
             json={"usuario_id": datos_013["usuarios_inst01"]["Bodeguero"]},
         )
 
@@ -370,12 +368,12 @@ def test_despacho_de_un_anulado_responde_409_sin_movimientos_ac_5(
 # ---------------------------------------------------------------------------
 
 
-def test_alta_en_cerrado_se_rechaza_con_409_ac_27(motor, datos_013):
-    """AC-27 (enmienda 05/Nov/2026): derogado el alta directa en `Cerrado`.
+def test_alta_en_cerrado_se_rechaza_con_409_ac_51(motor, datos_013):
+    """AC-51 (enmienda 26/Nov/2026): derogado el alta directa en `Cerrado`.
 
     La 004 admitia nacer en `Cerrado` sellando `fecha_cierre` (AC-17/AC-6); hoy
-    el unico estado inicial es `Pendiente` y `Cerrado` solo se alcanza por el
-    despacho transaccional de la 005.
+    el unico estado inicial es `EnRevision` y `Cerrado` solo se alcanza por el
+    retiro.
     """
     with _cliente_solicitante(motor, datos_013) as cliente:
         respuesta = cliente.post(
@@ -384,18 +382,18 @@ def test_alta_en_cerrado_se_rechaza_con_409_ac_27(motor, datos_013):
         )
 
         assert respuesta.status_code == 409, respuesta.text
-        assert "Pendiente" in respuesta.json()["detail"]
+        assert "EnRevision" in respuesta.json()["detail"]
 
 
-def test_despacho_sella_fecha_cierre_ac_6(motor, datos_013):
-    """AC-6: `Cerrado` por despacho conserva el sellado (regresion 005)."""
+def test_retiro_sella_fecha_cierre_ac_6(motor, datos_013):
+    """AC-6: `Cerrado` por retiro conserva el sellado (regresion 005)."""
     ticket_id = sembrar_ticket(
         motor, datos_013, estado_id=datos_013["estados"]["EnCurso"]
     )
 
     with _cliente_bodeguero(motor, datos_013) as cliente:
         respuesta = cliente.post(
-            f"/api/v1/tickets/{ticket_id}/despacho",
+            f"/api/v1/tickets/{ticket_id}/retiro",
             json={"usuario_id": datos_013["usuarios_inst01"]["Bodeguero"]},
         )
 
@@ -467,7 +465,7 @@ def test_422_de_motivo_invalido_no_modifica_nada_ac_7(
 ):
     """AC-7/AC-8: con ticket adelible y motivo invalido el 422 no escribe nada."""
     ticket_id = sembrar_ticket(
-        motor, datos_013, estado_id=datos_013["estados"]["Pendiente"]
+        motor, datos_013, estado_id=datos_013["estados"]["EnRevision"]
     )
 
     with _cliente_administrador(motor, datos_013) as cliente:
@@ -475,7 +473,7 @@ def test_422_de_motivo_invalido_no_modifica_nada_ac_7(
 
         assert respuesta.status_code == 422, respuesta.text
         assert abrir_ticket(cliente, ticket_id)["estado_id"] == (
-            datos_013["estados"]["Pendiente"]
+            datos_013["estados"]["EnRevision"]
         ), "el 422 no puede modificar el estado"
         exigir_ruta("/api/v1/tickets/{ticket_id}/historial", "GET")
         assert leer_historial(cliente, ticket_id) == [], (
@@ -487,9 +485,15 @@ def test_422_de_motivo_invalido_no_modifica_nada_ac_7(
 def test_409_de_estado_inadmisible_con_motivo_valido_ac_7(
     motor, datos_013, operacion
 ):
-    """AC-7: con ambos problemas, el 409 observado lleva el motivo al servicio."""
+    """AC-7: con ambos problemas, el 409 observado lleva el motivo al servicio.
+
+    Enmienda 26/Nov/2026 (D-32/AC-58): `Cerrado` dejo de ser un estado
+    inadmisible para la **anulacion** del Administrador (ahora devuelve el
+    stock). El orden 409 -> 422 se sigue verificando con `EnCurso`, que no
+    admite ninguna de las dos operaciones.
+    """
     ticket_id = sembrar_ticket(
-        motor, datos_013, estado_id=datos_013["estados"]["Cerrado"]
+        motor, datos_013, estado_id=datos_013["estados"]["EnCurso"]
     )
 
     with _cliente_administrador(motor, datos_013) as cliente:
@@ -518,7 +522,7 @@ def test_catalogo_degenerado_sin_salida_desde_cerrado_ac_26(motor, dos_instituci
     datos = _mundo_catalogo_degenerado(
         motor,
         dos_instituciones,
-        ("Pendiente", "EnRevision", "Cerrado", "Archivado", "Anulado"),
+        ("EnRevision", "Cerrado", "Archivado", "Anulado"),
     )
     assert datos["estados"]["Cerrado"] < datos["estados"]["Anulado"], (
         "precondicion del caso degenerado: Cerrado NO es el ultimo del catalogo"
@@ -528,7 +532,7 @@ def test_catalogo_degenerado_sin_salida_desde_cerrado_ac_26(motor, dos_instituci
     )
 
     with _cliente_administrador(motor, datos) as cliente:
-        for destino in ("Pendiente", "EnRevision", "Archivado", "Anulado"):
+        for destino in ("EnRevision", "Archivado", "Anulado"):
             respuesta = cliente.patch(
                 f"/api/v1/tickets/{ticket_id}/estado",
                 json={"estado_id": datos["estados"][destino]},
@@ -537,8 +541,8 @@ def test_catalogo_degenerado_sin_salida_desde_cerrado_ac_26(motor, dos_instituci
             if destino != "Anulado":
                 # Hacia `Anulado` manda el guard que dirige a la operacion de
                 # anulacion/rechazo; los demas 409 de salida desde `Cerrado`
-                # declaran el cierre definitivo y el despacho como unico camino.
-                assert "despacho" in respuesta.json()["detail"].lower(), (
+                # declaran el cierre definitivo y el retiro como unico camino.
+                assert "retiro" in respuesta.json()["detail"].lower(), (
                     destino, respuesta.text
                 )
             assert abrir_ticket(cliente, ticket_id)["estado_id"] == (
@@ -551,7 +555,7 @@ def test_catalogo_degenerado_sin_salida_desde_anulado_ac_26(motor, dos_instituci
     datos = _mundo_catalogo_degenerado(
         motor,
         dos_instituciones,
-        ("Pendiente", "Anulado", "EnRevision", "EnCurso", "Cerrado"),
+        ("Anulado", "EnRevision", "EnCurso", "Cerrado"),
     )
     assert datos["estados"]["Anulado"] < datos["estados"]["Cerrado"], (
         "precondicion del caso degenerado: Anulado NO es el ultimo del catalogo"
@@ -561,7 +565,7 @@ def test_catalogo_degenerado_sin_salida_desde_anulado_ac_26(motor, dos_instituci
     )
 
     with _cliente_administrador(motor, datos) as cliente:
-        for destino in ("Pendiente", "EnRevision", "EnCurso", "Cerrado"):
+        for destino in ("EnRevision", "EnCurso", "Cerrado"):
             respuesta = cliente.patch(
                 f"/api/v1/tickets/{ticket_id}/estado",
                 json={"estado_id": datos["estados"][destino]},
@@ -582,7 +586,7 @@ def test_reentrada_en_cerrado_es_imposible_en_catalogo_degenerado_ac_26(
     """AC-26: ninguna peticion de cambio de estado puede llevar un ticket **a**
     `Cerrado`, ni siquiera desde un estado contiguo en catalogo degenerado."""
     datos = _mundo_catalogo_degenerado(
-        motor, dos_instituciones, ("Pendiente", "EnRevision", "Cerrado", "Archivado")
+        motor, dos_instituciones, ("EnRevision", "Cerrado", "Archivado")
     )
     ticket_archivado = sembrar_ticket(
         motor, datos, estado_id=datos["estados"]["Archivado"],
@@ -603,15 +607,15 @@ def test_reentrada_en_cerrado_es_imposible_en_catalogo_degenerado_ac_26(
             )
             assert respuesta.status_code == 409, (ticket_id, respuesta.text)
             assert respuesta.json()["detail"] == (
-                "El cierre requiere despacho; use "
-                f"POST /api/v1/tickets/{ticket_id}/despacho"
-            ), "el despacho transaccional es el unico camino a Cerrado (005)"
+                "El cierre requiere retiro; use "
+                f"POST /api/v1/tickets/{ticket_id}/retiro"
+            ), "el retiro transaccional es el unico camino a Cerrado"
             assert abrir_ticket(cliente, ticket_id)["estado_id"] != (
                 datos["estados"]["Cerrado"]
             ), "ninguna peticion puede llevar el ticket a Cerrado"
 
 
-def test_ticket_despachado_no_vuelve_a_un_estado_despachable_ac_26(
+def test_ticket_retirado_no_vuelve_a_un_estado_retirable_ac_26(
     motor, datos_013
 ):
     """AC-26: sin salida desde `Cerrado` no hay doble rebaja de stock."""
@@ -620,22 +624,22 @@ def test_ticket_despachado_no_vuelve_a_un_estado_despachable_ac_26(
     )
 
     with _cliente_bodeguero(motor, datos_013) as cliente:
-        despacho = cliente.post(
-            f"/api/v1/tickets/{ticket_id}/despacho",
+        retiro = cliente.post(
+            f"/api/v1/tickets/{ticket_id}/retiro",
             json={"usuario_id": datos_013["usuarios_inst01"]["Bodeguero"]},
         )
-        assert despacho.status_code == 200, despacho.text
-        fecha_sellada = despacho.json()["fecha_cierre"]
-        stock_tras_despacho = leer_stock_sede(
+        assert retiro.status_code == 200, retiro.text
+        fecha_sellada = retiro.json()["fecha_cierre"]
+        stock_tras_retiro = leer_stock_sede(
             motor, datos_013["sede_id"], datos_013["producto_id"]
         )
-        movimientos_tras_despacho = contar_en(motor, "MovimientoInventario")
+        movimientos_tras_retiro = contar_en(motor, "MovimientoInventario")
 
     # Ampliacion 25/Nov/2026 (AC-49): el `PATCH /estado` de legado es solo del
-    # Administrador; el Bodeguero conserva el despacho de arriba.
+    # Administrador; el Bodeguero conserva el retiro de arriba.
     with _cliente_administrador(motor, datos_013) as cliente:
-        # Un ticket despachado no vuelve a ningun estado despachable.
-        for destino in ("EnCurso", "EnRevision", "Pendiente"):
+        # Un ticket retirado no vuelve a ningun estado retirable.
+        for destino in ("EnCurso", "EnRevision"):
             respuesta = cliente.patch(
                 f"/api/v1/tickets/{ticket_id}/estado",
                 json={"estado_id": datos_013["estados"][destino]},
@@ -644,18 +648,62 @@ def test_ticket_despachado_no_vuelve_a_un_estado_despachable_ac_26(
             despues = abrir_ticket(cliente, ticket_id)
             assert despues["estado_id"] == datos_013["estados"]["Cerrado"]
             assert despues["fecha_cierre"] == fecha_sellada, (
-                "los 409 no pueden sobrescribir la fecha sellada por el despacho"
+                "los 409 no pueden sobrescribir la fecha sellada por el retiro"
             )
 
-        # Sin estado despachable no hay segundo despacho ni segunda rebaja.
+    # Sin estado retirable no hay segundo retiro ni segunda rebaja.
+    with _cliente_bodeguero(motor, datos_013) as cliente:
         reintento = cliente.post(
-            f"/api/v1/tickets/{ticket_id}/despacho",
+            f"/api/v1/tickets/{ticket_id}/retiro",
             json={"usuario_id": datos_013["usuarios_inst01"]["Bodeguero"]},
         )
         assert reintento.status_code == 409, reintento.text
         assert leer_stock_sede(
             motor, datos_013["sede_id"], datos_013["producto_id"]
-        ) == stock_tras_despacho, "sin doble rebaja de stock"
-        assert contar_en(motor, "MovimientoInventario") == movimientos_tras_despacho, (
+        ) == stock_tras_retiro, "sin doble rebaja de stock"
+        assert contar_en(motor, "MovimientoInventario") == movimientos_tras_retiro, (
             "sin movimientos de una segunda rebaja"
         )
+
+
+# ---------------------------------------------------------------------------
+# D-32/AC-58/AC-60: ciclo completo retiro -> anulacion administrativa
+# ---------------------------------------------------------------------------
+
+
+def test_el_ciclo_retiro_y_anulacion_restituye_el_stock_ac_58(motor, datos_013):
+    """AC-58/AC-60: `EnCurso -> Cerrado` (retiro) y `Cerrado -> Anulado` devuelven."""
+    ticket_id = sembrar_ticket(
+        motor, datos_013, estado_id=datos_013["estados"]["EnCurso"]
+    )
+    producto_id = datos_013["producto_id"]
+    motivo = "El retiro se aplico sobre el pedido equivocado"
+
+    with _cliente_bodeguero(motor, datos_013) as cliente:
+        retiro = cliente.post(
+            f"/api/v1/tickets/{ticket_id}/retiro",
+            json={"usuario_id": datos_013["usuarios_inst01"]["Bodeguero"]},
+        )
+        assert retiro.status_code == 200, retiro.text
+        assert retiro.json()["estado_id"] == datos_013["estados"]["Cerrado"]
+        assert leer_stock_sede(motor, datos_013["sede_id"], producto_id) == 47
+
+    with _cliente_administrador(motor, datos_013) as cliente:
+        anulacion = _anular_o_rechazar(cliente, ticket_id, "anulacion", motivo)
+        assert anulacion.status_code == 200, anulacion.text
+        cuerpo = anulacion.json()
+        assert cuerpo["estado_id"] == datos_013["estados"]["Anulado"]
+        assert cuerpo["fecha_cierre"] is None
+        assert [d["cantidad_entregada"] for d in cuerpo["detalles"]] == [0]
+
+        historial = leer_historial(cliente, ticket_id)
+        assert [fila["estado_destino_id"] for fila in reversed(historial)] == [
+            datos_013["estados"]["Cerrado"],
+            datos_013["estados"]["Anulado"],
+        ], f"el ciclo completo deja dos transiciones: {historial}"
+        assert historial[0]["estado_origen_id"] == datos_013["estados"]["Cerrado"]
+        assert historial[0]["motivo"] == motivo
+
+    assert leer_stock_sede(motor, datos_013["sede_id"], producto_id) == 50, (
+        "la anulacion del retiro devuelve exactamente lo entregado"
+    )

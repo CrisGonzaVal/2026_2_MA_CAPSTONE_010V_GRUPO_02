@@ -10,6 +10,7 @@ import {
   ROLES_NEGOCIO,
   ROLES_OPERATIVOS_TICKETS,
   ROLES_RECHAZO_TICKETS,
+  ROLES_RETIRO_TICKETS,
   ROLES_TICKETS,
   ROLES_TODOS,
   puedeAdministrar,
@@ -18,10 +19,10 @@ import {
   puedeAsignarRol,
   puedeConfirmarEntrega,
   puedeCrearTicket,
-  puedeDespacharTicket,
   puedeEditarTicket,
   puedeGestionarCatalogo,
   puedeRechazarTicket,
+  puedeRegistrarRetiro,
   puedeVerDashboard,
   puedeVerFiltrosInventario,
   puedeVerInventario,
@@ -29,6 +30,7 @@ import {
   puedeVerDepartamento,
   puedeVerTickets,
 } from './roles';
+import * as espejoRoles from './roles';
 
 /**
  * La matriz de roles de 007 (D-1) es explícita: cuatro literales distintos, sin
@@ -203,13 +205,44 @@ describe('roles', () => {
     expect(puedeAprobarTicket(null)).toBe(false);
   });
 
-  it('puedeDespacharTicket concede a Administrador y Bodeguero (AC-32/AC-33)', () => {
-    expect(puedeDespacharTicket('Administrador')).toBe(true);
-    expect(puedeDespacharTicket('Bodeguero')).toBe(true);
-    expect(puedeDespacharTicket('Solicitante')).toBe(false);
-    expect(puedeDespacharTicket('Superadmin')).toBe(false);
-    expect(puedeDespacharTicket('Admin')).toBe(false);
-    expect(puedeDespacharTicket(null)).toBe(false);
+  /**
+   * Enmienda 26/Nov/2026 (D-29/AC-63/AC-64): el **retiro** sustituye al
+   * despacho en el espejo del frontend. Los símbolos se importan de forma
+   * estática (T39); el vocabulario histórico solo se comprueba por acceso
+   * dinámico para demostrar su ausencia.
+   */
+  describe('enmienda 26/Nov/2026: retiro solo Bodeguero (D-29/AC-64)', () => {
+    const espejo = espejoRoles as unknown as Record<string, unknown>;
+
+    it('expone ROLES_RETIRO_TICKETS con solo Bodeguero', () => {
+      expect(ROLES_RETIRO_TICKETS).toEqual(['Bodeguero']);
+      expect(ROLES_RETIRO_TICKETS as readonly string[]).not.toContain(
+        'Administrador',
+      );
+      expect(ROLES_RETIRO_TICKETS as readonly string[]).not.toContain(
+        'Solicitante',
+      );
+    });
+
+    it('puedeRegistrarRetiro concede solo al Bodeguero (AC-63/AC-64)', () => {
+      expect(puedeRegistrarRetiro('Bodeguero')).toBe(true);
+      expect(puedeRegistrarRetiro('Administrador')).toBe(false);
+      expect(puedeRegistrarRetiro('Solicitante')).toBe(false);
+      expect(puedeRegistrarRetiro('Superadmin')).toBe(false);
+      expect(puedeRegistrarRetiro('Admin')).toBe(false);
+      expect(puedeRegistrarRetiro(null)).toBe(false);
+    });
+
+    it('el vocabulario histórico del despacho ya no vive en el espejo', () => {
+      expect(espejo['ROLES_DESPACHO_TICKETS']).toBeUndefined();
+      expect(espejo['puedeDespacharTicket']).toBeUndefined();
+    });
+
+    it('puedeAnularTicket conserva Administrador y Solicitante (D-33/AC-58)', () => {
+      expect(puedeAnularTicket('Administrador')).toBe(true);
+      expect(puedeAnularTicket('Solicitante')).toBe(true);
+      expect(puedeAnularTicket('Bodeguero')).toBe(false);
+    });
   });
 
   it('puedeConfirmarEntrega concede solo al Solicitante (AC-32/AC-42)', () => {

@@ -410,3 +410,17 @@ filtros en esta entrega.
 > el Solicitante dueño puede confirmar la entrega con una **operación nueva** de la 013 §9.9
 > (`POST /tickets/{id}/confirmacion-entrega`): es un evento posterior, no cambia el estado
 > `Cerrado`, no toca stock y no altera nada de esta feature.
+
+> **Nota de enmienda (26/Nov/2026, Feature 013 §10).** El contrato de esta feature se renombra
+> al **retiro** sin cambiar su semántica: `POST /api/v1/tickets/{ticket_id}/retiro`, DTO
+> `TicketRetiro`, servicio `registrar_retiro_ticket` y observación literal «Salida por retiro del
+> ticket #…»; el actor es el **Bodeguero de la sede del ticket** (matriz de la 007) y el cierre
+> sigue siendo `EnCurso → Cerrado` con rebaja, `SALIDA` por detalle, `cantidad_entregada`,
+> `fecha_cierre`, bloqueo y ACID. La ruta `/despacho`, el DTO `TicketDespacho`, el servicio
+> `despachar_ticket`, la observación «Despacho ticket_id=…» y el detalle 409 «El cierre requiere
+> despacho…» quedan **superados** (filas/AC históricos de esta spec incluidos); el detalle 409
+> vigente dirige a `/retiro`. `Cerrado` deja de ser terminal absoluto: gana la salida
+> administrativa `Cerrado → Anulado` de la 013, solo para el Administrador, con devolución de
+> stock y bloqueada por la confirmación de entrega. «Despacho transaccional» se conserva como
+> nombre histórico de la feature. Detalle en `../013-ciclo-vida-ticket/spec.md` §10 (D-29,
+> AC-55…AC-61).

@@ -58,12 +58,14 @@
 --   hace `resetear_identidades` en el bloque de reparto).
 --
 -- RESTRICCION - estado_ticket
---   El servicio de tickets reconoce los estados terminales por NOMBRE
+--   El catalogo replica cuatro nombres: `EnRevision` (inicial), `EnCurso`,
+--   `Cerrado` y `Anulado`. El servicio reconoce los terminales por NOMBRE
 --   (`Cerrado`, `Anulado`), nunca por un id fijo. `Anulado` queda FUERA de la
 --   secuencia lineal y solo se alcanza por anulacion o rechazo con motivo.
+--   `Pendiente` deja de existir como nombre canonico (enmienda 26/Nov/2026).
 --
 -- VERSION OBJETIVO DEL DDL
---   026.0 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
+--   026.1 (`VERSION_ESQUEMA_OBJETIVO` en backend/app/core/config.py).
 -- =====================================================
 
 BEGIN;
@@ -124,7 +126,7 @@ BEGIN
 
     FOREACH v_tabla IN ARRAY ARRAY[
         'funcion_institucion', 'sede', 'departamento', 'rol', 'usuario',
-        'departamento_encargado', 'categoria', 'producto',
+        'categoria', 'producto',
         'stock_sede', 'movimiento_inventario', 'prioridad', 'estado_ticket',
         'ticket', 'detalle_ticket', 'historial_transicion_ticket',
         'historial_transicion_producto', 'historial_transicion_categoria',
@@ -144,7 +146,7 @@ BEGIN
 
         FOREACH v_tabla IN ARRAY ARRAY[
             'institucion', 'sede', 'departamento', 'rol', 'usuario',
-            'departamento_encargado', 'categoria', 'producto',
+            'categoria', 'producto',
             'stock_sede', 'movimiento_inventario', 'prioridad', 'estado_ticket',
             'ticket', 'detalle_ticket', 'historial_transicion_ticket',
             'historial_transicion_producto', 'historial_transicion_categoria',
@@ -303,25 +305,6 @@ INSERT INTO usuario (usuario_id, nombre, apellido, correo, departamento_id, rol_
 (16, 'Ricardo',  'Nilo',      'ri.nilo@duocuc.cl',                        6, 4, NULL);
 
 -- =====================================================
--- 4b. DEPARTAMENTO_ENCARGADO  (5 filas)  [Feature 011, auxiliar]
--- =====================================================
--- Encargado de departamento = usuario Solicitante (rol 4) del MISMO departamento
--- (spec D-4); no concede permisos adicionales. En la semilla hay un Solicitante
--- por departamento, de modo que se asocia 1:1 al departamento al que pertenece.
--- La tabla admite varios encargados por departamento; la compatibilidad la
--- valida el servicio, no un trigger.
---   departamento 2 -> usuario 2 | departamento 5 -> usuario 5
---   departamento 6 -> usuario 11 (QA 013) | departamento 8 -> usuario 8
---   departamento 9 -> usuario 9
-
-INSERT INTO departamento_encargado (departamento_encargado_id, departamento_id, usuario_id) OVERRIDING SYSTEM VALUE VALUES
-(1, 2, 2),
-(2, 5, 5),
-(3, 6, 11),
-(4, 8, 8),
-(5, 9, 9);
-
--- =====================================================
 -- 5. CATEGORIA  (10 filas)
 -- =====================================================
 -- Catalogo de insumos de ofimatica, AHORA por institucion (D-1).
@@ -435,29 +418,32 @@ INSERT INTO prioridad (prioridad_id, nombre, descripcion) OVERRIDING SYSTEM VALU
 (3, 'Baja',  'Puede esperar a la siguiente compra periodica');
 
 -- =====================================================
--- 10. ESTADO_TICKET  (5 filas)  [GLOBAL, sin institucion - D-5/AC-3]
+-- 10. ESTADO_TICKET  (4 filas)  [GLOBAL, sin institucion - D-5/AC-3]
 -- =====================================================
--- El orden de las primeras cuatro filas es el orden del flujo lineal: el
--- servicio lo lee por estado_id ascendente. El id de "Cerrado" ya no es
--- critico: el cierre se reconoce por nombre (Feature 004). "Anulado" (Feature
--- 013) es la quinta y ultima fila del catalogo pero queda FUERA de la
--- secuencia lineal: es terminal por NOMBRE junto a "Cerrado", alcanzable solo
--- por anulacion o rechazo con motivo (D-1/D-6 de la 013) y nunca como estado
--- inicial de alta (D-11) ni por el cambio de estado de la 004.
+-- Enmienda 26/Nov/2026: el catalogo queda en cuatro nombres y `EnRevision` es
+-- el unico estado inicial del alta (D-27/D-36). Los ids son solo la semilla:
+-- ningun servicio los usa como regla; el flujo y los terminales se resuelven
+-- por NOMBRE. `Anulado` es la cuarta fila pero queda FUERA de la secuencia
+-- lineal (`EnRevision -> EnCurso -> Cerrado`); se alcanza solo por anulacion o
+-- rechazo con motivo (D-1/D-6 de la 013) y nunca como estado inicial de alta
+-- (D-11) ni por el cambio de estado de la 004.
 
 INSERT INTO estado_ticket (estado_id, nombre, descripcion) OVERRIDING SYSTEM VALUE VALUES
-(1, 'Pendiente',   'Ticket creado, aun sin revision'),
-(2, 'EnRevision',  'Revisando justificacion y disponibilidad'),
-(3, 'EnCurso',     'Aprobado y en preparacion de despacho'),
-(4, 'Cerrado',     'Despachado y con fecha de cierre registrada'),
-(5, 'Anulado',     'Cancelado antes del despacho; anulado o rechazado con motivo en el historial');
+(1, 'EnRevision', 'Pedido creado, en revision por la Administracion'),
+(2, 'EnCurso',    'Aprobado y en preparacion para el retiro'),
+(3, 'Cerrado',    'Retirado y con fecha de cierre registrada'),
+(4, 'Anulado',    'Anulado o rechazado con motivo; si hubo retiro, el stock fue devuelto');
 
 -- =====================================================
 -- 11. TICKET  (10 filas)
 -- =====================================================
 -- `institucion_id` se deriva del solicitante (usuario -> departamento ->
 -- institucion). Ningun ticket usa un solicitante de otra institucion que la de
--- sus productos. Reparto en los 4 estados; los Cerrados traen fecha_cierre.
+-- sus productos. Reparto de la enmienda 26/Nov/2026 (D-36):
+--   1-4 y 9 -> `EnRevision` (1); 5-6 -> `EnCurso` (2);
+--   7-8 y 10 -> `Cerrado` (3); ninguno en `Anulado` (4).
+-- Los `Cerrado` traen `fecha_cierre` y sus detalles conservan la entrega
+-- completa.
 --   INST-001 -> tickets 1..8 (solicitantes 1..7, departamentos 1..7)
 --   INST-002 -> tickets 9..10 (solicitante 8, departamento 8)
 -- Feature 011 (D-5/AC-9): `sede_id` es la instantanea de la sede vigente del
@@ -468,22 +454,22 @@ INSERT INTO estado_ticket (estado_id, nombre, descripcion) OVERRIDING SYSTEM VAL
 INSERT INTO ticket (ticket_id, usuario_id, prioridad_id, estado_id, asunto, descripcion, fecha_creacion, fecha_cierre, institucion_id, sede_id) OVERRIDING SYSTEM VALUE VALUES
 (1,  2,  2,  1, 'Resmas para sala de computacion',   'Solicitud de 10 resmas para el curso de referencia.',   CURRENT_TIMESTAMP - INTERVAL '2 days',  NULL, 'INST-001', 2),
 (2,  5,  1,  1, 'Toner urgente para impresora',       'La impresora de la sala 3 quedo sin toner.',            CURRENT_TIMESTAMP - INTERVAL '2 days',  NULL, 'INST-001', 1),
-(3,  3,  3,  2, 'Folders para archivo de pagos',       'Carpetas para ordenar comprobantes del mes.',          CURRENT_TIMESTAMP - INTERVAL '3 days',  NULL, 'INST-001', 1),
-(4,  2,  2,  2, 'Boligrafos para secretaria',          'Reposicion del stock de escritura.',                    CURRENT_TIMESTAMP - INTERVAL '4 days',  NULL, 'INST-001', 2),
-(5,  3,  1,  3, 'Grapadoras para oficina',             'Grapadoras de reemplazo para el area de pagos.',        CURRENT_TIMESTAMP - INTERVAL '5 days',  NULL, 'INST-001', 1),
-(6,  1,  2,  3, 'Clip metalico para archivo',          'El clip se perdio en la mudanza.',                      CURRENT_TIMESTAMP - INTERVAL '6 days',  NULL, 'INST-001', 1),
-(7,  4,  3,  4, 'Cintas para sellar sobres',           'Reposicion de cintas de la oficina.',                   CURRENT_TIMESTAMP - INTERVAL '9 days',  CURRENT_TIMESTAMP - INTERVAL '7 days', 'INST-001', 2),
-(8,  6,  2,  4, 'Rotuladores para inventario',         'Rotuladores para etiquetar activos.',                   CURRENT_TIMESTAMP - INTERVAL '12 days', CURRENT_TIMESTAMP - INTERVAL '10 days', 'INST-001', 2),
-(9,  8,  1,  2, 'Guantes para box de atencion',        'Insumos clinicos para la atencion primaria.',           CURRENT_TIMESTAMP - INTERVAL '3 days',  NULL, 'INST-002', 3),
-(10, 8,  2,  4, 'Resmas para fichas de pacientes',     'Resmas para imprimir fichas en la recepcion.',          CURRENT_TIMESTAMP - INTERVAL '8 days',  CURRENT_TIMESTAMP - INTERVAL '6 days', 'INST-002', 3);
+(3,  3,  3,  1, 'Folders para archivo de pagos',       'Carpetas para ordenar comprobantes del mes.',          CURRENT_TIMESTAMP - INTERVAL '3 days',  NULL, 'INST-001', 1),
+(4,  2,  2,  1, 'Boligrafos para secretaria',          'Reposicion del stock de escritura.',                    CURRENT_TIMESTAMP - INTERVAL '4 days',  NULL, 'INST-001', 2),
+(5,  3,  1,  2, 'Grapadoras para oficina',             'Grapadoras de reemplazo para el area de pagos.',        CURRENT_TIMESTAMP - INTERVAL '5 days',  NULL, 'INST-001', 1),
+(6,  1,  2,  2, 'Clip metalico para archivo',          'El clip se perdio en la mudanza.',                      CURRENT_TIMESTAMP - INTERVAL '6 days',  NULL, 'INST-001', 1),
+(7,  4,  3,  3, 'Cintas para sellar sobres',           'Reposicion de cintas de la oficina.',                   CURRENT_TIMESTAMP - INTERVAL '9 days',  CURRENT_TIMESTAMP - INTERVAL '7 days', 'INST-001', 2),
+(8,  6,  2,  3, 'Rotuladores para inventario',         'Rotuladores para etiquetar activos.',                   CURRENT_TIMESTAMP - INTERVAL '12 days', CURRENT_TIMESTAMP - INTERVAL '10 days', 'INST-001', 2),
+(9,  8,  1,  1, 'Guantes para box de atencion',        'Insumos clinicos para la atencion primaria.',           CURRENT_TIMESTAMP - INTERVAL '3 days',  NULL, 'INST-002', 3),
+(10, 8,  2,  3, 'Resmas para fichas de pacientes',     'Resmas para imprimir fichas en la recepcion.',          CURRENT_TIMESTAMP - INTERVAL '8 days',  CURRENT_TIMESTAMP - INTERVAL '6 days', 'INST-002', 3);
 
 -- =====================================================
 -- 12. DETALLE_TICKET  (10 filas)
 -- =====================================================
 -- CHECK (cantidad_solicitada > 0) y (cantidad_entregada >= 0) respetados.
 -- `institucion_id` se deriva del ticket y el producto debe ser de esa misma
--- institucion (FK compuesta). Los tickets Cerrados (estado 4) llevan
--- cantidad_entregada = solicitada, coherente con su despacho.
+-- institucion (FK compuesta). Los tickets `Cerrado` (estado 3) llevan
+-- cantidad_entregada = solicitada, coherente con su retiro.
 
 INSERT INTO detalle_ticket (detalle_ticket_id, ticket_id, producto_id, cantidad_solicitada, cantidad_entregada, institucion_id) OVERRIDING SYSTEM VALUE VALUES
 (1,  1,  1,  10,  0,  'INST-001'),
@@ -507,7 +493,6 @@ INSERT INTO detalle_ticket (detalle_ticket_id, ticket_id, producto_id, cantidad_
 -- UniqueViolation. Este bloque deja cada secuencia en MAX(id).
 
 SELECT setval(pg_get_serial_sequence('departamento',           'departamento_id'),           COALESCE((SELECT MAX(departamento_id)           FROM departamento),           1));
-SELECT setval(pg_get_serial_sequence('departamento_encargado', 'departamento_encargado_id'), COALESCE((SELECT MAX(departamento_encargado_id) FROM departamento_encargado), 1));
 SELECT setval(pg_get_serial_sequence('sede',                   'sede_id'),                   COALESCE((SELECT MAX(sede_id)                   FROM sede),                   1));
 SELECT setval(pg_get_serial_sequence('stock_sede',             'stock_sede_id'),             COALESCE((SELECT MAX(stock_sede_id)             FROM stock_sede),             1));
 SELECT setval(pg_get_serial_sequence('rol',                    'rol_id'),                    COALESCE((SELECT MAX(rol_id)                    FROM rol),                    1));
@@ -541,7 +526,6 @@ DECLARE
         'sede:sede_id',
         'stock_sede:stock_sede_id',
         'departamento:departamento_id',
-        'departamento_encargado:departamento_encargado_id',
         'rol:rol_id',
         'usuario:usuario_id',
         'categoria:categoria_id',
@@ -582,7 +566,7 @@ $reset$;
 
 DO $construccion$
 DECLARE
-    v_version_objetivo constant text := '026.0';
+    v_version_objetivo constant text := '026.1';
     v_institucion_id text;
     v_esquema text;
     v_plantilla text;
@@ -644,13 +628,6 @@ BEGIN
             'AND u.rol_id NOT IN (SELECT rol_id FROM control.rol WHERE nombre_rol = ''Superadmin'')',
             v_esquema
         ) USING v_institucion_id;
-        -- Encargados: por la institucion de su departamento.
-        EXECUTE format(
-            'INSERT INTO %I.departamento_encargado OVERRIDING SYSTEM VALUE '
-            'SELECT de.* FROM control.departamento_encargado de '
-            'JOIN control.departamento d ON d.departamento_id = de.departamento_id '
-            'WHERE d.institucion_id = $1', v_esquema
-        ) USING v_institucion_id;
 
         -- (1.4) Catalogo y stock, con institucion_id directo.
         FOREACH v_plantilla IN ARRAY ARRAY['categoria', 'producto', 'stock_sede'] LOOP
@@ -699,6 +676,24 @@ BEGIN
         ) INTO v_obtenido;
         IF v_obtenido <> 1 THEN
             RAISE EXCEPTION '02: % no tiene una fila de version % (tiene %).', v_esquema, v_version_objetivo, v_obtenido;
+        END IF;
+        --       (1.8.2b) Catalogo de estados replicado: exactamente las cuatro
+        --       filas de la enmienda 26/Nov/2026, con `Anulado` y sin `Pendiente`.
+        EXECUTE format('SELECT count(*) FROM %I.estado_ticket', v_esquema) INTO v_obtenido;
+        IF v_obtenido <> 4 THEN
+            RAISE EXCEPTION '02: % tiene % fila(s) de estado_ticket (esperadas 4).', v_esquema, v_obtenido;
+        END IF;
+        EXECUTE format(
+            'SELECT count(*) FROM %I.estado_ticket WHERE nombre = ''Anulado''', v_esquema
+        ) INTO v_obtenido;
+        IF v_obtenido <> 1 THEN
+            RAISE EXCEPTION '02: % no replica la fila Anulado.', v_esquema;
+        END IF;
+        EXECUTE format(
+            'SELECT count(*) FROM %I.estado_ticket WHERE nombre = ''Pendiente''', v_esquema
+        ) INTO v_obtenido;
+        IF v_obtenido <> 0 THEN
+            RAISE EXCEPTION '02: % conserva la fila Pendiente derogada.', v_esquema;
         END IF;
         --       (1.8.3) Conteos de negocio == los de control para esta institucion.
         EXECUTE format('SELECT count(*) FROM control.departamento WHERE institucion_id = $1', v_esquema)
@@ -921,7 +916,6 @@ BEGIN
     DELETE FROM control.movimiento_inventario;
     DELETE FROM control.stock_sede;
     DELETE FROM control.ticket;
-    DELETE FROM control.departamento_encargado;
     DELETE FROM control.producto;
     DELETE FROM control.categoria;
     -- Se conserva exclusivamente la identidad global de prueba; los usuarios

@@ -104,7 +104,7 @@
         class="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium px-4 py-3 rounded-lg"
       >
         <span aria-hidden="true">✅</span>
-        Stock disponible — Listo para despacho
+        Stock disponible — Listo para el retiro
       </p>
     }
 
@@ -158,15 +158,15 @@
             Aprobar
           </button>
         }
-        @if (acciones().despachar) {
+        @if (acciones().registrarRetiro) {
           <button
             type="button"
-            (click)="solicitarDespacho()"
+            (click)="solicitarRetiro()"
             [disabled]="enOperacion()"
-            aria-label="Confirmar stock local y despachar el pedido"
+            aria-label="Registrar el retiro del pedido"
             class="text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 px-3 py-2 rounded-lg transition"
           >
-            Confirmar stock local y despachar
+            Registrar retiro
           </button>
         }
         @if (acciones().confirmarEntrega) {
@@ -210,10 +210,14 @@
             type="button"
             (click)="solicitarAnulacion()"
             [disabled]="enOperacion()"
-            aria-label="Anular el pedido"
+            [attr.aria-label]="
+              esAnulacionDeRetiro()
+                ? 'Anular el retiro y devolver el stock'
+                : 'Anular el pedido'
+            "
             class="text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 disabled:hover:bg-rose-50 border border-rose-200 px-3 py-2 rounded-lg transition"
           >
-            Anular
+            {{ esAnulacionDeRetiro() ? 'Anular el retiro' : 'Anular' }}
           </button>
         }
       </div>
@@ -426,7 +430,7 @@
   }
 
   <!-- Confirmación única del detalle: motivo solo para anular/rechazo; el
-       despacho y la entrega reutilizan el mismo diálogo nativo sin textarea. -->
+       retiro y la entrega reutilizan el mismo diálogo nativo sin textarea. -->
   <dialog
     #dialogoConfirmacion
     (close)="cancelarConfirmacion()"
@@ -486,7 +490,7 @@
     </div>
   </dialog>
 
-  <!-- Edición en Pendiente: cabecera + ítems completos, reemplazo atómico (D-9) -->
+  <!-- Edición en EnRevision: cabecera + ítems completos, reemplazo atómico (D-9) -->
   <dialog
     #dialogoEdicion
     (close)="cancelarEdicion()"
@@ -497,7 +501,7 @@
         <div>
           <h3 class="text-lg font-bold text-slate-800">Editar pedido #{{ ticketId() }}</h3>
           <p class="text-xs text-slate-500 mt-1">
-            Solo editable mientras el pedido está en Pendiente: los ítems se
+            Solo editable mientras el pedido está En revisión: los ítems se
             reemplazan por completo.
           </p>
         </div>

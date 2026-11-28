@@ -5,8 +5,8 @@ import { Routes } from '@angular/router';
  *
  * El acceso lo protege `app.routes.ts` con el guard de roles administrativos. El
  * layout (`AdministracionComponent`) monta la navegación y el `RouterOutlet`; cada
- * vista de dominio (sedes, departamentos, usuarios y encargados) se carga de forma
- * perezosa. No permite elegir institución ni esquema: el ámbito es el de la sesión.
+ * vista de dominio (sedes, departamentos y usuarios) se carga de forma perezosa.
+ * No permite elegir institución ni esquema: el ámbito es el de la sesión.
  * La gestión SaaS del Superadmin vive en `/control`.
  */
 export const administracionRoutes: Routes = [
@@ -33,12 +33,6 @@ export const administracionRoutes: Routes = [
         loadComponent: () =>
           import('./usuarios.component').then((m) => m.UsuariosComponent),
         title: 'Usuarios | CompuStock',
-      },
-      {
-        path: 'encargados',
-        loadComponent: () =>
-          import('./encargados.component').then((m) => m.EncargadosComponent),
-        title: 'Encargados | CompuStock',
       },
     ],
   },

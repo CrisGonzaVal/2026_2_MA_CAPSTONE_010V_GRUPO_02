@@ -1,14 +1,15 @@
-"""T23 (Feature 013, ampliacion 25/Nov/2026): concurrencia y filas de historial - gated.
+"""T23 (Feature 013; enmienda 26/Nov/2026): concurrencia y filas de historial - gated.
 
 Complemento gated de `test_ciclo_vida_aprobacion_013.py` y
 `test_ciclo_vida_confirmacion_013.py`. SQLite no acredita el bloqueo de fila
 (`FOR UPDATE`), asi que solo PostgreSQL 16 real demuestra lo que la spec §9.3 y
-§9.9 exigen (AC-30, AC-42, AC-43):
+§9.9 exigen (AC-30, AC-42, AC-43), ya con el catalogo de cuatro estados
+(`EnRevision`, `EnCurso`, `Cerrado`, `Anulado`) y el retiro de la enmienda:
 
   * **Aprobacion concurrente** - dos peticiones simultaneas sobre el mismo
-    pedido `Pendiente` se serializan por la fila del ticket: una responde 200 y
+    pedido `EnRevision` se serializan por la fila del ticket: una responde 200 y
     la otra 409, el pedido queda `EnCurso` con **exactamente una** fila
-    `Pendiente -> EnCurso` (actor, fecha, motivo literal
+    `EnRevision -> EnCurso` (actor, fecha, motivo literal
     `Aprobación del pedido`, `orden_compra_id` nulo), `fecha_cierre` sigue nula
     y el stock no cambia.
   * **Confirmacion concurrente** - dos peticiones simultaneas del Solicitante
@@ -18,7 +19,7 @@ Complemento gated de `test_ciclo_vida_aprobacion_013.py` y
     nulo), el estado sigue `Cerrado` y `fecha_cierre`, el stock y los
     movimientos quedan intactos.
   * **Lectura persistida** - el flujo secuencial completo (alta -> aprobar ->
-    despachar -> confirmar) deja por SQL el actor, la fecha, el motivo y
+    retirar -> confirmar) deja por SQL el actor, la fecha, el motivo y
     `orden_compra_id NULL` de cada fila; no se crea ninguna tabla ni columna y
     la confirmacion no altera `fecha_cierre`, el stock ni los movimientos.
 
@@ -78,7 +79,7 @@ from app.models import (
 from app.schemas.ticket_schema import (
     DetalleTicketCrear,
     TicketCrear,
-    TicketDespacho,
+    TicketRetiro,
 )
 from app.services import ticket_service
 from app.services.auth_service import IdentidadAutenticada
@@ -284,7 +285,7 @@ def _estado_id_por_nombre(motor, esquema: str, nombre: str) -> int:
     return estado_id
 
 
-def _crear_ticket_pendiente(
+def _crear_ticket_en_revision(
     motor,
     esquema: str,
     identidad: IdentidadAutenticada,
@@ -292,10 +293,10 @@ def _crear_ticket_pendiente(
     producto_id: int,
     cantidad: int,
 ) -> int:
-    """Alta por el mismo camino de produccion: el ticket nace en `Pendiente`."""
+    """Alta por el mismo camino de produccion: el ticket nace en `EnRevision`."""
     datos = TicketCrear(
         prioridad_id=2,
-        estado_id=_estado_id_por_nombre(motor, esquema, "Pendiente"),
+        estado_id=_estado_id_por_nombre(motor, esquema, "EnRevision"),
         asunto="Pedido concurrente T23",
         descripcion="Pedido de la prueba gated de concurrencia de la 013.",
         detalles=[
@@ -310,14 +311,14 @@ def _crear_ticket_pendiente(
         return ticket.ticket_id
 
 
-def _despachar(
+def _retirar(
     motor, esquema: str, identidad: IdentidadAutenticada, ticket_id: int
 ) -> None:
     with _sesion_tenant(motor, esquema) as db:
-        ticket_service.despachar_ticket(
+        ticket_service.registrar_retiro_ticket(
             db,
             ticket_id,
-            TicketDespacho(usuario_id=identidad.usuario.usuario_id),
+            TicketRetiro(usuario_id=identidad.usuario.usuario_id),
             identidad,
         )
 
@@ -458,7 +459,7 @@ def _assert_un_200_y_un_409(resultados: dict[str, str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_aprobacion_concurrente_deja_una_sola_transicion_pendiente_encurso_ac_30():
+def test_aprobacion_concurrente_deja_una_sola_transicion_enrevision_encurso_ac_30():
     """AC-30: dos aprobaciones simultaneas -> (200, 409) y una sola fila."""
     with _base_instalada() as (conexion, motor):
         esquema = _esquema_de_institucion(_INSTITUCION)
@@ -472,7 +473,7 @@ def test_aprobacion_concurrente_deja_una_sola_transicion_pendiente_encurso_ac_30
         producto_id = _producto_con_stock(
             motor, esquema, sede_id=sede_id, cantidad=2
         )
-        ticket_id = _crear_ticket_pendiente(
+        ticket_id = _crear_ticket_en_revision(
             motor,
             esquema,
             solicitante,
@@ -529,7 +530,7 @@ def test_aprobacion_concurrente_deja_una_sola_transicion_pendiente_encurso_ac_30
         assert orden_compra_id is None, (
             "la aprobacion deja `orden_compra_id` nulo (D-16)"
         )
-        assert (origen, destino) == ("Pendiente", "EnCurso")
+        assert (origen, destino) == ("EnRevision", "EnCurso")
 
 
 # ---------------------------------------------------------------------------
@@ -552,17 +553,17 @@ def test_confirmacion_concurrente_deja_una_sola_fila_cerrado_cerrado_ac_42():
         producto_id = _producto_con_stock(
             motor, esquema, sede_id=sede_id, cantidad=3
         )
-        ticket_id = _crear_ticket_pendiente(
+        ticket_id = _crear_ticket_en_revision(
             motor,
             esquema,
             solicitante,
             producto_id=producto_id,
             cantidad=3,
         )
-        # Flujo real hasta el despacho: aprobacion y cierre de la 005.
+        # Flujo real hasta el retiro: aprobacion y cierre de la 005.
         with _sesion_tenant(motor, esquema) as db:
             ticket_service.aprobar_ticket(db, ticket_id, administrador)
-        _despachar(motor, esquema, bodeguero, ticket_id)
+        _retirar(motor, esquema, bodeguero, ticket_id)
 
         estado_antes, fecha_cierre_antes = _estado_y_cierre(
             motor, esquema, ticket_id
@@ -649,7 +650,7 @@ def test_lectura_persistida_del_flujo_y_sin_ddl_ac_30_ac_42():
         producto_id = _producto_con_stock(
             motor, esquema, sede_id=sede_id, cantidad=2
         )
-        ticket_id = _crear_ticket_pendiente(
+        ticket_id = _crear_ticket_en_revision(
             motor,
             esquema,
             solicitante,
@@ -678,17 +679,17 @@ def test_lectura_persistida_del_flujo_y_sin_ddl_ac_30_ac_42():
         assert motivo_aprobacion == MOTIVO_APROBACION
         assert orden_aprobacion is None
         assert (origen_aprobacion, destino_aprobacion) == (
-            "Pendiente",
+            "EnRevision",
             "EnCurso",
         )
 
-        _despachar(motor, esquema, bodeguero, ticket_id)
-        _estado, fecha_cierre_despacho = _estado_y_cierre(
+        _retirar(motor, esquema, bodeguero, ticket_id)
+        _estado, fecha_cierre_retiro = _estado_y_cierre(
             motor, esquema, ticket_id
         )
-        assert fecha_cierre_despacho is not None
-        stock_despacho = _stock_de_la_sede(motor, esquema, ticket_id)
-        movimientos_despacho = _contar_movimientos_de_la_sede(
+        assert fecha_cierre_retiro is not None
+        stock_retiro = _stock_de_la_sede(motor, esquema, ticket_id)
+        movimientos_retiro = _contar_movimientos_de_la_sede(
             motor, esquema, ticket_id
         )
 
@@ -701,13 +702,13 @@ def test_lectura_persistida_del_flujo_y_sin_ddl_ac_30_ac_42():
 
         estado, fecha_cierre = _estado_y_cierre(motor, esquema, ticket_id)
         assert estado == "Cerrado"
-        assert fecha_cierre == fecha_cierre_despacho, (
+        assert fecha_cierre == fecha_cierre_retiro, (
             "la confirmacion no toca `fecha_cierre`"
         )
-        assert _stock_de_la_sede(motor, esquema, ticket_id) == stock_despacho
+        assert _stock_de_la_sede(motor, esquema, ticket_id) == stock_retiro
         assert (
             _contar_movimientos_de_la_sede(motor, esquema, ticket_id)
-            == movimientos_despacho
+            == movimientos_retiro
         )
 
         filas_confirmacion = _historial_por_sql(

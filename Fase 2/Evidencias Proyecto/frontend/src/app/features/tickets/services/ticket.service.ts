@@ -46,11 +46,12 @@ export class TicketService {
   }
 
   /**
-   * Despacho de un pedido `EnCurso` (Feature 005, reutilizado en el detalle por
-   * D-19): `POST /tickets/{id}/despacho` con el `usuario_id` de la sesión.
+   * Registro del retiro de un pedido `EnCurso` (enmienda 26/Nov/2026, D-29):
+   * `POST /tickets/{id}/retiro` con el `usuario_id` de la sesión. Solo el
+   * Bodeguero de la sede del pedido; la API es la frontera (AC-55/AC-64).
    */
-  despacharTicket(ticketId: number, usuarioId: number): Observable<Ticket> {
-    return this.http.post<Ticket>(`${URL_API}/tickets/${ticketId}/despacho`, {
+  registrarRetiro(ticketId: number, usuarioId: number): Observable<Ticket> {
+    return this.http.post<Ticket>(`${URL_API}/tickets/${ticketId}/retiro`, {
       usuario_id: usuarioId,
     });
   }
@@ -93,7 +94,7 @@ export class TicketService {
     });
   }
 
-  /** Edición en `Pendiente` con reemplazo atómico del conjunto de ítems (D-9). */
+  /** Edición en `EnRevision` con reemplazo atómico del conjunto de ítems (D-9). */
   editarTicket(ticketId: number, datos: TicketEditar): Observable<TicketDetalle> {
     return this.http.put<TicketDetalle>(`${URL_API}/tickets/${ticketId}`, datos);
   }

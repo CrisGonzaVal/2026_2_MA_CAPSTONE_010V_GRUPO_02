@@ -34,7 +34,6 @@ from app.core import permisos
 from app.main import app
 from app.models import (
     Departamento,
-    DepartamentoEncargado,
     DetalleTicket,
     EstadoTicket,
     MapaUsuarioEsquema,
@@ -47,12 +46,14 @@ from app.models import (
 from app.services.auth_service import IdentidadAutenticada
 
 # ---------------------------------------------------------------------------
-# Fuente de verdad independiente: la matriz D-3 transcrita a mano (57 filas:
+# Fuente de verdad independiente: la matriz D-3 transcrita a mano (54 filas:
 # la transcripcion de la 007 y sus ampliaciones 008/009/010/011/012/013/017,
 # mas la aprobacion y la confirmacion de entrega de la ampliacion 25/Nov/2026
-# de la 013). Las operaciones de 014/018/019/020/021 se transcriben en sus
-# propios modulos; la igualdad viva rutas↔`MATRIZ_PERMISOS` se contrasta abajo
-# con las 75 operaciones vigentes.
+# de la 013, con la enmienda 26/Nov/2026 que restringe el retiro y el registro
+# manual de movimientos al Bodeguero, y sin las tres operaciones que la
+# enmienda 27/Nov/2026 de la 012 retira). Las operaciones de
+# 014/018/019/020/021 se transcriben en sus propios modulos; la igualdad viva
+# rutas-MATRIZ_PERMISOS se contrasta abajo con las 72 operaciones vigentes.
 # ---------------------------------------------------------------------------
 
 _TODOS = {"Superadmin", "Administrador", "Bodeguero", "Solicitante"}
@@ -61,7 +62,8 @@ _INVENTARIO_Y_TICKETS = {"Superadmin", "Administrador", "Bodeguero"}
 # Ajuste Feature 008 (D-3/AC-10): la escritura de catalogo, stock/movimientos y
 # tickets es institucional; Superadmin conserva solo sus lecturas.
 _ESCRITURA_CATALOGO = {"Administrador"}
-_ESCRITURA_STOCK = {"Administrador", "Bodeguero"}
+#: Enmienda 26/Nov/2026 (D-30/AC-64): el retiro queda solo para el Bodeguero.
+_RETIRO = {"Bodeguero"}
 #: Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29/AC-33): la transcripcion
 #: historica del alta era de tres roles (`_ESCRITURA_TICKETS`); el contrato
 #: vigente la restringe a solo Solicitante. Administrador y Bodeguero reciben 403.
@@ -81,8 +83,11 @@ _CICLO_VIDA_DUENO = {"Administrador", "Solicitante"}
 _CICLO_VIDA_BODEGA = {"Administrador", "Bodeguero"}
 #: Ampliacion 25/Nov/2026 (spec §9.3/§9.10, AC-45/AC-49): la aprobacion del
 #: pedido y el `PATCH /estado` de legado son exclusivos del Administrador; el
-#: Bodeguero conserva despacho, rechazo y recepcion de compras.
+#: Bodeguero conserva retiro, rechazo y recepcion de compras.
 _SOLO_ADMINISTRADOR = {"Administrador"}
+#: Enmienda 26/Nov/2026 de la 013 (D-31/AC-64): el registro manual de
+#: movimientos es una operacion de bodega; el Administrador recibe 403.
+_MOVIMIENTOS_MANUALES = {"Bodeguero"}
 
 MATRIZ_D3: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/auth/me"): _TODOS,
@@ -99,13 +104,15 @@ MATRIZ_D3: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/inventario/existencias"): _LECTURA_NEGOCIO,
     ("GET", "/api/v1/inventario/stock"): _LECTURA_NEGOCIO,
     ("GET", "/api/v1/inventario/movimientos"): _MOVIMIENTOS,
-    ("POST", "/api/v1/inventario/movimientos"): _ESCRITURA_STOCK,
+    # Enmienda 26/Nov/2026 de la 013 (D-31/AC-64): el registro manual de
+    # movimientos queda solo para el Bodeguero; el Administrador recibe 403.
+    ("POST", "/api/v1/inventario/movimientos"): _MOVIMIENTOS_MANUALES,
     ("GET", "/api/v1/tickets/catalogos"): _LECTURA_NEGOCIO,
     ("GET", "/api/v1/tickets/"): _LECTURA_NEGOCIO,
     # Enmienda 26/Nov/2026 de la 007 (D-11): el alta es exclusiva del
     # Solicitante; los casos permitidos/denegados se regeneran desde esta fila.
     ("POST", "/api/v1/tickets/"): _ALTA_SOLICITANTE,
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): _RETIRO,
     # Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH` de legado queda solo
     # para el Administrador; el Bodeguero recibe 403 por matriz.
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _SOLO_ADMINISTRADOR,
@@ -119,18 +126,8 @@ MATRIZ_D3: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/organizacion/sedes"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/departamentos/{departamento_id}/sede"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/usuarios/{usuario_id}/sede"): _ORGANIZACION,
-    (
-        "GET",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "DELETE",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}",
-    ): _ORGANIZACION,
+    # Enmienda 27/Nov/2026 de la 012 (AC-35): las tres operaciones retiradas
+    # salen de la matriz con la tabla; sedes, departamentos y usuarios siguen.
     # Feature 012 (T6, D-1/D-2/D-5/D-6/AC-1…AC-5): gestion administrativa de
     # control SaaS, exclusiva del Superadmin. Operaciones nuevas y aditivas.
     ("GET", "/api/v1/control/instituciones/"): _ALTA_INSTITUCION,
@@ -223,12 +220,6 @@ _CODIGOS_EXITO: dict[tuple[str, str], int] = {
         "POST",
         "/api/v1/control/instituciones/{institucion_id}/usuarios/",
     ): 201,
-    # Feature 011 (D-4/AC-4/AC-5): el alta de encargado responde 201 y el retiro 204.
-    ("POST", "/api/v1/organizacion/departamentos/{departamento_id}/encargados"): 201,
-    (
-        "DELETE",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}",
-    ): 204,
     # Feature 012 (T7): el alta de sede y de departamento responde 201.
     ("POST", "/api/v1/organizacion/sedes"): 201,
     ("POST", "/api/v1/organizacion/departamentos"): 201,
@@ -333,18 +324,18 @@ _SIN_AUTENTICAR = object()
 
 def _ruta_concreta(metodo: str, ruta: str, datos: dict) -> str:
     """Resuelve los `{param}` de path al recurso sembrado que corresponde."""
-    if ruta == "/api/v1/tickets/{ticket_id}/despacho":
-        return ruta.replace("{ticket_id}", str(datos["ticket_despacho_id"]))
+    if ruta == "/api/v1/tickets/{ticket_id}/retiro":
+        return ruta.replace("{ticket_id}", str(datos["ticket_retiro_id"]))
     if ruta == "/api/v1/tickets/{ticket_id}/estado":
         return ruta.replace("{ticket_id}", str(datos["ticket_estado_id"]))
     # Feature 013 (T9): las cinco operaciones del ciclo de vida usan un ticket
-    # propio en `Pendiente` (admite anulacion/rechazo con 200 y edicion valida).
+    # propio en `EnRevision` (admite anulacion/rechazo con 200 y edicion valida).
     if ruta in (
         "/api/v1/tickets/{ticket_id}",
         "/api/v1/tickets/{ticket_id}/anulacion",
         "/api/v1/tickets/{ticket_id}/rechazo",
         "/api/v1/tickets/{ticket_id}/historial",
-        # Ampliacion 25/Nov/2026: el ticket en `Pendiente` tambien es un origen
+        # Ampliacion 25/Nov/2026: el ticket en `EnRevision` tambien es un origen
         # elegible para la aprobacion (200).
         "/api/v1/tickets/{ticket_id}/aprobacion",
     ):
@@ -362,16 +353,6 @@ def _ruta_concreta(metodo: str, ruta: str, datos: dict) -> str:
         return ruta.replace("{departamento_id}", str(datos["departamento_id"]))
     if ruta == "/api/v1/organizacion/usuarios/{usuario_id}/sede":
         return ruta.replace("{usuario_id}", str(datos["usuario_bodeguero_id"]))
-    if ruta == "/api/v1/organizacion/departamentos/{departamento_id}/encargados":
-        return ruta.replace("{departamento_id}", str(datos["departamento_id"]))
-    if (
-        ruta
-        == "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}"
-    ):
-        return (
-            ruta.replace("{departamento_id}", str(datos["departamento_id"]))
-            .replace("{usuario_id}", str(datos["usuario_solicitante_id"]))
-        )
     # Feature 012 (T6): recursos del control SaaS (institucion sembrada y funcion).
     if ruta == "/api/v1/control/instituciones/{institucion_id}":
         return ruta.replace("{institucion_id}", datos["institucion_id"])
@@ -452,14 +433,14 @@ def _cuerpo(metodo: str, ruta: str, datos: dict):
         return {
             "usuario_id": datos["usuario_id"],
             "prioridad_id": datos["prioridad_id"],
-            "estado_id": datos["estado_pendiente_id"],
+            "estado_id": datos["estado_en_revision_id"],
             "asunto": "Ticket autorizado",
             "descripcion": "Alta valida para probar la autorizacion.",
             "detalles": [
                 {"producto_id": datos["producto_id"], "cantidad_solicitada": 1}
             ],
         }
-    if (metodo, ruta) == ("POST", "/api/v1/tickets/{ticket_id}/despacho"):
+    if (metodo, ruta) == ("POST", "/api/v1/tickets/{ticket_id}/retiro"):
         return {"usuario_id": datos["usuario_id"]}
     if (metodo, ruta) == ("PATCH", "/api/v1/tickets/{ticket_id}/estado"):
         return {"estado_id": datos["estado_en_curso_id"]}
@@ -495,11 +476,6 @@ def _cuerpo(metodo: str, ruta: str, datos: dict):
         "/api/v1/organizacion/usuarios/{usuario_id}/sede",
     ):
         return {"sede_id": datos["sede_id"]}
-    if (metodo, ruta) == (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ):
-        return {"usuario_id": datos["usuario_encargable_id"]}
     if metodo == "DELETE":
         return None
     # Feature 012 (T6): payloads de la gestion administrativa de control.
@@ -595,7 +571,7 @@ def _cuerpo(metodo: str, ruta: str, datos: dict):
 
 
 # ---------------------------------------------------------------------------
-# Sembrado: catalogo canonico de estados y dos tickets para despacho/estado
+# Sembrado: catalogo canonico de estados y dos tickets para retiro/estado
 # ---------------------------------------------------------------------------
 
 
@@ -604,9 +580,9 @@ def datos_autorizacion(motor, datos_base):
     """`datos_base` + el catalogo canonico de la 013 y tickets de trabajo.
 
     `ticket_estado_id` esta en `EnRevision` para que `PATCH /estado` avance un
-    paso contiguo a `EnCurso` (200); `ticket_despacho_id` ya esta en `EnCurso`
-    con una linea del producto que tiene inventario, para un despacho 200; y
-    `ticket_ciclo_id` esta en `Pendiente` (propio del usuario base) para que
+    paso contiguo a `EnCurso` (200); `ticket_retiro_id` ya esta en `EnCurso`
+    con una linea del producto que tiene inventario, para un retiro 200; y
+    `ticket_ciclo_id` esta en `EnRevision` (propio del usuario base) para que
     anulacion, rechazo y edicion de la 013 respondan 200 (Feature 013, T9). El
     catalogo incluye `Anulado` al final, como lo siembra la 013.
     """
@@ -615,7 +591,7 @@ def datos_autorizacion(motor, datos_base):
         db.query(EstadoTicket).delete()
         db.flush()
         ids: dict[str, int] = {}
-        for nombre in ("Pendiente", "EnRevision", "EnCurso", "Cerrado", "Anulado"):
+        for nombre in ("EnRevision", "EnCurso", "Cerrado", "Anulado"):
             estado = EstadoTicket(nombre=nombre, descripcion=f"Estado {nombre}")
             db.add(estado)
             db.flush()
@@ -631,7 +607,7 @@ def datos_autorizacion(motor, datos_base):
         db.add(rol_bodeguero)
         db.flush()
 
-        # Feature 011 (T9): el despacho usa la instantanea de sede del ticket y
+        # Feature 011 (T9): el retiro usa la instantanea de sede del ticket y
         # rebaja `stock_sede`; se siembra una sede de INST01 con stock para el
         # producto de los tickets de trabajo.
         sede = Sede(
@@ -671,10 +647,10 @@ def datos_autorizacion(motor, datos_base):
             return ticket
 
         ticket_estado = _ticket(ids["EnRevision"], "Cambio de estado autorizado")
-        ticket_despacho = _ticket(ids["EnCurso"], "Despacho autorizado")
-        # Feature 013 (T9): ticket propio en `Pendiente` para anulacion,
+        ticket_retiro = _ticket(ids["EnCurso"], "Retiro autorizado")
+        # Feature 013 (T9): ticket propio en `EnRevision` para anulacion,
         # rechazo y edicion (todas admiten 200 desde ese estado).
-        ticket_ciclo = _ticket(ids["Pendiente"], "Ciclo de vida autorizado")
+        ticket_ciclo = _ticket(ids["EnRevision"], "Ciclo de vida autorizado")
         # Ampliacion 25/Nov/2026 (T22): ticket propio ya `Cerrado` para medir la
         # confirmacion de entrega (200 para el Solicitante dueño sin confirmar).
         ticket_confirmacion = _ticket(
@@ -682,16 +658,9 @@ def datos_autorizacion(motor, datos_base):
         )
 
         # Feature 011 (T7): recursos para medir la autorizacion organizacional.
-        # Una sede de INST01 (200 en las asignaciones), un Bodeguero (destino
-        # valido de sede) y un Solicitante ya asociado como encargado (200 en el
-        # listado y 204 al retirarlo). El rol Solicitante es el rol asignable de
-        # prueba, analogo a `rol_bodeguero`.
-        rol_solicitante = Rol(
-            nombre_rol="Solicitante", descripcion="Rol encargable de prueba"
-        )
-        db.add(rol_solicitante)
-        db.flush()
-
+        # Una sede de INST01 y un Bodeguero (destino valido de la asignacion de
+        # sede). La enmienda 27/Nov/2026 de la 012 retira las asociaciones que se
+        # sembraban aqui, de modo que ya no se crea ninguna.
         # Feature 011 (T8): la lectura de existencias del Solicitante usa la sede
         # de su departamento; se le asigna la sede sembrada para que la operacion
         # autorizada siga siendo un 200 y no un 409 por precondicion ausente.
@@ -705,30 +674,8 @@ def datos_autorizacion(motor, datos_base):
             departamento_id=datos_base["departamento_id"],
             rol_id=rol_bodeguero.rol_id,
         )
-        usuario_solicitante = Usuario(
-            nombre="Encargado",
-            apellido="Autorizacion",
-            correo="encargado.autorizacion@compustock.cl",
-            departamento_id=datos_base["departamento_id"],
-            rol_id=rol_solicitante.rol_id,
-        )
-        #: Solicitante del mismo departamento aun **sin** asociar: candidato limpio
-        #: para medir el alta (201) sin chocar con la asociacion ya sembrada.
-        usuario_encargable = Usuario(
-            nombre="Encargable",
-            apellido="Autorizacion",
-            correo="encargable.autorizacion@compustock.cl",
-            departamento_id=datos_base["departamento_id"],
-            rol_id=rol_solicitante.rol_id,
-        )
-        db.add_all([usuario_bodeguero, usuario_solicitante, usuario_encargable])
+        db.add(usuario_bodeguero)
         db.flush()
-        db.add(
-            DepartamentoEncargado(
-                departamento_id=datos_base["departamento_id"],
-                usuario_id=usuario_solicitante.usuario_id,
-            )
-        )
         # Feature 017 (D-10): el Administrador base queda con una invitacion
         # pendiente persistida para que el reenvio autorizado pueda responder 200.
         db.add(
@@ -757,23 +704,19 @@ def datos_autorizacion(motor, datos_base):
 
         return {
             **datos_base,
-            "estado_pendiente_id": ids["Pendiente"],
             "estado_en_revision_id": ids["EnRevision"],
             "estado_en_curso_id": ids["EnCurso"],
             "estado_cerrado_id": ids["Cerrado"],
             "estado_anulado_id": ids["Anulado"],
             "ticket_estado_id": ticket_estado.ticket_id,
-            "ticket_despacho_id": ticket_despacho.ticket_id,
+            "ticket_retiro_id": ticket_retiro.ticket_id,
             "ticket_ciclo_id": ticket_ciclo.ticket_id,
             "ticket_confirmacion_id": ticket_confirmacion.ticket_id,
             "rol_bodeguero_id": rol_bodeguero.rol_id,
-            "rol_solicitante_id": rol_solicitante.rol_id,
             "sede_id": sede.sede_id,
             "stock_sede_id": stock_sede.stock_sede_id,
             "usuario_bodeguero_id": usuario_bodeguero.usuario_id,
             "usuario_reenvio_id": usuario_bodeguero.usuario_id,
-            "usuario_solicitante_id": usuario_solicitante.usuario_id,
-            "usuario_encargable_id": usuario_encargable.usuario_id,
         }
     finally:
         db.close()
@@ -860,10 +803,10 @@ def test_denegacion_no_muta_datos(motor, datos_autorizacion):
     with _cliente(motor, "Solicitante") as cliente:
         antes = cliente.get("/api/v1/tickets/").json()
         denegado = cliente.post(
-            f"/api/v1/tickets/{datos_autorizacion['ticket_despacho_id']}/despacho",
+            f"/api/v1/tickets/{datos_autorizacion['ticket_retiro_id']}/retiro",
             json=_cuerpo(
                 "POST",
-                "/api/v1/tickets/{ticket_id}/despacho",
+                "/api/v1/tickets/{ticket_id}/retiro",
                 datos_autorizacion,
             ),
         )
@@ -979,7 +922,7 @@ REFERENCIAS_ESPERADAS = {
     ("GET", "/api/v1/tickets/catalogos"): "CatalogosTicketRespuesta",
     ("GET", "/api/v1/tickets/"): "TicketRespuesta",
     ("POST", "/api/v1/tickets/"): "TicketRespuesta",
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): "TicketRespuesta",
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): "TicketRespuesta",
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): "TicketRespuesta",
     ("GET", "/api/v1/dashboard/"): "DashboardAnaliticoRespuesta",
     ("POST", "/api/v1/control/instituciones/"): "InstitucionAltaControlRespuesta",
@@ -990,14 +933,6 @@ REFERENCIAS_ESPERADAS = {
         "/api/v1/organizacion/departamentos/{departamento_id}/sede",
     ): "AsignacionSedeDepartamentoRespuesta",
     ("PUT", "/api/v1/organizacion/usuarios/{usuario_id}/sede"): "AsignacionSedeUsuarioRespuesta",
-    (
-        "GET",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): "EncargadoRespuesta",
-    (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): "EncargadoRespuesta",
     # Feature 012 (T7): DTOs del CRUD organizacional.
     ("POST", "/api/v1/organizacion/sedes"): "SedeRespuesta",
     ("PUT", "/api/v1/organizacion/sedes/{sede_id}"): "SedeRespuesta",

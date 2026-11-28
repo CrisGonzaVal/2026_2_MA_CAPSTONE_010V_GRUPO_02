@@ -10,9 +10,9 @@ Superficie minima de la spec/plan, sin CRUD de sedes (Feature 012):
   * `GET    /api/v1/organizacion/sedes`
   * `PUT    /api/v1/organizacion/departamentos/{departamento_id}/sede`
   * `PUT    /api/v1/organizacion/usuarios/{usuario_id}/sede`
-  * `GET    /api/v1/organizacion/departamentos/{departamento_id}/encargados`
-  * `POST   /api/v1/organizacion/departamentos/{departamento_id}/encargados`
-  * `DELETE /api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}`
+
+La enmienda 27/Nov/2026 de la 012 retira las tres rutas de la tabla puente
+auxiliar; el CRUD de sedes, departamentos y usuarios sigue vigente.
 """
 
 from __future__ import annotations
@@ -32,8 +32,6 @@ from app.schemas.organizacion_schema import (
     DepartamentoEstado,
     DepartamentoEstadoRespuesta,
     DepartamentoRespuesta,
-    EncargadoCrear,
-    EncargadoRespuesta,
     SedeCrear,
     SedeEdicion,
     SedeEstado,
@@ -56,10 +54,6 @@ RUTA_DEPARTAMENTO_ESTADO = (
 )
 RUTA_SEDE_DEPARTAMENTO = "/api/v1/organizacion/departamentos/{departamento_id}/sede"
 RUTA_SEDE_USUARIO = "/api/v1/organizacion/usuarios/{usuario_id}/sede"
-RUTA_ENCARGADOS = "/api/v1/organizacion/departamentos/{departamento_id}/encargados"
-RUTA_ENCARGADO = (
-    "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}"
-)
 
 
 def _respuestas(*, conflicto: bool = False, payload: bool = False) -> dict:
@@ -78,17 +72,6 @@ def _respuestas(*, conflicto: bool = False, payload: bool = False) -> dict:
             )
         }
     return respuestas
-
-
-def _encargado_respuesta(usuario) -> EncargadoRespuesta:
-    """Read model de un encargado a partir del `Usuario` resuelto por el servicio."""
-    return EncargadoRespuesta(
-        usuario_id=usuario.usuario_id,
-        departamento_id=usuario.departamento_id,
-        nombre=usuario.nombre,
-        apellido=usuario.apellido,
-        correo=usuario.correo,
-    )
 
 
 @router.get(
@@ -178,95 +161,6 @@ def asignar_sede_a_usuario(
     )
     return AsignacionSedeUsuarioRespuesta(
         usuario_id=usuario.usuario_id, sede_id=usuario.sede_id
-    )
-
-
-@router.get(
-    "/departamentos/{departamento_id}/encargados",
-    response_model=List[EncargadoRespuesta],
-    status_code=status.HTTP_200_OK,
-    summary="Listar los encargados de un departamento",
-    description=(
-        "Devuelve solo asociaciones **vigentes y compatibles** (usuario "
-        "existente, rol Solicitante y pertenencia al departamento); una "
-        "asociacion obsoleta no se muestra ni concede capacidad (spec D-4). Un "
-        "departamento inexistente o ajeno responde **404** (AC-1/AC-5)."
-    ),
-    responses=_respuestas(),
-    dependencies=[
-        Depends(dependencies.requiere_capacidad("GET", RUTA_ENCARGADOS))
-    ],
-)
-def listar_encargados(
-    departamento_id: int,
-    identidad: IdentidadAutenticada = Depends(
-        dependencies.requiere_operacion("GET", RUTA_ENCARGADOS)
-    ),
-    db: Session = Depends(dependencies.get_db_negocio),
-) -> List[EncargadoRespuesta]:
-    return [
-        _encargado_respuesta(usuario)
-        for usuario in organizacion_service.listar_encargados(
-            db, departamento_id, identidad
-        )
-    ]
-
-
-@router.post(
-    "/departamentos/{departamento_id}/encargados",
-    response_model=EncargadoRespuesta,
-    status_code=status.HTTP_201_CREATED,
-    summary="Asociar un encargado a un departamento",
-    description=(
-        "Asocia un usuario **Solicitante del mismo departamento** como encargado "
-        "(spec D-4, AC-4). Un departamento o usuario inexistente/ajeno responde "
-        "**404**; un rol distinto de Solicitante, un usuario de otro "
-        "departamento o una asociacion duplicada responde **409** sin mutacion. "
-        "Ser encargado no cambia el rol ni amplia permisos."
-    ),
-    responses=_respuestas(conflicto=True, payload=True),
-    dependencies=[
-        Depends(dependencies.requiere_capacidad("POST", RUTA_ENCARGADOS))
-    ],
-)
-def asociar_encargado(
-    departamento_id: int,
-    datos: EncargadoCrear,
-    identidad: IdentidadAutenticada = Depends(
-        dependencies.requiere_operacion("POST", RUTA_ENCARGADOS)
-    ),
-    db: Session = Depends(dependencies.get_db_negocio),
-) -> EncargadoRespuesta:
-    usuario = organizacion_service.asociar_encargado(
-        db, departamento_id, datos.usuario_id, identidad
-    )
-    return _encargado_respuesta(usuario)
-
-
-@router.delete(
-    "/departamentos/{departamento_id}/encargados/{usuario_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Retirar un encargado de un departamento",
-    description=(
-        "Retira solo la pareja departamento/usuario indicada; las demas "
-        "asociaciones no se tocan (AC-5). Una asociacion inexistente o un "
-        "departamento ajeno responde **404** sin efecto."
-    ),
-    responses=_respuestas(),
-    dependencies=[
-        Depends(dependencies.requiere_capacidad("DELETE", RUTA_ENCARGADO))
-    ],
-)
-def retirar_encargado(
-    departamento_id: int,
-    usuario_id: int,
-    identidad: IdentidadAutenticada = Depends(
-        dependencies.requiere_operacion("DELETE", RUTA_ENCARGADO)
-    ),
-    db: Session = Depends(dependencies.get_db_negocio),
-) -> None:
-    organizacion_service.retirar_encargado(
-        db, departamento_id, usuario_id, identidad
     )
 
 

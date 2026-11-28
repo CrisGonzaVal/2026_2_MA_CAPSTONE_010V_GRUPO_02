@@ -7,11 +7,12 @@ claves y `CHECK` hagan cumplir el contrato de la spec y que los datos legados
 sigan siendo representables.
 
 Trazabilidad AC (spec 011 §5): AC-2 (stock por sede sin segunda fuente),
-AC-4 (encargados como asociacion auxiliar), AC-9 (instantanea de sede en ticket)
-y las restricciones §7 (filas legadas y sus FK intactas).
+AC-9 (instantanea de sede en ticket) y las restricciones §7 (filas legadas y sus
+FK intactas). AC-4 (tabla puente auxiliar) queda retirado por la enmienda
+27/Nov/2026 de la 012: la tabla ya no existe y sus pruebas se eliminan.
 
-Fase ROJA de TDD: las entidades `Sede`, `StockSede` y `DepartamentoEncargado` y
-las columnas `*.sede_id`/`stock_sede_id` no existen todavia; cada prueba falla con
+Fase ROJA de TDD: las entidades `Sede` y `StockSede` y las columnas
+`*.sede_id`/`stock_sede_id` no existian entonces; cada prueba falla con
 `KeyError`/`AttributeError` explicito o `pytest.fail`, nunca por sintaxis.
 """
 
@@ -33,8 +34,9 @@ from app.models import (
     Usuario,
 )
 
-#: Entidades nuevas y columnas nuevas que la Feature 011 agrega al modelo.
-TABLAS_NUEVAS = ("sede", "stock_sede", "departamento_encargado")
+#: Entidades nuevas y columnas nuevas que la Feature 011 agrega al modelo. La
+#: tabla puente auxiliar se retiro con la enmienda 27/Nov/2026 de la 012.
+TABLAS_NUEVAS = ("sede", "stock_sede")
 COLUMNAS_NUEVAS = (
     ("departamento", "sede_id"),
     ("usuario", "sede_id"),
@@ -99,7 +101,7 @@ def _fila_base(motor) -> dict:
 
 
 def test_metadata_declara_las_entidades_nuevas(motor):
-    """AC-2/AC-4: las tres estructuras nuevas forman parte de la metadata."""
+    """AC-2: las dos estructuras nuevas forman parte de la metadata."""
     tablas = set(Base.metadata.tables)
     for tabla in TABLAS_NUEVAS:
         assert tabla in tablas, f"falta la tabla {tabla}"
@@ -273,56 +275,6 @@ def test_sede_expone_su_stock_y_su_institucion(motor, datos_base):
         assert len(sede.stocks) == 1
         assert sede.stocks[0].stock_actual == 7
         assert sede.stocks[0].producto.producto_id == datos_base["producto_id"]
-    finally:
-        db.close()
-
-
-# ---------------------------------------------------------------------------
-# AC-4: asociacion auxiliar de encargados
-# ---------------------------------------------------------------------------
-
-
-def test_departamento_encargado_es_auxiliar_y_con_unicidad(motor):
-    """AC-4: la tabla puente admite pares unicos y rechaza repetidos."""
-    DepartamentoEncargado = _modelo("DepartamentoEncargado")
-    datos = _fila_base(motor)
-
-    db = _sesion(motor)
-    try:
-        db.add(
-            DepartamentoEncargado(
-                departamento_id=datos["departamento_id"],
-                usuario_id=datos["usuario_id"],
-            )
-        )
-        db.commit()
-
-        db.add(
-            DepartamentoEncargado(
-                departamento_id=datos["departamento_id"],
-                usuario_id=datos["usuario_id"],
-            )
-        )
-        with pytest.raises(IntegrityError):
-            db.commit()
-    finally:
-        db.close()
-
-
-def test_departamento_encargado_exige_referencias_existentes(motor):
-    """AC-4: las FK locales rechazan un departamento o usuario inexistente."""
-    DepartamentoEncargado = _modelo("DepartamentoEncargado")
-    datos = _fila_base(motor)
-
-    db = _sesion(motor)
-    try:
-        db.add(
-            DepartamentoEncargado(
-                departamento_id=datos["departamento_id"], usuario_id=999_999
-            )
-        )
-        with pytest.raises(IntegrityError):
-            db.commit()
     finally:
         db.close()
 

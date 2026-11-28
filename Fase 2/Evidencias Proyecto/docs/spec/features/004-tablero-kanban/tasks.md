@@ -2,7 +2,7 @@
 
 **Spec:** [`spec.md`](spec.md) (aprobada) · **Plan:** [`plan.md`](plan.md)
 
-10 tareas en orden de dependencia (dentro del rango de 10-15: la spec no necesita dividirse).
+12 tareas en orden de dependencia (T11/T12 incluidas; dentro del rango de 10-15: la spec no necesita dividirse).
 Cada casilla se marca `[x]` solo con su `Hecho cuando:` cumplido y la evidencia dejada en la
 tarea; si algo falla, la casilla no se marca: se arregla o se documenta el bloqueo.
 
@@ -247,3 +247,116 @@ cambios de comentarios. §8.7: coherencia de las rutas citadas verificada.
 **Hecho cuando:** los 6 AC tienen su evidencia pegada en esta tarea, todas las casillas
 anteriores están en `[x]` y ninguna ruta citada quedó obsoleta. Ese es el único momento de
 marcar la fila 004 en el roadmap.
+
+## T11 — Frontend: filtro de periodo y orden, con pruebas (AC-28, AC-29, AC-30)
+
+**Depende de:** T10 (suites y cierre históricos en verde) y de la aprobación de `spec.md` §8.
+**Archivos:** `frontend/src/app/features/tickets/tickets.component.ts`, `.html` y `.spec.ts`.
+**Verificación:** `$env:CHROME_BIN = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"; cd frontend && npx ng test --watch=false --browsers=ChromeHeadless`.
+
+- [x] Tests rojos primero en `tickets.component.spec.ts`: reloj fijo con
+      `jasmine.clock().mockDate(new Date(2026, 10, 28, 15, 0, 0))` y fixture de tickets de hoy,
+      3, 10, 40 y 400 días; matriz de `todo`/`hoy`/`semana`/`mes`/`anio`, bordes exactos (inicio
+      incluido, `inicio - 1 ms` excluido), sin cota superior y sin recorte por `fecha_cierre`.
+- [x] Tests rojos de orden: «Más recientes» por defecto (`fecha_creacion` DESC, empate
+      `ticket_id` DESC), «Más antiguos» (ASC, empate `ticket_id` ASC), dentro de cada columna y
+      también en «Terminados»; cambiar solo el orden no emite peticiones ni altera contadores,
+      `hayFiltros` o el vacío.
+- [x] Tests rojos de combinación y alta: periodo ∧ prioridad ∧ búsqueda antes de agrupar;
+      contadores `tarjetas.length`; vacío por filtros con solo el periodo activo; el `POST` con
+      `fecha_creacion` actual aparece bajo cualquier periodo vigente, ordenado y sujeto a los
+      otros filtros; al remontar vuelven `todo` y `recientes`.
+- [x] Implementar `filtroPeriodo` y `orden` como señales, el helper puro
+      `inicioDePeriodo(periodo, ahora)` y la cadena de `columnas` del plan §7.2–§7.5 (periodo
+      antes de agrupar; orden después, por columna); `hayFiltros` incluye el periodo.
+- [x] Plantilla: dos `<select>` nativos con `<label>` visible «Periodo» y «Orden», valores
+      estables (`todo/hoy/semana/mes/anio`, `recientes/antiguos`), Tailwind y sin CSS embebido
+      (plan §7.6).
+
+**Hecho cuando:** los tests nuevos estaban en rojo antes de implementar y ahora pasan;
+`tickets.component.spec.ts` queda en verde y la suite completa de `ng test` termina con
+**0 FAILED**. No se reescriben AC-2, AC-6 ni AC-7. `inventario` no aplica: el cambio es solo del
+tablero de tickets y su suite no se toca.
+
+**Nota de fase (T11 ejecutada el 28/Nov/2026).** Implementado solo el tablero de tickets.
+- **Archivos:** `tickets.component.ts` (tipos `PeriodoTablero`/`OrdenTablero`, helper
+  `inicioDePeriodo`, señales `filtroPeriodo`/`orden`, periodo en `columnas` antes de agrupar,
+  comparador por columna y `hayFiltros` con periodo), `tickets.component.html` (dos `<select>`
+  con `data-testid` estable y `<label>` visible, `sm:flex-wrap` en la barra) y
+  `tickets.component.spec.ts` (15 pruebas nuevas con reloj fijo y fixtures relativos).
+- **Comandos y conteos:** `npx ng test --watch=false --browsers=ChromeHeadless
+  --include=…tickets.component.spec.ts` → **103 SUCCESS**; suite completa → **700 SUCCESS, 0
+  FAILED** (baseline 685 + 15). No se ejecutó `ng build` ni se reconstruyó 8080: T11 es
+  exclusivamente de pruebas; T12 hará build y puertos.
+- **Rojas curadas:** (1) la primera corrida falló por la API nueva aún inexistente
+  (`filtroPeriodo`/`orden`/`inicioDePeriodo`), que era el rojo esperado; (2) tras implementar,
+  dos pruebas fallaron por fixtures: la prueba del helper dejaba abiertas las dos peticiones del
+  arranque y la prueba de alta conservaba `busqueda='papel'`, que excluía al ticket 101 de la
+  comprobación de orden. Se corrigieron con `cargarPeriodo()` y limpiando la búsqueda antes de
+  comprobar el orden.
+- **Decisiones no cubiertas por el plan:** se añadieron `data-testid="filtro-periodo"` y
+  `data-testid="filtro-orden"` solo para selectores de prueba estables; `cambiarPeriodo` y
+  `cambiarOrden` ignoran valores fuera de los catálogos mediante `PERIODOS_TABLERO`/
+  `ORDENES_TABLERO`; la barra usa `sm:flex-wrap` para no romper móvil. No se tocó
+  `ticket.service.ts`, backend, `database/`, `stack.md`, la 013/018 ni el 8080.
+
+## T12 — Verificación y evidencia de la enmienda (AC-28…AC-30)
+
+**Depende de:** T11.
+**Alcance:** verificación funcional y documental. No crea feature nueva: la 004 conserva su
+cierre histórico (AC-1…AC-27 intactos) y esta enmienda se registra como adición.
+
+- [x] `ng test` completo sin `FAILED` y `ng build` de producción compila sin errores.
+- [x] Recorrido funcional en 4200 con backend real: los cinco periodos, ambos órdenes,
+      combinación con prioridad y búsqueda, contadores y vacío, y un alta visible bajo un periodo
+      activo.
+- [x] 8080: `docker compose -f docker-compose.yml build frontend` +
+      `up -d --force-recreate frontend`; humo de los dos selectores y de un periodo.
+- [x] Evidencia en `docs/spec/features/004-tablero-kanban/evidencia/README.md` (nuevo): nombres
+      de tests, conteos de suite, build, capturas y resultado de los dos puertos.
+- [x] Fila 004 de `roadmap.md` anotada con la enmienda del 27/Nov/2026 sin borrar su cierre
+      original; `MEMORY.md` actualizado; línea `Estado:` de `spec.md` actualizada a la enmienda
+      aprobada/cerrada con el enlace a la evidencia; grep de coherencia de rutas y textos
+      (`AGENTS.md` §8.7).
+- [x] Confirmar que no se creó feature nueva, que `spec.md` §8, `plan.md` §7 y estas tareas no
+      divergen del código y que `stack.md` sigue intacto.
+
+**Hecho cuando:** los 3 AC tienen su evidencia pegada en esta tarea, todas las casillas de T11
+están en `[x]`, la suite y el build están en verde, los dos puertos se recorrieron, el grep no
+dejó rutas obsoletas, la línea `Estado:` refleja el cierre y la fila 004 registra la enmienda sin
+reescribir su cierre.
+
+**Nota de fase (T12 ejecutada el 28/Nov/2026).** Cierre verificado.
+- **Suites/build:** spec del tablero **103 SUCCESS**; `ng test` completo **700 SUCCESS / 0
+  FAILED**; `ng build` limpio, bundle **`main-K4LJUM5F.js`**, Initial **340,27 kB**.
+- **4200 (Administrador):** Todo 4/3/4=11; Hoy 0/0/0 con vacío por filtros; Semana 4/1/2=7;
+  Mes/Año 4/3/4=11. Orden: recientes `[2,1,3,4]` / `[11,5,6]` / `[10,9,7,8]`; antiguos
+  `[4,3,1,2]` / `[6,5,11]` / `[8,7,9,10]`. Combinación Semana + Alta + «Toner» → `#2`.
+- **4200 (Solicitante):** alta #12 «Cierre T12 periodo y orden» el 28/Nov 03:38; Hoy 1/0/0,
+  Semana/Mes/Año/Todo 1/1/2; Terminados recientes `[10,9]` / antiguos `[9,10]`. En la vista
+  institucional del Administrador, Todo/Recientes En Revisión `[12,2,1,3,4]` y Antiguos
+  `[4,3,1,2,12]`.
+- **8080:** imagen `sha256:f39aaf…` idéntica a la construida y recreada con
+  `--force-recreate`; sirve **`main-K4LJUM5F.js`**; `main-SHBQMIGH.js`, `main-6T35N3WS.js`,
+  `main-IRJLFDU6.js` y `main-72C5Q3DY.js` → 404; Solicitante Todo/Recientes 1/1/2 y
+  Hoy/Antiguos 1/0/0.
+- **Documentación:** `004/evidencia/README.md` §1–§7; `spec.md` AC-28…AC-30 marcados y
+  `Estado:` actualizado; fila 004 del roadmap anotada; `MEMORY.md` actualizado. Capturas
+  `t12-01`, `t12-02` y `t12-03`.
+- **Decisiones no cubiertas por el plan:** la matriz de periodos se recorrió con Administrador
+  (visión institucional de 11 pedidos) y el alta con Solicitante (rol habilitado); se capturaron
+  ambos tableros y el humo 8080. No se tocó backend, `database/`, `ticket.service.ts`,
+  `stack.md`, la 013/018 ni el refactor externo de la 012. No queda pendiente de T12.
+- **Nota de corrección post-validación (veredicto APROBADO).** Se pulieron los cuatro
+  menores detectados: (1) docstring de `tickets.component.ts` corregido —el alta inserta el
+  `201` en `tickets()` sin reconsultar (AC-8), sin referencia a H-3—; (2) `tasks.md` pasa a
+  **12 tareas**; (3) la matriz del Administrador queda fechada **antes del alta de #12**
+  (Todo 4/3/4, Hoy 0/0/0, Semana 4/1/2) y **después** pasa a 5/3/4, 1/0/0 y 5/1/2; (4) los
+  selects de periodo/orden llevan `id`/`name` (`filtro-periodo`/`periodo`,
+  `filtro-orden`/`orden`) y `for` en el label, y se añadieron `id`/`name` a los campos
+  preexistentes de la barra y del modal para eliminar el aviso de Chrome. Se añadió la
+  prueba del **domingo 29/Nov** y del **cruce al 1/Dic** (lunes 30/Nov). Verificación:
+  spec del tablero **104 SUCCESS**, suite completa **701 SUCCESS / 0 FAILED**, build
+  **`main-KSHSOEG4.js`** (Initial 340,27 kB), 8080 con imagen `sha256:985ef…`, bundle
+  nuevo 200, anteriores 404, selects con `id`/`name` y aviso de Chrome eliminado. Capturas
+  `t12-01`…`t12-03` siguen vigentes; no cambió la funcionalidad de periodo/orden ni los AC.

@@ -176,28 +176,35 @@ RETIRADAS_017: frozenset[tuple[str, str]] = frozenset(
 #: Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.10, AC-49): el
 #: `PATCH /estado` de la transcripcion historica queda **solo** para el
 #: Administrador. Es una restriccion documentada de la entrada (que no se
-#: retira), no una relajacion; el Bodeguero conserva despacho y rechazo.
+#: retira), no una relajacion; el Bodeguero conserva el retiro y el rechazo.
 #: Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29/AC-33): el alta de tickets
 #: de la transcripcion historica (`_ESCRITURA_TICKETS`) queda **solo** para el
 #: Solicitante; Administrador y Bodeguero reciben 403. La entrada se conserva.
-#: Este mapa es la restriccion documentada que consumen tambien las
+#: Enmienda 26/Nov/2026 de la 013 (D-30/AC-55): el retiro queda **solo** para el
+#: Bodeguero. Enmienda 26/Nov/2026 de la 013 (D-31/AC-64): el registro manual de
+#: movimientos, escritura institucional historica, queda **solo** para el
+#: Bodeguero. Este mapa es la restriccion documentada que consumen tambien las
 #: transcripciones de la 014 y la 018.
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
     ("POST", "/api/v1/tickets/"): {"Solicitante"},
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): {"Bodeguero"},
+    ("POST", "/api/v1/inventario/movimientos"): {"Bodeguero"},
 }
 
 
-def test_matriz_conserva_las_44_operaciones_previas_intactas_ac_17():
-    """AC-17: la 013 no retira ni relaja ninguna de las 44 filas vigentes.
+def test_matriz_conserva_las_41_operaciones_previas_intactas_ac_17():
+    """AC-17: la 013 no retira ni relaja ninguna de las filas vigentes.
 
-    Feature 017: las 11 lecturas de D-9 ajustan solo el rol Superadmin; los
-    roles institucionales conservan exactamente el conjunto de la 012.
-    Ampliacion 25/Nov/2026 (§9.10, AC-49): el `PATCH /estado` se restringe a
-    solo Administrador. Enmienda 26/Nov/2026 de la 007 (D-11/AC-29/AC-33): el
-    alta de tickets se restringe a solo Solicitante.
+    La transcripcion de la 012 queda en 41 filas tras la enmienda 27/Nov/2026
+    (44 historicas menos las tres de la tabla puente auxiliar). Feature 017: las
+    11 lecturas de D-9 ajustan solo el rol Superadmin; los roles institucionales
+    conservan exactamente el conjunto de la 012. Ampliacion 25/Nov/2026
+    (§9.10, AC-49): el `PATCH /estado` se restringe a solo Administrador.
+    Enmienda 26/Nov/2026 de la 007 (D-11/AC-29/AC-33): el alta de tickets se
+    restringe a solo Solicitante.
     """
-    assert len(MATRIZ_012) == 44
+    assert len(MATRIZ_012) == 41
     for clave, roles in MATRIZ_012.items():
         actual = permisos.MATRIZ_PERMISOS.get(clave)
         assert actual is not None, f"la operacion {clave} desaparecio de la matriz"
@@ -434,7 +441,7 @@ def test_superadmin_obtiene_403_en_toda_escritura_nueva_ac_17(motor, datos_013):
         # ausencia de mutacion se observa por ORM.
         with sesion(motor) as db:
             assert db.get(Ticket, ticket_id).estado_id == (
-                datos_013["estados"]["Pendiente"]
+                datos_013["estados"]["EnRevision"]
             ), "el 403 no puede mutar el ticket"
 
 
@@ -567,7 +574,7 @@ def test_capacidad_kanban_apagada_bloquea_anulacion_y_rechazo_sin_mutar_ac_17(
             assert respuesta.status_code == 403, (operacion, respuesta.text)
 
         assert abrir_ticket(cliente, ticket_id)["estado_id"] == (
-            datos_013["estados"]["Pendiente"]
+            datos_013["estados"]["EnRevision"]
         ), "el 403 de gating no puede mutar el ticket"
         exigir_ruta(RUTA_HISTORIAL, "GET")
         assert leer_historial(cliente, ticket_id) == []

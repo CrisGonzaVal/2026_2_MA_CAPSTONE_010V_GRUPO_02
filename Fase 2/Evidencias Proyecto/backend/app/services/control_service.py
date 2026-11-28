@@ -103,11 +103,16 @@ _PRIORIDADES_TENANT: tuple[tuple[str, str], ...] = (
 )
 
 #: Catalogo de estados de ticket replicado en cada tenant (D-4), en orden de flujo.
+#: Enmienda 26/Nov/2026 (D-36): cuatro filas, `EnRevision` inicial y `Anulado`
+#: incluido; las descripciones dejan de nombrar el despacho historico.
 _ESTADOS_TICKET_TENANT: tuple[tuple[str, str], ...] = (
-    ("Pendiente", "Ticket creado, aun sin revision"),
-    ("EnRevision", "Revisando justificacion y disponibilidad"),
-    ("EnCurso", "Aprobado y en preparacion de despacho"),
-    ("Cerrado", "Despachado y con fecha de cierre registrada"),
+    ("EnRevision", "Pedido creado, en revision por la Administracion"),
+    ("EnCurso", "Aprobado y en preparacion para el retiro"),
+    ("Cerrado", "Retirado y con fecha de cierre registrada"),
+    (
+        "Anulado",
+        "Anulado o rechazado con motivo; si hubo retiro, el stock fue devuelto",
+    ),
 )
 
 #: Nombre de la sede inicial que recibe todo tenant recien aprovisionado (spec
@@ -539,7 +544,7 @@ def _provisionar_tenant_postgres(
 ) -> None:
     """Aprovisiona el esquema tenant real (PostgreSQL) y el registro de control.
 
-    Crea el esquema, su DDL canonical (las 23 tablas del tenant, incluida
+    Crea el esquema, su DDL canonical (las 22 tablas del tenant, incluida
     `version_esquema`; el mapa y el registro de motivos/constancias son solo de
     control), la institucion espejo, los catalogos replicados y el usuario
     Administrador inicial, y deja el tenant en la version objetivo al final. El

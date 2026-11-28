@@ -47,10 +47,12 @@ _ANULACION_Y_EDICION = {"Administrador", "Solicitante"}
 #: Ciclo de vida del ticket (Feature 013, AC-17): rechazo, operativo de bodega.
 _RECHAZO = {"Administrador", "Bodeguero"}
 
-#: Matriz completa vigente tras el ajuste de la 008, la operacion `GET
-#: /dashboard/` de la 009, el alta de institucion de la 010, las seis
-#: asignaciones organizacionales de la 011, las dieciseis operaciones de la 012
-#: y las cinco de ciclo de vida de la 013 (49 operaciones).
+#: Matriz completa de la transcripcion 008..013 vigente tras la enmienda
+#: 27/Nov/2026 de la 012: la operacion `GET /dashboard/` de la 009, el alta de
+#: institucion de la 010, las tres asignaciones organizacionales que sobreviven
+#: de la 011, las dieciseis operaciones de la 012 y las cinco de ciclo de vida de
+#: la 013 (46 operaciones: las 49 historicas menos las tres de la tabla puente
+#: auxiliar).
 MATRIZ_008: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/auth/me"): _TODOS,
     ("GET", "/api/v1/usuarios/"): _ORGANIZACION,
@@ -70,7 +72,7 @@ MATRIZ_008: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/tickets/catalogos"): _TODOS,
     ("GET", "/api/v1/tickets/"): _TODOS,
     ("POST", "/api/v1/tickets/"): _ESCRITURA_TICKETS,
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): _ESCRITURA_STOCK,
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _ESCRITURA_STOCK,
     # Feature 009 (D-3/AC-13/AC-14): lectura consolidada para los cuatro roles.
     ("GET", "/api/v1/dashboard/"): _TODOS,
@@ -80,18 +82,8 @@ MATRIZ_008: dict[tuple[str, str], set[str]] = {
     ("GET", "/api/v1/organizacion/sedes"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/departamentos/{departamento_id}/sede"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/usuarios/{usuario_id}/sede"): _ORGANIZACION,
-    (
-        "GET",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "DELETE",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}",
-    ): _ORGANIZACION,
+    # Enmienda 27/Nov/2026 de la 012: la tabla puente auxiliar y sus tres
+    # operaciones se retiran; las asignaciones de sede siguen vigentes.
     # Feature 012 (T6): gestion administrativa de control SaaS, solo Superadmin.
     ("GET", "/api/v1/control/instituciones/"): _ALTA_INSTITUCION,
     ("GET", "/api/v1/control/instituciones/{institucion_id}"): _ALTA_INSTITUCION,
@@ -136,7 +128,7 @@ OPERACIONES_AJUSTADAS = {
     ("POST", "/api/v1/inventario/productos"),
     ("POST", "/api/v1/inventario/movimientos"),
     ("POST", "/api/v1/tickets/"),
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"),
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"),
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"),
 }
 
@@ -146,6 +138,20 @@ OPERACIONES_AJUSTADAS = {
 #: ("el Administrador conserva las escrituras institucionales"); el alta sigue
 #: entre las cinco operaciones ajustadas y no se retira de la transcripcion.
 EXCEPCION_ALTA_026N: tuple[str, str] = ("POST", "/api/v1/tickets/")
+#: Enmienda 26/Nov/2026 de la 013 (D-30/AC-55): el retiro deja de concederse al
+#: Administrador y queda **solo** para el Bodeguero. Segunda excepcion
+#: documentada a la regla de la 008; la entrada no se retira (rename de clave).
+EXCEPCION_RETIRO_026N: tuple[str, str] = (
+    "POST",
+    "/api/v1/tickets/{ticket_id}/retiro",
+)
+#: Enmienda 26/Nov/2026 de la 013 (D-31/AC-64): el registro manual de
+#: movimientos `_ESCRITURA_STOCK` de la 008 queda **solo** para el Bodeguero.
+#: Tercera excepcion documentada; la entrada no se retira.
+EXCEPCION_MOVIMIENTOS_026N: tuple[str, str] = (
+    "POST",
+    "/api/v1/inventario/movimientos",
+)
 
 #: Matriz 007 (regresion): solo las operaciones NO ajustadas deben coincidir.
 MATRIZ_007: dict[tuple[str, str], set[str]] = {
@@ -153,7 +159,7 @@ MATRIZ_007: dict[tuple[str, str], set[str]] = {
     ("POST", "/api/v1/inventario/productos"): _ADMINISTRATIVOS,
     ("POST", "/api/v1/inventario/movimientos"): _INVENTARIO_Y_TICKETS,
     ("POST", "/api/v1/tickets/"): _TODOS,
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _INVENTARIO_Y_TICKETS,
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): _INVENTARIO_Y_TICKETS,
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): _INVENTARIO_Y_TICKETS,
 }
 
@@ -261,7 +267,7 @@ def test_matriz_central_conserva_la_esperada_para_008():
             assert vigente.get(clave) == RESTRINGIDAS_013[clave], clave
         else:
             assert vigente.get(clave) == roles, clave
-    assert len(MATRIZ_008) == 49
+    assert len(MATRIZ_008) == 46
 
 
 def test_ajuste_008_es_minimo_y_acotado():
@@ -283,14 +289,23 @@ def test_superadmin_deja_de_escribir_catalogo_stock_y_tickets():
 def test_administrador_conserva_las_escrituras_institucionales():
     """El Administrador conserva las escrituras institucionales de la 008.
 
-    Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29): `POST /tickets/` es la
-    unica excepcion documentada; el alta queda exclusiva del Solicitante y el
-    Administrador recibe 403. Las otras cuatro escrituras institucionales se
-    conservan sin cambios.
+    Enmienda 26/Nov/2026 de la Feature 007 (D-11/AC-29): `POST /tickets/` es una
+    excepcion documentada; el alta queda exclusiva del Solicitante y el
+    Administrador recibe 403. Enmienda 26/Nov/2026 de la 013 (D-30/D-31): el
+    retiro y el registro manual de movimientos pasan a ser exclusivos del
+    Bodeguero; las otras dos escrituras institucionales se conservan sin cambios.
     """
-    for clave in OPERACIONES_AJUSTADAS - {EXCEPCION_ALTA_026N}:
+    for clave in OPERACIONES_AJUSTADAS - {
+        EXCEPCION_ALTA_026N,
+        EXCEPCION_RETIRO_026N,
+        EXCEPCION_MOVIMIENTOS_026N,
+    }:
         assert "Administrador" in permisos.roles_de_operacion(*clave), clave
     assert set(permisos.roles_de_operacion(*EXCEPCION_ALTA_026N)) == {"Solicitante"}
+    assert set(permisos.roles_de_operacion(*EXCEPCION_RETIRO_026N)) == {"Bodeguero"}
+    assert set(permisos.roles_de_operacion(*EXCEPCION_MOVIMIENTOS_026N)) == {
+        "Bodeguero"
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +322,10 @@ def test_administrador_conserva_las_escrituras_institucionales():
 RESTRINGIDAS_013: dict[tuple[str, str], set[str]] = {
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): {"Administrador"},
     ("POST", "/api/v1/tickets/"): {"Solicitante"},
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): {"Bodeguero"},
+    # Enmienda 26/Nov/2026 de la 013 (D-31/AC-64): el registro manual de
+    # movimientos, escritura institucional de la 008, pasa a ser de bodega.
+    ("POST", "/api/v1/inventario/movimientos"): {"Bodeguero"},
 }
 
 CASOS_AJUSTADOS = [

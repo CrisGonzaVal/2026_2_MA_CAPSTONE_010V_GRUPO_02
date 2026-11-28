@@ -369,7 +369,6 @@ def test_clasificacion_no_consulta_datos_de_negocio(mundo_dashboard):
         "categoria",
         "estado_ticket",
         "prioridad",
-        "departamento_encargado",
     )
     with mundo_dashboard.begin() as conexion:
         for tabla in tablas_negocio:

@@ -1,5 +1,5 @@
 @if (autenticacion.estaAutenticado()) {
-<div class="flex h-screen bg-gray-100 font-sans">
+<div class="flex h-screen overflow-hidden [contain:paint] bg-gray-100 font-sans">
   <aside
     [class.w-64]="sidebarAbierto()"
     [class.w-20]="!sidebarAbierto()"
@@ -30,7 +30,10 @@
       </button>
     </div>
 
-    <nav class="flex-1 px-3 py-4 space-y-1" aria-label="Navegacion principal">
+    <nav
+      class="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1"
+      aria-label="Navegacion principal"
+    >
       @if (puedeVerDashboard()) {
         <a
           routerLink="/dashboard"

@@ -164,3 +164,207 @@ Spec: [`spec.md`](spec.md), aprobada por el usuario. Este plan concreta su imple
 ## 6. Cierre
 
 La ejecución no cambia entidades, columnas, DDL ni versión de esquema. El cierre actualiza `stack.md`, fila 018 de `roadmap.md`, `MEMORY.md` y evidencia AC en `spec.md`; las dos expectativas absolutas de 014 se registran como ampliadas a 61. No cerrar roadmap sin suites, OpenAPI y ambos recorridos conforme a AGENTS.md §8.5–§8.7.
+
+## 7. Enmienda 27/Nov/2026: checkbox «Solo con stock»
+
+Spec: [`spec.md`](spec.md) §11, **aprobada**. Es un cambio **solo de frontend** en la pestaña
+«Existencias» de `/inventario`: no crea feature nueva, no reabre el cierre de la 018 y no amplía
+contrato. Sin cambios en `inventario.service.ts`, backend, DDL, permisos, matriz, capacidades,
+OpenAPI ni `docs/spec/stack.md`. Cuando el checkbox está desmarcado, el comportamiento es el ya
+cerrado.
+
+> **Nota de nombres.** La petición de la enmienda cita `hayFiltrosActivos` y `conteosPorCategoria`;
+> los identificadores reales del componente son **`hayFiltros`** y **`conteoPorCategoria`**. Este
+> plan usa los reales para que T14 no introduzca alias ni duplique estado. `soloConStock` sí se
+> crea con el nombre pedido.
+
+### 7.1 Archivos y responsabilidades
+
+| Archivo | Responsabilidad | AC |
+|---|---|---|
+| `frontend/src/app/features/inventario/inventario.component.ts` | Signal `soloConStock`, integración en la cadena de filtros, `hayFiltros`, `limpiarFiltros` y precedencia del estado vacío. No toca la franja de indicadores. | AC-10…AC-13 |
+| `frontend/src/app/features/inventario/inventario.component.html` | Checkbox nativo accesible junto a «Solo stock crítico» y render del vacío por precedencia. Sin CSS embebido. | AC-10, AC-12, AC-13 |
+| `frontend/src/app/features/inventario/inventario.component.spec.ts` | Pruebas de AC-10…AC-13 y regresión de AC-6. No reescribe aserciones de AC-1…AC-9. | AC-10…AC-13 |
+
+**No se tocan:** `inventario.service.ts` (el filtro no viaja al servidor), ningún archivo de
+`backend/`, `database/`, `app/core/`, `app/shared/` ni `docs/spec/stack.md`.
+
+### 7.2 Estado y cadena de filtros
+
+1. **Signal.** Junto a `soloCriticos`:
+   `readonly soloConStock = signal(false);`
+2. **Cadena elegida:** el predicado se integra en `insumosCoincidentes`, que ya aplica texto y
+   críticos; `insumosVisibles` sigue aplicando la categoría y `conteoPorCategoria` sigue contando
+   sobre `insumosCoincidentes`. Así el panel de categorías y el contador «Todas» excluyen los
+   productos sin saldo sin duplicar el filtro (AC-12).
+
+   ```ts
+   readonly insumosCoincidentes = computed(() => {
+     const texto = this.normalizar(this.consulta());
+     const soloCriticos = this.soloCriticos();
+     const soloConStock = this.soloConStock();
+
+     return this.insumos().filter((insumo) => {
+       if (soloConStock && insumo.stock_total <= 0) {
+         return false;
+       }
+       if (soloCriticos && !insumo.es_critico) {
+         return false;
+       }
+       // ...texto sin cambios
+     });
+   });
+   ```
+
+   **Alternativa descartada:** un computed intermedio `insumosConStock` entre
+   `insumosCoincidentes` e `insumosVisibles`. Obligaría a mover `conteoPorCategoria` al nuevo
+   computed y dejaría dos bases de conteo (texto/críticos vs. texto/críticos/stock), justo el
+   defecto que AC-12 prohíbe.
+
+3. **`hayFiltros`.** Añadir `|| this.soloConStock()` a la condición existente (texto, categoría,
+   críticos y `filtrosOrganizacionalesActivos`). Gobierna la visibilidad de «Limpiar filtros» y el
+   vacío genérico; no altera la franja.
+4. **`limpiarFiltros`.** Añadir `this.soloConStock.set(false)` junto a `soloCriticos.set(false)`.
+   Se conserva la regla vigente: capturar `filtrosOrganizacionalesActivos()` **antes** de limpiar y
+   volver a pedir existencias solo si era verdadero; si el único filtro activo era de cliente
+   (incluido «Solo con stock»), no hay lectura nueva.
+5. **Franja intacta.** `totalCatalogo`, `totalConStock` y `totalCriticos` siguen calculándose sobre
+   `insumos()`. No se modifica ninguna de las tres líneas (AC-11 / D-10).
+6. **Sin persistencia.** Nada de `localStorage`, query param ni servicio de preferencias: el
+   signal arranca en `false` con cada instancia (AC-10 / D-13).
+
+### 7.3 Plantilla y accesibilidad
+
+En la barra de filtros, **después** del bloque de «Solo stock crítico» y **antes** del botón
+«Limpiar filtros» (para que el botón conserve su `ml-auto`). `input` y `label` hermanos dentro de
+un contenedor flex; la asociación es explícita por `for`/`id` (no se envuelve el input, para que
+no haya doble asociación):
+
+```html
+<div class="flex items-center gap-2">
+  <input
+    #conStock
+    id="solo-con-stock"
+    name="solo-con-stock"
+    type="checkbox"
+    class="h-4 w-4 rounded border-slate-300 text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+    [checked]="soloConStock()"
+    (change)="soloConStock.set(conStock.checked)"
+  />
+  <label for="solo-con-stock" class="text-sm text-slate-600">Solo con stock</label>
+</div>
+```
+
+- Mismo patrón de clases y de `focus-visible` que `#critico`; cero CSS embebido y cero `styles`.
+- Visible para Administrador, Bodeguero y Solicitante porque la barra no depende de
+  `filtrosVisibles()`; no se añade helper de roles (D-11).
+- No se mueve, renombra ni reestiliza «Solo stock crítico».
+
+### 7.4 Estado vacío con precedencia (AC-13)
+
+Se centraliza la decisión en un computed nuevo para no anidar condicionales en la plantilla:
+
+```ts
+readonly mensajeVacio = computed<string | null>(() => {
+  if (this.insumosVisibles().length > 0) {
+    return null;
+  }
+  if (this.soloConStock()) {
+    return this.insumos().length === 0
+      ? 'El catálogo no tiene insumos cargados.'
+      : 'Ningún insumo con stock coincide con los filtros aplicados.';
+  }
+  return this.hayFiltros()
+    ? 'Ningún insumo coincide con los filtros aplicados.'
+    : 'El catálogo no tiene insumos cargados.';
+});
+```
+
+La plantilla colapsa los tres bloques actuales de vacío en uno:
+
+```html
+@if (cargando()) {
+  <!-- «Cargando catálogo...» sin cambios -->
+} @else if (mensajeVacio()) {
+  <p class="rounded-xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-500">
+    {{ mensajeVacio() }}
+  </p>
+} @else {
+  <!-- tabla sin cambios -->
+}
+```
+
+> **Corrección post-validación (27/Nov/2026).** Angular 18 **no admite** el alias `as` en un
+> `@else if` (*«"as" expression is only allowed on the primary @if block»*): la forma realmente
+> usada es `@else if (mensajeVacio())` + `{{ mensajeVacio() }}`, documentada en `tasks.md` T14
+> (Nota de fase). Se conserva la decisión de centralizar la precedencia en el computed.
+
+**Precedencia resultante:** catálogo vacío con checkbox marcado → «El catálogo no tiene insumos
+cargados.»; catálogo no vacío y sin filas con saldo → mensaje propio de stock; sin checkbox y con
+filtros → mensaje genérico de AC-6. **Esta última rama es la que hoy prueba
+`debe distinguir el estado vacio del estado con filtros` con catálogo vacío + texto**: se conserva
+sin reescribirla. El `role="alert"` de `mensajeError()` y el estado `cargando()` quedan fuera de
+esta decisión y no se reordenan.
+
+**Alternativa descartada:** `@if` anidados en la plantilla. Repiten la precedencia en el HTML y
+hacen fácil que un cambio futuro vuelva a mostrar el mensaje genérico cuando ya existe catálogo;
+el computed deja una única fuente y se puede probar por DOM sin conocer la estructura.
+
+### 7.5 Pruebas (`inventario.component.spec.ts`)
+
+Se añaden casos nuevos; las 671 pruebas previas y sus aserciones de AC-1…AC-9 no se reescriben.
+Fixtures: se crea un `INSUMOS_CON_CERO` local de la enmienda (los 3 de `INSUMOS` más un producto
+con `stock_total: 0`, `sedes: []` y `es_critico: true` por la regla `0 <= stock_minimo`) para no
+mutar `INSUMOS`, que sostiene las pruebas existentes.
+
+| Prueba propuesta | AC | Qué afirma |
+|---|---|---|
+| *««Solo con stock» está visible para Administrador, Bodeguero y Solicitante y arranca desmarcado»* | AC-10 | Presencia del control en los tres roles, `checked === false`, sin depender de `filtrosVisibles()`; `Solicitante` no pide ámbito. |
+| *«el checkbox «Solo con stock» declara id, name y label, y no persiste al remontar la vista»* | AC-10 | `id`/`name`/`label[for]`, conmutación por clic en el label, foco alcanzable con anillo `focus-visible`, y `soloConStock()` en `false` tras destruir y crear una instancia nueva; sin escritura en URL/almacenamiento. La conmutación por teclado la aporta el control nativo y se comprueba en el recorrido 4200 (T15): los eventos sintéticos no disparan la activación nativa. |
+| *«marcar «Solo con stock» oculta los productos con stock_total 0 sin alterar la franja ni pedir existencias»* | AC-11 | Con `INSUMOS_CON_CERO`: 4 filas → 3; desaparece el producto en cero; `totalCatalogo/totalConStock/totalCriticos` iguales antes y después; sin peticiones nuevas. |
+| *«desmarcar «Solo con stock» recupera los productos sin saldo»* | AC-11 | Vuelven las 4 filas y los conteos siguen intactos. |
+| *««Solo con stock» se combina con texto, categoría, críticos y filtros organizacionales»* | AC-12 | Con sede elegida y `flush` de existencias, más texto/categoría/críticos, queda la intersección; se conserva el `departamento_id` ya afirmado por AC-7. |
+| *«el panel de categorías excluye los productos sin saldo al marcar «Solo con stock»»* | AC-12 | «Todas» y el conteo de la categoría del producto en cero bajan en 1; la categoría sin productos en cero no cambia. |
+| *««Limpiar filtros» desmarca «Solo con stock» y restablece el resto»* | AC-12 | El botón aparece con solo el checkbox marcado; al pulsarlo vuelve a `false`, y no hay `GET` de existencias si no había filtro organizacional. |
+| *«sin productos con stock muestra un vacío que distingue la falta de stock»* | AC-13 | Catálogo con todos los productos en cero + checkbox marcado → «Ningún insumo con stock coincide con los filtros aplicados.». |
+| *«el vacío de catálogo prevalece sobre el vacío de «Solo con stock»»* | AC-13 | `cargar([], [])` + checkbox marcado → «El catálogo no tiene insumos cargados.». |
+
+- Toggles: `componente.soloConStock.set(true/false)` o `input.click()`; el `afterEach` con
+  `httpMock.verify({ ignoreCancelled: true })` ya detecta peticiones abiertas y cada prueba de
+  AC-11/AC-12 añade la afirmación explícita de que no se abrió ninguna.
+- La prueba existente de error (`debe mostrar un error si el backend no responde`) y la de AC-6
+  quedan intactas; si el orden del vacío se toca, deben seguir verdes sin cambios.
+- No se agregan pruebas de backend: no hay cambio de contrato. `pytest` no se ejecuta por esta
+  enmienda.
+
+### 7.6 Riesgos y mitigaciones
+
+| Riesgo | Mitigación |
+|---|---|
+| La franja de indicadores se mueve al marcar | No tocar las tres líneas de `totalCatalogo/totalConStock/totalCriticos`; prueba explícita de igualdad antes/después (AC-11). |
+| Los conteos del panel dejan de coincidir con la tabla | Predicado dentro de `insumosCoincidentes` (base de `conteoPorCategoria` y de «Todas»); prueba de conteos (AC-12). |
+| Duplicar el filtro en template y componente | El template solo enlaza el signal; toda la lógica vive en la cadena de computeds. |
+| Regresión de AC-6 por el nuevo vacío | `mensajeVacio()` conserva literalmente los dos mensajes y la precedencia del caso «catálogo vacío + filtro de texto»; prueba existente sin reescribir. |
+| Persistencia accidental o estado sucio entre navegaciones | Signal de instancia, sin URL/almacenamiento; prueba de remontaje. |
+| Petición extra al marcar/limpiar | Toggle solo actualiza signals; `limpiarFiltros` mantiene la condición de refetch organizacional; aserción de cero peticiones. |
+| Doble asociación label/input | `label for` hermano, no envolvente; prueba de clic en el label. |
+| Romper la suite por mutar `INSUMOS` | Fixture local `INSUMOS_CON_CERO`; `INSUMOS` intacto. |
+
+### 7.7 Baseline, verificación y cierre
+
+- **Baseline frontend:** `ng test` **671 SUCCESS / 0 FAILED (44 specs)** al cierre de la 013. Se
+  esperan ~9 pruebas nuevas, sin cambios de estado en las 671 previas; `ng build` limpio y sin
+  avisos de presupuesto.
+- **Backend:** no se toca. La línea vigente **2163 passed / 127 skipped / 0 failed** (SQLite) y
+  **2287 passed / 3 skipped / 0 failed** (gated PostgreSQL) se conserva por ausencia de cambios;
+  no se reejecuta `pytest` por esta enmienda.
+- **4200:** el dev server ya está levantado (**PID 22204**); **no reiniciarlo** ni relanzarlo. El
+  recorrido usa la evidencia de la 018: con `sede_id=1` hay un insumo con `stock_total: 0`
+  (franja 3/2/1), que sirve como caso visible → oculto.
+- **8080:** exige reconstruir la imagen (`docker compose -f docker-compose.yml build frontend` +
+  `up -d frontend`) antes del humo, porque el contenedor sirve un build congelado
+  (AGENTS.md §5/§8.6).
+- **Cierre documental:** `evidencia/README.md` con sección nueva por AC-10…AC-13, fila 018 de
+  `roadmap.md` anotada con la enmienda (sin crear fila ni feature nueva), `MEMORY.md` y grep de
+  coherencia sobre `AGENTS.md`, `MEMORY.md` y `.agents/skills/`. `stack.md` no cambia: no hay API,
+  DDL, matriz ni capacidad nuevos.

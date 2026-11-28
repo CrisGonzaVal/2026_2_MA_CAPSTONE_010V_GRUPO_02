@@ -3,8 +3,9 @@
 Re-exporta los modelos para que `from app.models import Ticket` siga siendo
 valido, igual que cuando vivian todos en `models.py`. El re-export tambien
 garantiza que SQLAlchemy los registre todos antes de configurar los mappers, y que
-`Base.metadata` (DDL por esquema, `schema_translate_map`) vea las entidades nuevas
-de la Feature 011 (`Sede`, `StockSede`, `DepartamentoEncargado`).
+`Base.metadata` (DDL por esquema, `schema_translate_map`) vea las entidades de la
+Feature 011 (`Sede`, `StockSede`). La tabla puente auxiliar se retiro con la
+enmienda 27/Nov/2026 de la 012.
 """
 
 from app.db.database import Base
@@ -31,7 +32,6 @@ from app.models.control_canonico import (
 )
 from app.models.institucion import Departamento, Institucion
 from app.models.inventario import MovimientoInventario
-from app.models.organizacion import DepartamentoEncargado
 from app.models.producto import (
     Categoria,
     HistorialTransicionCategoria,
@@ -55,7 +55,6 @@ __all__ = [
     "BaseControl",
     "Categoria",
     "Departamento",
-    "DepartamentoEncargado",
     "DetalleOrdenCompra",
     "DetalleTicket",
     "ESTADOS_INVITACION",

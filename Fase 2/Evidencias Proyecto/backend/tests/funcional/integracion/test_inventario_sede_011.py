@@ -382,7 +382,10 @@ def test_movimiento_nuevo_audita_por_stock_sede(motor, datos_base):
     )
 
     with cliente(
-        motor, "Administrador", departamento_id=datos_base["departamento_id"]
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_id,
     ) as cliente_http:
         respuesta = cliente_http.post(
             RUTA_MOVIMIENTOS,
@@ -421,7 +424,10 @@ def test_movimiento_con_saldo_insuficiente_responde_409_sin_auditoria(
     auditorias_antes = contar_movimientos(motor)
 
     with cliente(
-        motor, "Administrador", departamento_id=datos_base["departamento_id"]
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_id,
     ) as cliente_http:
         respuesta = cliente_http.post(
             RUTA_MOVIMIENTOS,
@@ -441,9 +447,13 @@ def test_movimiento_con_stock_sede_inexistente_responde_404(motor, datos_base):
     """AC-3: una referencia de stock por sede inexistente responde 404 sin efecto."""
     exigir_contrato_movimiento_por_sede()
     auditorias_antes = contar_movimientos(motor)
+    sede_id = crear_sede(motor, institucion_id=datos_base["institucion_id"])
 
     with cliente(
-        motor, "Administrador", departamento_id=datos_base["departamento_id"]
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_id,
     ) as cliente_http:
         respuesta = cliente_http.post(
             RUTA_MOVIMIENTOS,

@@ -251,3 +251,36 @@ La Feature 018 podrá definir una lectura de bitácora y una consulta puntual de
 - Reenvío crea invitación nueva; la operación Clerk no es atómica con la revocación previa.
 - Motivos aplican solo al conjunto cerrado D-7; reasignación de sede queda fuera.
 - La bitácora visible y cualquier consulta puntual de estado Clerk se reservan para posible Feature 018.
+
+## 11. Nota de coordinación (27/Nov/2026): enmienda funcional de la Feature 012
+
+La **enmienda funcional posterior al cierre de la Feature 012**
+(`docs/spec/features/012-gestion-administrativa/spec.md`, sección «Enmienda funcional
+posterior al cierre (27/Nov/2026): alta y edición de usuarios según rol») cambia únicamente
+los campos organizacionales del alta y la edición de usuarios y la forma del DTO de
+entrada. **No reescribe esta spec.**
+
+- **Flujo de invitación sin cambios.** Se conservan el orden validar → invitar → confirmar
+  tenant → confirmar mapa, los estados persistidos (`pendiente`, `aceptada`, `revocada`,
+  `expirada`), la reutilización de una invitación pendiente, el reenvío, las constancias y
+  los 409/422/503 de D-1/D-2/D-4. Un alta de Bodeguero sin `departamento_id` sigue invitando
+  exactamente igual.
+- **Único cambio de contrato.** `departamento_id` pasa a ser opcional en `UsuarioCrear` y
+  `UsuarioEdicion`; cuando falta, el servicio responde **422** para todo rol distinto de
+  Bodeguero y resuelve el departamento «Suministros» para Bodeguero. La columna sigue `NOT NULL`
+  y `UsuarioRespuesta` sigue publicando el valor real. La tabla de D-10 conserva método,
+  ruta, éxito y errores; solo cambia la forma del DTO de entrada.
+- **Motivos (D-5/D-7).** La regla no cambia: una edición efectiva exige motivo. La enmienda
+  hace que el paso de un Bodeguero legacy a «Suministros» sea un cambio efectivo y, por tanto,
+  motivado. `PUT /api/v1/organizacion/usuarios/{usuario_id}/sede` sigue expresamente fuera
+  del catálogo de motivos.
+- **Sin cambios en roles ni en la ruta de control.** La ruta de control sigue gestionando
+  solo Administradores y su vista no se modifica; el 403 del Superadmin en las rutas
+  ordinarias y los roles asignables se conservan.
+- **Retiro de `departamento_encargado`.** La misma enmienda eliminó la tabla auxiliar, su
+  vista y sus operaciones. La mención de §8 «15 entidades de dominio + `departamento_encargado`»
+  queda superada: el estado vigente, desde el **27/Nov/2026**, es **21 entidades de dominio**
+  sin tabla auxiliar y **25/22** con token **`026.1`**. El flujo de invitación no cambia.
+
+Esta nota es solo de coordinación: la autoridad del flujo de invitación sigue siendo esta
+017 y la de los campos organizacionales, la enmienda de la 012.

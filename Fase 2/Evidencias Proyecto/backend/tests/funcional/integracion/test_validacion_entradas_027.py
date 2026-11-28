@@ -4,6 +4,7 @@ import pytest
 
 from tests.funcional.integracion._soporte_sede_011 import (
     asegurar_sede_de_departamento,
+    cliente as cliente_de_rol,
 )
 
 
@@ -118,39 +119,46 @@ def test_producto_acepta_limites_y_rechaza_excesos_sin_500(cliente, datos_base):
 
 
 def test_movimiento_acepta_entrada_en_minusculas_y_rechaza_invalidos(
-    cliente, datos_base, sede_base
+    motor, datos_base, sede_base
 ):
+    """Enmienda 26/Nov/2026 (D-31/AC-64): el registro manual es del Bodeguero."""
     stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
-    valido = cliente.post(
-        "/api/v1/inventario/movimientos",
-        json={
-            "tipo_movimiento": "entrada",
-            "cantidad": 1,
-            "observacion": "o" * 250,
-            "stock_sede_id": stock_sede_id,
-        },
-    )
-    assert valido.status_code == 201, valido.text
-
-    for cambios in (
-        {"cantidad": 0},
-        {"cantidad": -1},
-        {"observacion": "o" * 251},
-        {"tipo_movimiento": "AJUSTE"},
-        {"stock_sede_id": 0},
-        {"campo_extra": 1},
-    ):
-        datos = {
-            "tipo_movimiento": "ENTRADA",
-            "cantidad": 1,
-            "observacion": "valida",
-            "stock_sede_id": stock_sede_id,
-            **cambios,
-        }
-        rechazado = cliente.post(
-            "/api/v1/inventario/movimientos", json=datos
+    with cliente_de_rol(
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_base["sede_id"],
+    ) as cliente:
+        valido = cliente.post(
+            "/api/v1/inventario/movimientos",
+            json={
+                "tipo_movimiento": "entrada",
+                "cantidad": 1,
+                "observacion": "o" * 250,
+                "stock_sede_id": stock_sede_id,
+            },
         )
-        assert rechazado.status_code == 422, (cambios, rechazado.text)
+        assert valido.status_code == 201, valido.text
+
+        for cambios in (
+            {"cantidad": 0},
+            {"cantidad": -1},
+            {"observacion": "o" * 251},
+            {"tipo_movimiento": "AJUSTE"},
+            {"stock_sede_id": 0},
+            {"campo_extra": 1},
+        ):
+            datos = {
+                "tipo_movimiento": "ENTRADA",
+                "cantidad": 1,
+                "observacion": "valida",
+                "stock_sede_id": stock_sede_id,
+                **cambios,
+            }
+            rechazado = cliente.post(
+                "/api/v1/inventario/movimientos", json=datos
+            )
+            assert rechazado.status_code == 422, (cambios, rechazado.text)
 
 
 def test_usuario_acepta_limites_y_rechaza_invalidos(cliente, datos_base):

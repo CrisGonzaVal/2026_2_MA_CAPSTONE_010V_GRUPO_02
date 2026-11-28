@@ -111,7 +111,10 @@ _ROLES = ("Superadmin", "Administrador", "Bodeguero", "Solicitante")
 
 
 def _identidad(
-    rol: str, departamento_id: int | None, usuario_id: int = 9999
+    rol: str,
+    departamento_id: int | None,
+    usuario_id: int = 9999,
+    sede_id: int | None = None,
 ) -> IdentidadAutenticada:
     """Identidad autenticada con el rol, el departamento y el id de usuario dados.
 
@@ -120,7 +123,8 @@ def _identidad(
     departamento` por ORM. Para Superadmin el departamento es irrelevante (alcance
     global); para los roles limitados apunta al departamento sembrado. `usuario_id`
     permite al Solicitante apuntar a un usuario persistido cuyos tickets son los
-    unicos visibles (AC-2).
+    unicos visibles (AC-2). `sede_id` puebla `usuario.sede_id`, la sede operativa
+    del Bodeguero (Feature 011; enmienda 26/Nov/2026, D-31/AC-64).
     """
     usuario = Usuario(
         usuario_id=usuario_id,
@@ -131,6 +135,8 @@ def _identidad(
         rol_id=1,
     )
     usuario.rol = Rol(nombre_rol=rol)
+    if sede_id is not None:
+        usuario.sede_id = sede_id
     return IdentidadAutenticada(usuario=usuario, sub="sub-dashboard")
 
 
@@ -141,6 +147,7 @@ def _cliente(
     *,
     departamento_id: int | None = None,
     usuario_id: int = 9999,
+    sede_id: int | None = None,
 ):
     """`TestClient` del `app` real con `get_db` en SQLite y la identidad por rol.
 
@@ -159,7 +166,7 @@ def _cliente(
     app.dependency_overrides[dependencies.get_db] = _db_de_prueba
     if rol is not _SIN_AUTENTICAR:
         app.dependency_overrides[dependencies.get_current_user] = lambda: _identidad(
-            rol, departamento_id, usuario_id
+            rol, departamento_id, usuario_id, sede_id
         )
     try:
         with TestClient(app) as cliente:
@@ -485,6 +492,7 @@ def escenario_kpi(motor):
             "stock_sede_papel_op_a": stock_papel_op_a.stock_sede_id,
             "stock_sede_papel_b": stock_papel_b.stock_sede_id,
             "sede_papel_op_a": sede_op_a.sede_id,
+            "sede_papel_b": sede_op_b.sede_id,
             "stock_sede_papel_op_a": stock_papel_op_a.stock_sede_id,
         }
     finally:
@@ -821,9 +829,10 @@ def test_cruce_de_umbral_por_movimiento_real_no_persiste_alertas(motor, escenari
 
     with _cliente(
         motor,
-        "Administrador",
+        "Bodeguero",
         departamento_id=escenario_kpi["dep_op_a"],
         usuario_id=escenario_kpi["admin_a"],
+        sede_id=sede_id,
     ) as cliente:
         assert _alerta_de_la_sede(cliente), "la sede 9/10 arranca critica"
 
@@ -893,14 +902,20 @@ def test_superadmin_filas_de_alertas_y_actividad_recibe_403_ac_15(
     Superadmin recibe 403 sin alertas ni actividad.
     """
     with _cliente(
-        motor, "Administrador", departamento_id=escenario_kpi["dep_op_a"]
+        motor,
+        "Bodeguero",
+        departamento_id=escenario_kpi["dep_op_a"],
+        sede_id=escenario_kpi["sede_papel_op_a"],
     ) as cliente_a:
         entrada_a = cliente_a.post(
             RUTA_MOVIMIENTOS,
             json=_cuerpo_movimiento(escenario_kpi["stock_sede_papel_op_a"], "ENTRADA", 1),
         )
     with _cliente(
-        motor, "Administrador", departamento_id=escenario_kpi["dep_op_b"]
+        motor,
+        "Bodeguero",
+        departamento_id=escenario_kpi["dep_op_b"],
+        sede_id=escenario_kpi["sede_papel_b"],
     ) as cliente_b:
         entrada_b = cliente_b.post(
             RUTA_MOVIMIENTOS,

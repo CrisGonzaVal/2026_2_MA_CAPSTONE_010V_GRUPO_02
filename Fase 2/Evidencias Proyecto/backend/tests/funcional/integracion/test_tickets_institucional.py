@@ -1,4 +1,4 @@
-"""T7 (Feature 008): aislamiento institucional de tickets, catalogos y despacho.
+"""T7 (Feature 008): aislamiento institucional de tickets, catalogos y retiro.
 
 Seam bajo prueba: la **interfaz HTTP del `app` real** (`TestClient`), con dos
 instituciones plenamente sembradas (INST01 propia, INST02 ajena) y catalogos
@@ -10,7 +10,7 @@ homonimos independientes. Se comprueba:
     las de la **identidad de sesion**; un `usuario_id` ajeno enviado en el
     payload se ignora sin 404, mientras que un producto ajeno sigue oculto con
     **404** y sin ticket ni detalle parciales.
-  * `PATCH /tickets/{ticket_id}/estado` y despacho (AC-7/AC-9): un ticket ajeno
+  * `PATCH /tickets/{ticket_id}/estado` y retiro (AC-7/AC-9): un ticket ajeno
     responde 404 sin mutar.
   * Despacho (AC-12): producto o inventario de institucion cruzada, falta de
     stock o fallo de commit no dejan stock, entrega, estado ni auditoria
@@ -71,7 +71,7 @@ def particion(motor, datos_base):
     categoria/producto propios y un producto homonimo (mismo nombre que el de
     INST01) con stock 7.
 
-    Se anaden ademas dos casos de cruce para el despacho: un detalle cuyo
+    Se anaden ademas dos casos de cruce para el retiro: un detalle cuyo
     producto es de INST02 y un producto de INST01 cuya unica existencia vive en
     un departamento de INST02 (inventario con `institucion_id` NULL para que la
     FK compuesta no lo bloquee; `institucion_de_inventario` lo detecta por el
@@ -84,7 +84,7 @@ def particion(motor, datos_base):
         # imposibles por las claves compuestas; se siembran con las FK
         # desactivadas para poder ejercer la defensa en profundidad del servicio
         # (AC-12), igual que el detalle huerfano inyectado en
-        # `test_despacho_transaccional.py`. Se restauran antes de ceder el motor a
+        # `test_retiro_transaccional.py`. Se restauran antes de ceder el motor a
         # los tests.
         with motor.connect() as conexion:
             conexion.exec_driver_sql("PRAGMA foreign_keys=OFF")
@@ -92,14 +92,14 @@ def particion(motor, datos_base):
         db.query(EstadoTicket).delete()
         db.flush()
         estados: dict[str, int] = {}
-        for nombre in ("Pendiente", "EnRevision", "EnCurso", "Cerrado"):
+        for nombre in ("EnRevision", "EnCurso", "Cerrado", "Anulado"):
             estado = EstadoTicket(nombre=nombre, descripcion=f"Estado {nombre}")
             db.add(estado)
             db.flush()
             estados[nombre] = estado.estado_id
 
         # Feature 011 (T9): la sede de INST01 sostiene la instantanea del ticket y
-        # el stock que el despacho rebaja. Se anade una fila de `stock_sede` del
+        # el stock que el retiro rebaja. Se anade una fila de `stock_sede` del
         # producto propio (40) y otra **cruzada** (misma sede, `institucion_id`
         # INST02) para ejercer la defensa en profundidad del servicio, sembrada
         # con las FK desactivadas como el resto de cruces de esta fixture.
@@ -188,7 +188,7 @@ def particion(motor, datos_base):
         db.flush()
 
         # Feature 011 (T9): existencias por sede de INST01. La del producto propio
-        # sostiene el despacho valido y el de falta de stock; la del producto
+        # sostiene el retiro valido y el de falta de stock; la del producto
         # cruzado declara `institucion_id` INST02 (cruce, FK desactivada) para que
         # el servicio la rechace al no pertenecer a la institucion del ticket.
         stock_propio = StockSede(
@@ -199,7 +199,7 @@ def particion(motor, datos_base):
         )
         db.add(stock_propio)
         # Cruce deliberado: el producto es de INST01 pero la fila de saldo declara
-        # INST02; el servicio debe rechazar el despacho con 409 sin mutar.
+        # INST02; el servicio debe rechazar el retiro con 409 sin mutar.
         stock_cruzado = StockSede(
             sede_id=sede_propia.sede_id,
             producto_id=producto_cruce_inventario.producto_id,
@@ -259,7 +259,6 @@ def particion(motor, datos_base):
             "stock_sede_propio_id": stock_propio.stock_sede_id,
             "producto_cruce_stock_sede_id": producto_cruce_inventario.producto_id,
             "stock_sede_cruzado_id": stock_cruzado.stock_sede_id,
-            "estado_pendiente_id": estados["Pendiente"],
             "estado_en_revision_id": estados["EnRevision"],
             "estado_en_curso_id": estados["EnCurso"],
             "estado_cerrado_id": estados["Cerrado"],
@@ -313,7 +312,7 @@ def particion(motor, datos_base):
 # ---------------------------------------------------------------------------
 
 
-def _identidad(rol: str, departamento_id, usuario_id: int = 9999) -> IdentidadAutenticada:
+def _identidad(rol: str, departamento_id, usuario_id: int = 9999, sede_id: int | None = None) -> IdentidadAutenticada:
     usuario = Usuario(
         usuario_id=usuario_id,
         nombre="Sonda",
@@ -323,11 +322,21 @@ def _identidad(rol: str, departamento_id, usuario_id: int = 9999) -> IdentidadAu
         rol_id=1,
     )
     usuario.rol = Rol(nombre_rol=rol)
+    if sede_id is not None:
+        usuario.sede_id = sede_id
     return IdentidadAutenticada(usuario=usuario, sub=f"sub-particion-{rol.lower()}")
 
 
 @contextmanager
-def _cliente(motor, rol: str, departamento_id, usuario_id: int = 9999, *, sin_excepcion=False):
+def _cliente(
+    motor,
+    rol: str,
+    departamento_id,
+    usuario_id: int = 9999,
+    *,
+    sede_id: int | None = None,
+    sin_excepcion=False,
+):
     Fabrica = sessionmaker(autocommit=False, autoflush=False, bind=motor)
 
     def _db_de_prueba():
@@ -339,7 +348,7 @@ def _cliente(motor, rol: str, departamento_id, usuario_id: int = 9999, *, sin_ex
 
     app.dependency_overrides[dependencies.get_db] = _db_de_prueba
     app.dependency_overrides[dependencies.get_current_user] = (
-        lambda: _identidad(rol, departamento_id, usuario_id)
+        lambda: _identidad(rol, departamento_id, usuario_id, sede_id)
     )
     try:
         with TestClient(app, raise_server_exceptions=not sin_excepcion) as cliente:
@@ -358,7 +367,7 @@ def _payload(
 ) -> dict:
     cuerpo = {
         "prioridad_id": datos["prioridad_id"],
-        "estado_id": datos["estado_pendiente_id"],
+        "estado_id": datos["estado_en_revision_id"],
         "asunto": "Alta de ticket institucional",
         "descripcion": "Prueba de aislamiento institucional.",
         "detalles": [{"producto_id": producto_id, "cantidad_solicitada": cantidad}],
@@ -397,7 +406,7 @@ def _stock_persistido(motor, stock_sede_id: int) -> int:
 def _salidas_del_ticket(motor, ticket_id: int) -> list[dict]:
     db = sessionmaker(bind=motor)()
     try:
-        marca = f"Despacho ticket_id={ticket_id};"
+        marca = f"Salida por retiro del ticket #{ticket_id};"
         return [
             {
                 "movimiento_id": m.movimiento_id,
@@ -473,11 +482,11 @@ def _abrir_ticket_en_curso(motor, datos, producto_id, cantidad=3) -> int:
         datos["departamento_id"],
         datos["usuario_id"],
     ) as administrador:
-        for estado_id in (datos["estado_en_revision_id"], datos["estado_en_curso_id"]):
-            avance = administrador.patch(
-                f"{RUTA_TICKETS}{ticket_id}/estado", json={"estado_id": estado_id}
-            )
-            assert avance.status_code == 200, avance.text
+        avance = administrador.patch(
+            f"{RUTA_TICKETS}{ticket_id}/estado",
+            json={"estado_id": datos["estado_en_curso_id"]},
+        )
+        assert avance.status_code == 200, avance.text
     return ticket_id
 
 
@@ -649,7 +658,7 @@ def test_solicitante_ignora_usuario_ajeno_y_conserva_autoatribucion(motor, parti
 
 
 # ---------------------------------------------------------------------------
-# PATCH estado (AC-7) y despacho (AC-9/AC-12)
+# PATCH estado (AC-7) y retiro (AC-9/AC-12)
 # ---------------------------------------------------------------------------
 
 
@@ -674,10 +683,15 @@ def test_patch_ticket_ajeno_404_sin_cambiar(motor, particion):
     assert despues == antes
 
 
-def test_despacho_producto_cruzado_409_sin_efectos(motor, particion):
-    with _cliente(motor, "Bodeguero", particion["departamento_id"]) as cliente:
+def test_retiro_producto_cruzado_409_sin_efectos(motor, particion):
+    with _cliente(
+        motor,
+        "Bodeguero",
+        particion["departamento_id"],
+        sede_id=particion["sede_propia_id"],
+    ) as cliente:
         respuesta = cliente.post(
-            f"{RUTA_TICKETS}{particion['ticket_cruce_producto_id']}/despacho",
+            f"{RUTA_TICKETS}{particion['ticket_cruce_producto_id']}/retiro",
             json={"usuario_id": particion["usuario_id"]},
         )
         _verificar_sin_efectos(
@@ -695,10 +709,15 @@ def test_despacho_producto_cruzado_409_sin_efectos(motor, particion):
     assert "institucion" in respuesta.json()["detail"].lower()
 
 
-def test_despacho_inventario_cruzado_409_sin_efectos(motor, particion):
-    with _cliente(motor, "Bodeguero", particion["departamento_id"]) as cliente:
+def test_retiro_inventario_cruzado_409_sin_efectos(motor, particion):
+    with _cliente(
+        motor,
+        "Bodeguero",
+        particion["departamento_id"],
+        sede_id=particion["sede_propia_id"],
+    ) as cliente:
         respuesta = cliente.post(
-            f"{RUTA_TICKETS}{particion['ticket_cruce_stock_sede_id']}/despacho",
+            f"{RUTA_TICKETS}{particion['ticket_cruce_stock_sede_id']}/retiro",
             json={"usuario_id": particion["usuario_id"]},
         )
         _verificar_sin_efectos(
@@ -713,10 +732,15 @@ def test_despacho_inventario_cruzado_409_sin_efectos(motor, particion):
     assert "institucion" in respuesta.json()["detail"].lower()
 
 
-def test_despacho_falta_stock_409_sin_efectos(motor, particion):
-    with _cliente(motor, "Bodeguero", particion["departamento_id"]) as cliente:
+def test_retiro_falta_stock_409_sin_efectos(motor, particion):
+    with _cliente(
+        motor,
+        "Bodeguero",
+        particion["departamento_id"],
+        sede_id=particion["sede_propia_id"],
+    ) as cliente:
         respuesta = cliente.post(
-            f"{RUTA_TICKETS}{particion['ticket_falta_stock_id']}/despacho",
+            f"{RUTA_TICKETS}{particion['ticket_falta_stock_id']}/retiro",
             json={"usuario_id": particion["usuario_id"]},
         )
         _verificar_sin_efectos(
@@ -730,11 +754,11 @@ def test_despacho_falta_stock_409_sin_efectos(motor, particion):
     assert respuesta.status_code == 409, respuesta.text
 
 
-def test_despacho_valido_actualiza_stock_entrega_estado_y_auditoria(motor, particion):
-    # Actor persistido: el despacho registra su fila de historial con FK a
+def test_retiro_valido_actualiza_stock_entrega_estado_y_auditoria(motor, particion):
+    # Actor persistido: el retiro registra su fila de historial con FK a
     # `usuario` (013, AC-9); la sonda sintetica 9999 no existe en la BD.
     # Enmienda 26/Nov/2026: el pedido se abre por la API con el Solicitante; el
-    # `PATCH /estado` lo ejerce el Administrador y el despacho el Bodeguero.
+    # `PATCH /estado` lo ejerce el Administrador y el retiro el Bodeguero.
     ticket_id = _abrir_ticket_en_curso(
         motor,
         particion,
@@ -743,13 +767,17 @@ def test_despacho_valido_actualiza_stock_entrega_estado_y_auditoria(motor, parti
     )
 
     with _cliente(
-        motor, "Bodeguero", particion["departamento_id"], particion["usuario_id"]
+        motor,
+        "Bodeguero",
+        particion["departamento_id"],
+        particion["usuario_id"],
+        sede_id=particion["sede_propia_id"],
     ) as cliente:
         stock_inicial = _stock_sede(
             motor, particion["sede_propia_id"], particion["producto_propio_id"]
         )
         respuesta = cliente.post(
-            f"{RUTA_TICKETS}{ticket_id}/despacho",
+            f"{RUTA_TICKETS}{ticket_id}/retiro",
             json={"usuario_id": particion["usuario_id"]},
         )
 
@@ -771,8 +799,8 @@ def test_despacho_valido_actualiza_stock_entrega_estado_y_auditoria(motor, parti
         assert salidas[0]["stock_sede_id"] is not None
 
 
-def test_despacho_revierte_todo_si_el_commit_falla(motor, particion):
-    """AC-12: un fallo del `commit` revierte las cuatro capas que toca el despacho.
+def test_retiro_revierte_todo_si_el_commit_falla(motor, particion):
+    """AC-12: un fallo del `commit` revierte las cuatro capas que toca el retiro.
 
     Se inyecta el fallo en `Session.commit` cuando el servicio ya muto inventario,
     detalles, ticket y movimientos; se observa la respuesta 500 y que ninguna
@@ -780,7 +808,7 @@ def test_despacho_revierte_todo_si_el_commit_falla(motor, particion):
     """
     from sqlalchemy.orm import Session
 
-    # Actor persistido para la fila de historial del despacho (013, AC-9).
+    # Actor persistido para la fila de historial del retiro (013, AC-9).
     # Enmienda 26/Nov/2026: el pedido se abre con el Solicitante y el `PATCH` de
     # avance lo ejerce el Administrador.
     stock_inicial = _stock_sede(
@@ -794,16 +822,20 @@ def test_despacho_revierte_todo_si_el_commit_falla(motor, particion):
     )
 
     def commit_que_falla(self):
-        raise RuntimeError("fallo de commit inyectado en el despacho")
+        raise RuntimeError("fallo de commit inyectado en el retiro")
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(Session, "commit", commit_que_falla)
     try:
         with _cliente(
-            motor, "Bodeguero", particion["departamento_id"], sin_excepcion=True
+            motor,
+            "Bodeguero",
+            particion["departamento_id"],
+            sede_id=particion["sede_propia_id"],
+            sin_excepcion=True,
         ) as cliente:
             respuesta = cliente.post(
-                f"{RUTA_TICKETS}{ticket_id}/despacho",
+                f"{RUTA_TICKETS}{ticket_id}/retiro",
                 json={"usuario_id": particion["usuario_id"]},
             )
             assert respuesta.status_code == 500, respuesta.text

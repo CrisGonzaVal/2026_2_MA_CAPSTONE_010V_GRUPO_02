@@ -56,8 +56,8 @@ MAPA_OPERACION_CAPACIDAD: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/tickets/catalogos"): "tickets",
     ("GET", "/api/v1/tickets/"): "tickets",
     ("POST", "/api/v1/tickets/"): "tickets",
-    # --- kanban: tablero operativo de estado/despacho ---
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): "kanban",
+    # --- kanban: tablero operativo de estado/retiro ---
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): "kanban",
     ("PATCH", "/api/v1/tickets/{ticket_id}/estado"): "kanban",
     # --- ciclo de vida 013 (plan §2): anulacion y rechazo son mutaciones del
     # ciclo de vida, la misma familia que despacho/estado -> `kanban`; edicion,
@@ -77,22 +77,10 @@ MAPA_OPERACION_CAPACIDAD: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/tickets/{ticket_id}/historial"): "tickets",
     # --- dashboard: dashboard analitico del tenant ---
     ("GET", "/api/v1/dashboard/"): "dashboard",
-    # --- gestion_organizacional: sedes, departamentos, usuarios y encargados ---
+    # --- gestion_organizacional: sedes, departamentos y usuarios ---
     ("GET", "/api/v1/organizacion/sedes"): "gestion_organizacional",
     ("PUT", "/api/v1/organizacion/departamentos/{departamento_id}/sede"): "gestion_organizacional",
     ("PUT", "/api/v1/organizacion/usuarios/{usuario_id}/sede"): "gestion_organizacional",
-    (
-        "GET",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): "gestion_organizacional",
-    (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): "gestion_organizacional",
-    (
-        "DELETE",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}",
-    ): "gestion_organizacional",
     ("POST", "/api/v1/organizacion/sedes"): "gestion_organizacional",
     ("PUT", "/api/v1/organizacion/sedes/{sede_id}"): "gestion_organizacional",
     ("PATCH", "/api/v1/organizacion/sedes/{sede_id}/estado"): "gestion_organizacional",

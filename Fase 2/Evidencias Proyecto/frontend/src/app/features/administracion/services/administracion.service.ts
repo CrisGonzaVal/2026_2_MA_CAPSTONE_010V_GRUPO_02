@@ -10,7 +10,6 @@ import {
   DepartamentoEdicion,
   DepartamentoEstadoRespuesta,
   DepartamentoGestion,
-  Encargado,
   Rol,
   Sede,
   SedeCrear,
@@ -28,7 +27,7 @@ import {
  * HTTP de las vistas administrativas institucionales (Feature 012, T10).
  *
  * Consume 1:1 los contratos organizacionales de la Feature 011 y el CRUD de la
- * Feature 012: sedes, departamentos, usuarios y encargados del tenant del
+ * Feature 012: sedes, departamentos y usuarios del tenant del
  * Administrador. El cliente **nunca** envía institución ni esquema: el ámbito lo
  * resuelve el servidor desde la sesión. El Bearer de Clerk lo presenta el
  * interceptor existente. No decide autorización; el backend es la autoridad
@@ -114,30 +113,6 @@ export class AdministracionService {
     return this.http.put<AsignacionSedeDepartamentoRespuesta>(
       `${this.organizacion}/departamentos/${departamentoId}/sede`,
       { sede_id: sedeId },
-    );
-  }
-
-  // --- Encargados ---
-
-  /** `GET /organizacion/departamentos/{id}/encargados` — asociaciones vigentes (AC-10). */
-  listarEncargados(departamentoId: number): Observable<Encargado[]> {
-    return this.http.get<Encargado[]>(
-      `${this.organizacion}/departamentos/${departamentoId}/encargados`,
-    );
-  }
-
-  /** `POST /organizacion/departamentos/{id}/encargados` — asocia (AC-10). */
-  asociarEncargado(departamentoId: number, usuarioId: number): Observable<Encargado> {
-    return this.http.post<Encargado>(
-      `${this.organizacion}/departamentos/${departamentoId}/encargados`,
-      { usuario_id: usuarioId },
-    );
-  }
-
-  /** `DELETE /organizacion/departamentos/{id}/encargados/{usuarioId}` — retira (AC-10). */
-  retirarEncargado(departamentoId: number, usuarioId: number): Observable<void> {
-    return this.http.delete<void>(
-      `${this.organizacion}/departamentos/${departamentoId}/encargados/${usuarioId}`,
     );
   }
 

@@ -59,9 +59,17 @@ class UsuarioCrear(UsuarioBase):
 
     Feature 027: prohibe campos no declarados. La configuracion vive en la
     subclase para no heredarla a `UsuarioRespuesta`.
+
+    Enmienda 012 (D-12): `departamento_id` es opcional **solo en la entrada**.
+    Un Bodeguero puede omitirlo (el servicio resuelve «Suministros»); para los
+    demas roles el servicio exige el valor (422). `UsuarioBase` y
+    `UsuarioRespuesta` conservan el campo obligatorio y `ge=1` sigue aplicando
+    cuando viene (0 o negativo → 422).
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    departamento_id: int | None = Field(default=None, ge=1)
 
 
 class UsuarioRespuesta(UsuarioBase):
@@ -122,13 +130,16 @@ class UsuarioEdicion(BaseModel):
 
     El correo es la clave de identidad local (no se edita aqui: cambiarlo seria
     alterar la vinculacion con Clerk). La institucion la resuelve el servidor.
+
+    Enmienda 012 (D-12): `departamento_id` es opcional en la entrada (misma
+    regla por rol que el alta); `ge=1` se aplica cuando viene.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     nombre: str = Field(min_length=1, max_length=100)
     apellido: str = Field(min_length=1, max_length=100)
-    departamento_id: int = Field(ge=1)
+    departamento_id: int | None = Field(default=None, ge=1)
     rol_id: int = Field(ge=1)
 
 

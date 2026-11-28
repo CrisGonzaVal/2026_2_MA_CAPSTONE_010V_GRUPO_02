@@ -144,14 +144,14 @@ def test_instalacion_limpia_conserva_version_y_conteos():
                 )
                 return cur.fetchone()[0]
 
-        assert tablas("control") == 26
+        assert tablas("control") == 25
         for institucion_id in ("INST-001", "INST-002", "INST-003", "INST-004"):
-            assert tablas(nombre_esquema_para_institucion(institucion_id)) == 23
+            assert tablas(nombre_esquema_para_institucion(institucion_id)) == 22
 
         for esquema in ("control", _esquema_inst_001()):
             with conexion.cursor() as cur:
                 cur.execute(f'SELECT version FROM "{esquema}".version_esquema')
-                assert cur.fetchone()[0] == VERSION_ESQUEMA_OBJETIVO == "026.0"
+                assert cur.fetchone()[0] == VERSION_ESQUEMA_OBJETIVO == "026.1"
 
 
 def test_varchar_150_acepta_y_151_lanza_data_error_traducido():

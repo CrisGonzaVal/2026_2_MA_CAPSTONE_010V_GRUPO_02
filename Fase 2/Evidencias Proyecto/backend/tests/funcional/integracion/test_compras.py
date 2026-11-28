@@ -219,7 +219,7 @@ def test_necesidades_consolida_formula_y_solo_tickets_en_curso(motor, mundo):
     sembrar_ticket(
         motor,
         mundo,
-        estado_id=mundo["estados"]["Pendiente"],
+        estado_id=mundo["estados"]["EnRevision"],
         producto_id=mundo["producto_id"],
         cantidad=100,
     )

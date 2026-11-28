@@ -6,10 +6,8 @@ autorizacion"):
   * `SedeRespuesta` — sede visible dentro del tenant resuelto.
   * `AsignacionSedeDepartamentoRespuesta` / `AsignacionSedeUsuarioRespuesta` —
     resultado de fijar la sede de un departamento o de un Bodeguero.
-  * `EncargadoCrear` — alta de la asociacion departamento/encargado; el cliente
-    solo aporta `usuario_id` (el departamento viene en la ruta y la institucion
-    la resuelve el servidor). `extra="forbid"` impide colar campos de ambito.
-  * `EncargadoRespuesta` — fila del listado de encargados compatibles vigentes.
+
+La enmienda 27/Nov/2026 de la 012 retira los DTO de la tabla puente auxiliar.
 
 Pydantic v2 con `ConfigDict` (nunca `class Config`). Los read models se arman a
 mano desde el servicio, salvo los que se construyen desde el ORM.
@@ -63,24 +61,6 @@ class AsignacionSedeUsuarioRespuesta(BaseModel):
 
     usuario_id: int
     sede_id: int
-
-
-class EncargadoCrear(BaseModel):
-    """Alta de encargado: solo el usuario; el departamento va en la ruta."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    usuario_id: int = Field(ge=1)
-
-
-class EncargadoRespuesta(BaseModel):
-    """Encargado vigente y compatible de un departamento (spec D-4)."""
-
-    usuario_id: int
-    departamento_id: int
-    nombre: str
-    apellido: str
-    correo: str
 
 
 # ---------------------------------------------------------------------------

@@ -4,8 +4,8 @@ SQLite acepta los indices de expresion portables, pero no reproduce el motor de
 PostgreSQL ni el `CREATE UNIQUE INDEX ... ((true))` de U-07. Lo que la 026 exige
 solo se acredita contra PostgreSQL 16:
 
-  * arranque limpio (`01_esquema.sql` + `02_datos_semilla.sql`) con 26 tablas en
-    `control` y 23 por tenant, sin `inventario` en ningun esquema;
+  * arranque limpio (`01_esquema.sql` + `02_datos_semilla.sql`) con 25 tablas en
+    `control` y 22 por tenant, sin `inventario` en ningun esquema;
   * los 15 indices P0 de la 026 (mas los 2 de `orden_compra_ticket` de la 021)
     replicados en `control` y en cada tenant;
   * las unicidades funcionales U-01..U-05 declaradas como indices unicos de
@@ -62,7 +62,7 @@ RAIZ = Path(__file__).resolve().parents[4]
 ESQUEMA_SQL = RAIZ / "database" / "01_esquema.sql"
 SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 
-VERSION_VIGENTE = "026.0"
+VERSION_VIGENTE = "026.1"
 
 #: Los 17 indices P0 que todo esquema (control y tenant) debe tener. Los 15 de
 #: la 026 mas los 2 de `orden_compra_ticket` que introdujo la 021.
@@ -374,22 +374,22 @@ def tenant(conexion):
 
 
 # ---------------------------------------------------------------------------
-# Arranque limpio: 26/23, sin inventario, version y semilla
+# Arranque limpio: 25/22, sin inventario, version y semilla
 # ---------------------------------------------------------------------------
 
 
-def test_arranque_limpio_deja_26_tablas_en_control_y_23_por_tenant(conexion):
-    assert len(_tablas_del_esquema(conexion, "control")) == 26
+def test_arranque_limpio_deja_25_tablas_en_control_y_22_por_tenant(conexion):
+    assert len(_tablas_del_esquema(conexion, "control")) == 25
     esquemas = _esquemas_tenant(conexion)
     assert len(esquemas) == 4, esquemas
     for esquema in esquemas:
         tablas = _tablas_del_esquema(conexion, esquema)
-        assert len(tablas) == 23, (esquema, len(tablas))
+        assert len(tablas) == 22, (esquema, len(tablas))
         assert "inventario" not in tablas, esquema
     assert "inventario" not in _tablas_del_esquema(conexion, "control")
 
 
-def test_version_026_0_en_control_y_en_cada_tenant(conexion):
+def test_version_026_1_en_control_y_en_cada_tenant(conexion):
     assert VERSION_ESQUEMA_OBJETIVO == VERSION_VIGENTE
     assert _escalar(conexion, "SELECT version FROM control.version_esquema") == VERSION_VIGENTE
     for esquema in _esquemas(conexion)[1:]:

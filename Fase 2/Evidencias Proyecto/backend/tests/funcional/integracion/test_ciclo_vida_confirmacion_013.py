@@ -41,7 +41,7 @@ from tests.funcional.integracion._soporte_ciclo_vida_013 import (
 #: Contrato de la ampliacion (spec §9.4/§9.9).
 RUTA_CONFIRMACION = "/api/v1/tickets/{ticket_id}/confirmacion-entrega"
 RUTA_ESTADO = "/api/v1/tickets/{ticket_id}/estado"
-RUTA_DESPACHO = "/api/v1/tickets/{ticket_id}/despacho"
+RUTA_RETIRO = "/api/v1/tickets/{ticket_id}/retiro"
 RUTA_RECHAZO = "/api/v1/tickets/{ticket_id}/rechazo"
 RUTA_APROBACION = "/api/v1/tickets/{ticket_id}/aprobacion"
 
@@ -49,7 +49,7 @@ RUTA_APROBACION = "/api/v1/tickets/{ticket_id}/aprobacion"
 MOTIVO_CONFIRMACION = "Entrega confirmada por el solicitante"
 
 #: Etiquetas de proceso de la spec §9.8 que distingue la confirmacion.
-ETIQUETA_DESPACHADO = "Despachado"
+ETIQUETA_RETIRADO = "Retirado"
 ETIQUETA_ENTREGADO = "Entregado"
 
 #: `fecha_cierre` que sella el despacho; la confirmacion no puede tocarla.
@@ -125,7 +125,7 @@ def _cliente_superadmin(motor, datos):
 
 
 def _sembrar_cerrado(motor, datos, *, usuario_id=None, fecha_cierre=FECHA_CIERRE):
-    """Ticket `Cerrado` (despachado) con su `fecha_cierre` sellada por ORM."""
+    """Ticket `Cerrado` (retirado) con su `fecha_cierre` sellada por ORM."""
     ticket_id = sembrar_ticket(
         motor,
         datos,
@@ -188,8 +188,8 @@ def test_confirmacion_del_dueno_responde_200_con_una_fila_cerrado_cerrado_ac_42(
 
     with _cliente_solicitante(motor, datos) as cliente:
         antes = abrir_ticket(cliente, ticket_id)
-        assert antes["etiqueta_proceso"] == ETIQUETA_DESPACHADO, (
-            "precondicion: un Cerrado sin confirmacion esta «Despachado»"
+        assert antes["etiqueta_proceso"] == ETIQUETA_RETIRADO, (
+            "precondicion: un Cerrado sin confirmacion esta «Retirado»"
         )
 
         respuesta = _confirmar(cliente, ticket_id)
@@ -248,13 +248,13 @@ def test_la_confirmacion_no_reabre_ni_mueve_el_pedido_ac_42(motor, mundo):
         assert despues["fecha_cierre"] is not None
         assert despues["entrega_confirmada"] is True
 
-        despacho = cliente.post(
-            f"/api/v1/tickets/{ticket_id}/despacho",
+        retiro = cliente.post(
+            f"/api/v1/tickets/{ticket_id}/retiro",
             json={"usuario_id": datos["usuarios_inst01"]["Solicitante"]},
         )
-        assert despacho.status_code in (403, 409), (
-            "un pedido confirmado no admite un segundo despacho: "
-            f"{despacho.status_code} {despacho.text}"
+        assert retiro.status_code in (403, 409), (
+            "un pedido confirmado no admite un segundo retiro: "
+            f"{retiro.status_code} {retiro.text}"
         )
 
     assert _estado_persistido(motor, ticket_id) == datos["estados"]["Cerrado"]
@@ -337,7 +337,7 @@ def test_confirmacion_con_la_capacidad_tickets_apagada_responde_403_ac_43(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("estado", ["Pendiente", "EnRevision", "EnCurso", "Anulado"])
+@pytest.mark.parametrize("estado", ["EnRevision", "EnCurso", "Anulado"])
 def test_confirmacion_de_un_pedido_no_cerrado_responde_409_sin_escribir_ac_43(
     motor, mundo, estado
 ):
@@ -385,7 +385,7 @@ def test_confirmacion_repetida_responde_409_sin_una_segunda_fila_ac_43(
 def test_un_pedido_creado_por_un_administrador_no_admite_confirmacion_ac_43(
     motor, mundo
 ):
-    """AC-43/D-26: el dueño sin rol Solicitante no confirma; queda «Despachado»."""
+    """AC-43/D-26: el dueño sin rol Solicitante no confirma; queda «Retirado»."""
     datos = mundo
     ticket_id = _sembrar_cerrado(motor, datos, usuario_id=datos["usuario_id"])
 
@@ -394,8 +394,8 @@ def test_un_pedido_creado_por_un_administrador_no_admite_confirmacion_ac_43(
         assert respuesta.status_code == 403, respuesta.text
 
         tarjeta = abrir_ticket(cliente, ticket_id)
-        assert tarjeta["etiqueta_proceso"] == ETIQUETA_DESPACHADO, (
-            "el pedido de alta administrativa permanece «Despachado»"
+        assert tarjeta["etiqueta_proceso"] == ETIQUETA_RETIRADO, (
+            "el pedido de alta administrativa permanece «Retirado»"
         )
         assert tarjeta["entrega_confirmada"] is False
 
@@ -453,8 +453,9 @@ def test_matriz_declara_la_confirmacion_solo_para_el_solicitante_ac_44():
         "MATRIZ_PERMISOS debe declarar la operacion de confirmacion de entrega"
     )
     assert set(confirmacion) == {"Solicitante"}
-    assert len(permisos.MATRIZ_PERMISOS) == 75, (
-        "la matriz suma una operacion en esta tarea (74 -> 75)"
+    assert len(permisos.MATRIZ_PERMISOS) == 72, (
+        "la matriz suma una operacion en esta tarea (74 -> 75) y la enmienda "
+        "27/Nov/2026 de la 012 la deja en 72"
     )
     # El resto de operaciones del flujo conserva sus roles (T21 intacta).
     assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_APROBACION)]) == {
@@ -463,9 +464,8 @@ def test_matriz_declara_la_confirmacion_solo_para_el_solicitante_ac_44():
     assert set(permisos.MATRIZ_PERMISOS[("PATCH", RUTA_ESTADO)]) == {
         "Administrador"
     }
-    assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_DESPACHO)]) == {
-        "Administrador",
-        "Bodeguero",
+    assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_RETIRO)]) == {
+        "Bodeguero"
     }
     assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_RECHAZO)]) == {
         "Administrador",

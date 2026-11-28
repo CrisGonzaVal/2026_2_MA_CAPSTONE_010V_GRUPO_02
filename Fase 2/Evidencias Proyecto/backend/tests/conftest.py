@@ -466,10 +466,12 @@ def datos_base(motor):
         db.add(prioridad)
         db.flush()
 
-        # Enmienda post-cierre 013 (AC-27): el alta solo admite `Pendiente`, y
-        # `Cerrado` se reserva al despacho. Los nombres canonicos importan: el
+        # Enmienda 26/Nov/2026 (D-27): el alta nace en `EnRevision`, y
+        # `Cerrado` se reserva al retiro. Los nombres canonicos importan: el
         # servicio los resuelve por nombre (case-insensitive), no por id.
-        estado_ingresado = EstadoTicket(nombre="Pendiente", descripcion="Ticket recien creado")
+        estado_ingresado = EstadoTicket(
+            nombre="EnRevision", descripcion="Ticket recien creado"
+        )
         db.add(estado_ingresado)
         db.flush()
 

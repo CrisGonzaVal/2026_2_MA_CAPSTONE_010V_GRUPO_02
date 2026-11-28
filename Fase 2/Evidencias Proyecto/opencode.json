@@ -15,6 +15,10 @@
     "summary": { "model": "opencode/deepseek-v4.1-flash-free" }
   },
   "mcp": {
+    "timeout": {
+      "startup": 120000,
+      "catalog": 60000
+    },
     "servers": {
       "context7": {
         "type": "remote",

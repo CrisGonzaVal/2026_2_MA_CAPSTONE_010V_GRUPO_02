@@ -35,7 +35,6 @@ from app.api import dependencies
 from app.main import app
 from app.models import (
     Departamento,
-    DepartamentoEncargado,
     MapaUsuarioEsquema,
     Rol,
     Sede,
@@ -503,24 +502,26 @@ def test_estado_usuario_persiste_en_mapa_y_es_idempotente(motor, dos_institucion
     assert _mapa_activo(motor, correo) is True
 
 
-def test_desactivar_usuario_encargado_responde_409(motor, dos_instituciones):
+def test_desactivar_usuario_sin_dependencias_responde_200(motor, dos_instituciones):
+    """AC-37: la baja ya no consulta la tabla puente retirada.
+
+    Desactivar un usuario que solo tiene su asociacion local responde 200 y
+    persiste `activo = false`; el 409 del ultimo Administrador activo sigue
+    cubierto por su propia prueba.
+    """
     usuario_id = dos_instituciones["usuarios_inst01"]["Solicitante"]
-    with sessionmaker(bind=motor)() as db:
-        db.add(
-            DepartamentoEncargado(
-                departamento_id=dos_instituciones["departamento_id"],
-                usuario_id=usuario_id,
-            )
-        )
-        db.commit()
     with _cliente(
         motor, "Administrador", departamento_id=dos_instituciones["departamento_id"]
     ) as cliente_http:
         respuesta = cliente_http.patch(
-            RUTA_USUARIO_ESTADO.format(usuario_id=usuario_id), json={"activo": False}
+            RUTA_USUARIO_ESTADO.format(usuario_id=usuario_id),
+            json={
+                "activo": False,
+                "motivo": {"codigo": "termino_vinculo", "texto": "Fin de contrato"},
+            },
         )
-    assert respuesta.status_code == 409, respuesta.text
-    assert respuesta.json()["detail"]
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["activo"] is False
 
 
 # ---------------------------------------------------------------------------

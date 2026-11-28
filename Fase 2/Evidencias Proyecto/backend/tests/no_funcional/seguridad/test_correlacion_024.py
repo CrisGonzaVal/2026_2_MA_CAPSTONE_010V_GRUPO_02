@@ -2,8 +2,9 @@
 
 Las pruebas usan la interfaz HTTP real (`TestClient`) y, para el 500, una ruta
 temporal fuera de OpenAPI que se retira en `finally` para no alterar el conteo
-de 77 operaciones del contrato (ampliacion 25/Nov/2026: T21 suma la aprobacion
-75 -> 76 y T22 la confirmacion de entrega 76 -> 77).
+de 74 entradas del contrato (72 v1 + `GET /` + `/health`; la ampliacion
+25/Nov/2026 de la 013 llevo el total a 77 y la enmienda 27/Nov/2026 de la 012
+retiro tres operaciones).
 """
 
 import json

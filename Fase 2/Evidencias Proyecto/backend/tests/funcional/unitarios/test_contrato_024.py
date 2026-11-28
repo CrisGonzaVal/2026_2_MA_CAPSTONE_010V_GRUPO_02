@@ -1,12 +1,11 @@
 """AC-15/AC-23/AC-44/AC-45/AC-49: contrato y matriz de la consolidacion final.
 
 Ampliacion 25/Nov/2026: la aprobacion del Administrador (T21) y la confirmacion
-de entrega del Solicitante (T22) suman **dos** operaciones v1 (73 -> 75; 75 -> 77
+de entrega del Solicitante (T22) sumaron **dos** operaciones v1 (73 -> 75; 75 -> 77
 entradas con `GET /` y `/health`), y el `PATCH /estado` de legado pasa a ser
-**solo** del Administrador. Esta tarea (T24) fija el recuento final y los roles
-del contrato: la matriz tiene 75 operaciones, `/openapi.json` publica 75 v1 y 77
-entradas, y las operaciones propias del Bodeguero (despacho y rechazo) conservan
-sus roles.
+**solo** del Administrador. La enmienda 27/Nov/2026 de la 012 retira las tres
+operaciones de la tabla puente auxiliar, de modo que el recuento vigente es:
+la matriz tiene 72 operaciones y `/openapi.json` publica 72 v1 y 74 entradas.
 """
 
 from app.core import capacidades, permisos
@@ -16,12 +15,12 @@ METODOS = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
 RUTA_APROBACION = "/api/v1/tickets/{ticket_id}/aprobacion"
 RUTA_CONFIRMACION = "/api/v1/tickets/{ticket_id}/confirmacion-entrega"
 RUTA_ESTADO = "/api/v1/tickets/{ticket_id}/estado"
-RUTA_DESPACHO = "/api/v1/tickets/{ticket_id}/despacho"
+RUTA_RETIRO = "/api/v1/tickets/{ticket_id}/retiro"
 RUTA_RECHAZO = "/api/v1/tickets/{ticket_id}/rechazo"
 
 CIERRE_RESERVADO = (
-    "El cierre requiere despacho; use POST "
-    "/api/v1/tickets/{ticket_id}/despacho"
+    "El cierre requiere retiro; use POST "
+    "/api/v1/tickets/{ticket_id}/retiro"
 )
 
 
@@ -32,13 +31,13 @@ def _operaciones(esquema: dict):
                 yield ruta, metodo.lower(), operacion
 
 
-def test_openapi_publica_77_operaciones(cliente):
+def test_openapi_publica_74_operaciones(cliente):
     esquema = cliente.get("/openapi.json").json()
 
     rutas = list(_operaciones(esquema))
-    assert len(rutas) == 77
+    assert len(rutas) == 74
     negocio = [ruta for ruta, _, _ in rutas if ruta.startswith("/api/v1")]
-    assert len(negocio) == 75
+    assert len(negocio) == 72
     assert sorted(ruta for ruta, _, _ in rutas if not ruta.startswith("/api/v1")) == [
         "/",
         "/health",
@@ -60,8 +59,8 @@ def test_health_sigue_documentado_sin_security(cliente):
     assert "responses" in operacion
 
 
-def test_matriz_conserva_75_operaciones_y_ninguna_ruta_operativa():
-    assert len(permisos.MATRIZ_PERMISOS) == 75
+def test_matriz_conserva_72_operaciones_y_ninguna_ruta_operativa():
+    assert len(permisos.MATRIZ_PERMISOS) == 72
     assert not any(
         ruta in ("/metrics", "/ready")
         for _, ruta in permisos.MATRIZ_PERMISOS
@@ -79,9 +78,9 @@ def test_matriz_fija_los_roles_de_la_ampliacion_ac_44_ac_49():
     assert permisos.roles_de_operacion("PATCH", RUTA_ESTADO) == frozenset(
         {"Administrador"}
     )
-    # AC-49: el Bodeguero conserva despacho y rechazo, que no son el PATCH.
-    assert permisos.roles_de_operacion("POST", RUTA_DESPACHO) == frozenset(
-        {"Administrador", "Bodeguero"}
+    # AC-49/D-30: el Bodeguero conserva el retiro y el rechazo, que no son el PATCH.
+    assert permisos.roles_de_operacion("POST", RUTA_RETIRO) == frozenset(
+        {"Bodeguero"}
     )
     assert permisos.roles_de_operacion("POST", RUTA_RECHAZO) == frozenset(
         {"Administrador", "Bodeguero"}
@@ -127,11 +126,14 @@ def test_openapi_del_patch_de_legado_es_solo_administrador_ac_49(cliente):
     assert CIERRE_RESERVADO in descripcion
 
 
-def test_openapi_conserva_despacho_y_rechazo_ac_49(cliente):
-    """AC-49: despacho y rechazo siguen publicados y con sus roles intactos."""
+def test_openapi_conserva_retiro_y_rechazo_ac_49(cliente):
+    """AC-49/D-30: retiro y rechazo siguen publicados con sus roles vigentes."""
     esquema = cliente.get("/openapi.json").json()
-    for ruta in (RUTA_DESPACHO, RUTA_RECHAZO):
+    for ruta in (RUTA_RETIRO, RUTA_RECHAZO):
         assert "post" in esquema["paths"].get(ruta, {}), ruta
-        assert permisos.roles_de_operacion("POST", ruta) == frozenset(
-            {"Administrador", "Bodeguero"}
-        ), ruta
+    assert permisos.roles_de_operacion("POST", RUTA_RETIRO) == frozenset(
+        {"Bodeguero"}
+    )
+    assert permisos.roles_de_operacion("POST", RUTA_RECHAZO) == frozenset(
+        {"Administrador", "Bodeguero"}
+    )

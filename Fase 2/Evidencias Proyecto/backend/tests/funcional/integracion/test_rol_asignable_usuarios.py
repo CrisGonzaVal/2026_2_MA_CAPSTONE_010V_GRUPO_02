@@ -242,7 +242,12 @@ def test_superadmin_no_accede_a_las_rutas_ordinarias_de_usuarios(
 
 
 def test_administrador_no_crea_usuario_en_departamento_ajeno(motor, contexto):
-    """Un departamento de otra institucion responde 403 sin crear la fila."""
+    """Un departamento de otra institucion responde 403 sin crear la fila.
+
+    Enmienda 012 (D-8): el alta de un Bodeguero ignora el `departamento_id`
+    enviado porque el servidor resuelve «Suministros»; el limite institucional
+    del campo se ejerce con un rol no-Bodeguero.
+    """
     correo = "ajeno.institucion@compustock.cl"
     antes = _usuarios_como_administrador(motor)
 
@@ -252,7 +257,7 @@ def test_administrador_no_crea_usuario_en_departamento_ajeno(motor, contexto):
             json=_payload(
                 contexto,
                 correo,
-                contexto["roles"]["Bodeguero"],
+                contexto["roles"]["Solicitante"],
                 departamento_id=contexto["dep_ajeno_id"],
             ),
         )

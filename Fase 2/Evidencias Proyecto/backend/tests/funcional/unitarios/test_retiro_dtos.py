@@ -1,7 +1,6 @@
-"""Feature 005 (T1): contrato de los DTO de despacho e historial.
+"""Feature 005 (T1) y enmienda 013: contrato del DTO de retiro e historial.
 
-En T1 aun no existe la ruta HTTP de despacho ni la de historial, asi que el
-seam observable es el propio modelo Pydantic: se valida aqui que el payload
+El seam observable es el propio modelo Pydantic: se valida aqui que el payload
 exige un `usuario_id` entero y que el read model del historial expone todos
 los campos de `spec.md` §5.
 
@@ -16,7 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.inventario_schema import MovimientoInventarioRespuesta
-from app.schemas.ticket_schema import TicketDespacho
+from app.schemas.ticket_schema import TicketRetiro
 
 #: Campos exigidos por el contrato de `GET /inventario/movimientos` (§5).
 CAMPOS_HISTORIAL = {
@@ -35,8 +34,8 @@ CAMPOS_HISTORIAL = {
 }
 
 
-def test_ticket_despacho_acepta_usuario_id_entero():
-    payload = TicketDespacho.model_validate({"usuario_id": 6})
+def test_ticket_retiro_acepta_usuario_id_entero():
+    payload = TicketRetiro.model_validate({"usuario_id": 6})
     assert payload.usuario_id == 6
     assert isinstance(payload.usuario_id, int)
 
@@ -49,9 +48,9 @@ def test_ticket_despacho_acepta_usuario_id_entero():
         {"usuario_id": "no-es-entero"},
     ],
 )
-def test_ticket_despacho_rechaza_usuario_id_ausente_o_no_entero(payload):
+def test_ticket_retiro_rechaza_usuario_id_ausente_o_no_entero(payload):
     with pytest.raises(ValidationError):
-        TicketDespacho.model_validate(payload)
+        TicketRetiro.model_validate(payload)
 
 
 def test_movimiento_inventario_respuesta_expone_todos_los_campos_del_contrato():
@@ -69,7 +68,7 @@ def test_movimiento_inventario_respuesta_instancia_todos_los_campos():
         tipo_movimiento="SALIDA",
         cantidad=3,
         fecha_movimiento=datetime(2026, 1, 1, 12, 0, 0),
-        observacion="Despacho ticket_id=1; detalle_id=2; producto_id=5",
+        observacion="Salida por retiro del ticket #1; detalle_id=2; producto_id=5",
         stock_sede_id=4,
         producto_id=5,
         producto_nombre="Resma de papel",

@@ -162,7 +162,7 @@ def test_app_info_publica_version_y_esquema(cliente):
         muestra
         for muestra in leer_muestras(texto, "compustock_app_info")
         if muestra.labels.get("version") == "1.0.0"
-        and muestra.labels.get("schema_version") == "026.0"
+        and muestra.labels.get("schema_version") == "026.1"
     ]
     assert muestras
     assert muestras[0].value == 1

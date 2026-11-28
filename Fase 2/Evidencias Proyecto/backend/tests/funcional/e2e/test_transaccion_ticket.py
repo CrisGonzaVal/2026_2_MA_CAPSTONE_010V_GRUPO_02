@@ -17,7 +17,10 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models import StockSede
 
-from tests.funcional.integracion._soporte_sede_011 import asegurar_sede_de_departamento
+from tests.funcional.integracion._soporte_sede_011 import (
+    asegurar_sede_de_departamento,
+    cliente as cliente_de_rol,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -145,59 +148,72 @@ def test_detalle_invalido_no_altera_el_stock(
 
 
 def test_saldo_insuficiente_no_registra_movimiento(
-    cliente, motor, datos_base, sede_base
+    motor, datos_base, sede_base
 ):
     """Trazabilidad absoluta (`constitucion.md` §2): un rechazo no deja rastro.
 
     Un movimiento rechazado no debe generar fila en `movimiento_inventario`, y el
     stock debe quedar intacto. Se verifica por la API: el stock no cambia y el
     siguiente movimiento valido debe partir del valor original, no de uno
-    corrompido.
+    corrompido. Enmienda 26/Nov/2026 (D-31/AC-64): el registro manual lo ejerce
+    el Bodeguero de la sede.
     """
     stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
-    saldo_insuficiente = cliente.post(
-        "/api/v1/inventario/movimientos",
-        json={
-            "tipo_movimiento": "SALIDA",
-            "cantidad": 9999,
-            "observacion": "Debe rechazarse",
-            "stock_sede_id": stock_sede_id,
-        },
-    )
-    # Feature 011/026: sobre `stock_sede` el saldo insuficiente es un 409 de
-    # conflicto con el estado del recurso (el 400 era del camino legado).
-    assert saldo_insuficiente.status_code == 409, saldo_insuficiente.text
+    with cliente_de_rol(
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_base["sede_id"],
+    ) as cliente:
+        saldo_insuficiente = cliente.post(
+            "/api/v1/inventario/movimientos",
+            json={
+                "tipo_movimiento": "SALIDA",
+                "cantidad": 9999,
+                "observacion": "Debe rechazarse",
+                "stock_sede_id": stock_sede_id,
+            },
+        )
+        # Feature 011/026: sobre `stock_sede` el saldo insuficiente es un 409 de
+        # conflicto con el estado del recurso (el 400 era del camino legado).
+        assert saldo_insuficiente.status_code == 409, saldo_insuficiente.text
 
-    stock = _stock_sede(motor, stock_sede_id)
-    assert stock == 50
+        stock = _stock_sede(motor, stock_sede_id)
+        assert stock == 50
 
-    # La siguiente operacion valida debe partir de 50, no del valor alterado.
-    entrada = cliente.post(
-        "/api/v1/inventario/movimientos",
-        json={
-            "tipo_movimiento": "ENTRADA",
-            "cantidad": 10,
-            "observacion": "Ingreso posterior",
-            "stock_sede_id": stock_sede_id,
-        },
-    )
+        # La siguiente operacion valida debe partir de 50, no del valor alterado.
+        entrada = cliente.post(
+            "/api/v1/inventario/movimientos",
+            json={
+                "tipo_movimiento": "ENTRADA",
+                "cantidad": 10,
+                "observacion": "Ingreso posterior",
+                "stock_sede_id": stock_sede_id,
+            },
+        )
     assert entrada.status_code == 201, entrada.text
     assert entrada.json()["nuevo_stock"] == 60
 
 
 def test_tipo_de_movimiento_invalido_no_registra_movimiento(
-    cliente, motor, datos_base, sede_base
+    motor, datos_base, sede_base
 ):
     stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
-    respuesta = cliente.post(
-        "/api/v1/inventario/movimientos",
-        json={
-            "tipo_movimiento": "AJUSTE_MAGICO",
-            "cantidad": 1,
-            "observacion": "Tipo no permitido",
-            "stock_sede_id": stock_sede_id,
-        },
-    )
+    with cliente_de_rol(
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_base["sede_id"],
+    ) as cliente:
+        respuesta = cliente.post(
+            "/api/v1/inventario/movimientos",
+            json={
+                "tipo_movimiento": "AJUSTE_MAGICO",
+                "cantidad": 1,
+                "observacion": "Tipo no permitido",
+                "stock_sede_id": stock_sede_id,
+            },
+        )
     assert respuesta.status_code == 422, respuesta.text
     assert respuesta.json()["detail"][0]["loc"] == ["body", "tipo_movimiento"]
     assert _stock_sede(motor, stock_sede_id) == 50

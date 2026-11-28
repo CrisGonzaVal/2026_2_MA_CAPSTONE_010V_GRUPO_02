@@ -573,3 +573,250 @@ contenedor **healthy** y bundle servido **`main-JE7KG3Z2.js`**. Detalle:
 - Las capturas y consultas del recorrido (§10.1–§10.7) siguen siendo evidencia
   histórica válida del comportamiento verificado; no describen el estado actual
   de la base, que es el de la semilla.
+
+## 11. Enmienda 26/Nov/2026 — cierre (T44): catálogo de cuatro estados, retiro y anulación con devolución
+
+Cierre de la §10 de la spec (AC-50…AC-68). Recorrido **real de UI** en `4200` con
+sesiones Clerk de la semilla vigente de la 012, capturas en esta carpeta y
+verificación SQL por `docker exec psql` tras cada camino. Los tests gated usan
+bases desechables y nunca tocan `apt_erp`.
+
+### 11.1 Suites, gated y build
+
+| Verificación | Comando | Resultado real |
+|---|---|---|
+| Backend SQLite (suite completa) | `cd backend; .venv\Scripts\python.exe -m pytest -q` | **2163 passed / 127 skipped / 0 failed** en 9:10 |
+| Gated PostgreSQL 16 (suite completa) | `$env:POSTGRES_TEST_URL="postgresql://postgres:postgres@localhost:5433/postgres"; pytest -q` | **2287 passed / 3 skipped / 0 failed** en 1745,06 s (29:05); los 3 `skipped` son los módulos gated de Redis (sin `REDIS_TEST_URL`); `apt_erp` intacta |
+| Frontend | `$env:CHROME_BIN="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"; npx ng test --watch=false --browsers=ChromeHeadless` | **671 SUCCESS / 0 FAILED** |
+| Build de producción | `cd frontend; npx ng build` | limpio; **`main-IRJLFDU6.js`**, `Initial total 339.98 kB` |
+
+### 11.2 Contrato OpenAPI (backend vivo en `:8000`)
+
+`GET /openapi.json`: **74 entradas** = **72** operaciones v1 + `GET /` + `GET
+/health`; `MATRIZ_PERMISOS`: **72**. `POST /tickets/{id}/retiro` →
+`{Bodeguero}` (capacidad `kanban`); `POST /inventario/movimientos` →
+`{Bodeguero}`; `POST /tickets/{id}/anulacion` → `{Administrador, Solicitante}`;
+`PATCH /tickets/{id}/estado` → `{Administrador}`; `/despacho` ausente.
+
+**Delta externo (012, 27/Nov/2026):** la línea base de la 013 era **75 v1 / 77
+entradas**; la enmienda de la 012 retiró las 3 operaciones de
+`departamento_encargado` y dejó la base en **72/74**. La 013 no cambia la
+cardinalidad: renombra una clave (`/despacho` → `/retiro`) y no retira ninguna
+otra.
+
+### 11.3 Reset de la base QA y verificación del catálogo (27/Nov/2026 ~15:29)
+
+`docker compose -f docker-compose.yml down -v` + `up -d`: volumen recreado desde
+`01_esquema.sql` + `02_datos_semilla.sql`; `db`, `redis`, `backend` y `frontend`
+healthy; `/health` y `/ready` **200**.
+
+| Verificación | Resultado |
+|---|---|
+| Token (`control.version_esquema`) | **`026.1`** |
+| Tablas | **25** en `control`, **22** por tenant |
+| Catálogo `estado_ticket` (tenant) | **4** filas: `EnRevision,EnCurso,Cerrado,Anulado` |
+| Tickets INST-001 | #1–#4 `EnRevision`, #5–#6 `EnCurso`, #7–#8 `Cerrado` |
+| Tickets INST-002 | #9 `EnRevision`, #10 `Cerrado` (5/5) |
+| `Anulado` en la semilla | **ninguno** |
+| `Cerrado` | `fecha_cierre` y `cantidad_entregada = cantidad_solicitada` |
+
+**Delta externo (012):** la 013 esperaba **26/23** y `026.0`; la enmienda de la
+012 del 27/Nov dejó **25/22** y `026.1`. La 013 no añadió DDL, migración ni
+token: el catálogo y el retiro usan las tablas existentes.
+
+### 11.4 Recorrido funcional en 4200 (escritura real)
+
+Backend en contenedor (`uvicorn --reload`) + `npm start` (4200). Sesiones Clerk
+reales con el código `424242` de las cuentas `+clerk_test`. Las cuentas de §2
+son históricas del cierre del 25/Nov; el recorrido de §11 usó las de la semilla
+vigente de la 012: `solicitante.test+clerk_test@example.com` (Paula Rojas,
+Solicitante, Biblioteca → Sede Maipú), `admin020.test+clerk_test@example.com`
+(Admin QA, Administrador) y `bodeguero.test+clerk_test@example.com` (Roberto
+Diaz, Bodeguero, Sede Maipú).
+
+| # | Actor | Acción en la UI | Observado | Captura |
+|---|---|---|---|---|
+| 1 | Solicitante | Tablero de 3 columnas | «En Revisión», «En Curso» y «Terminados»; contadores = tarjetas | [40-01](40-01-tablero-3-columnas-solicitante.png) |
+| 2 | Solicitante | «+ Crear pedido» #9: 3 × Papel Premium A4, estado **FIJO En Revisión** | 201, tarjeta #9 en «En Revisión»; sin selector de estado | [40-02](40-02-tablero-3-columnas-con-pedidos.png) |
+| 3 | Administrador | «Aprobar» #9 | **En Curso**; historial `En Revisión → En Curso` con motivo `Aprobación del pedido` | [40-03](40-03-detalle-enrevision-admin.png) / [40-04](40-04-tablero-3-columnas-admin-encurso.png) |
+| 4 | Bodeguero | «Registrar retiro» #9 → «Confirmar retiro» | **Cerrado** + etiqueta **Retirado**; `fecha_cierre` 18:37:21; entregado 3/3 | [40-05](40-05-detalle-encurso-bodeguero-registrar-retiro.png) / [40-06](40-06-dialogo-confirmar-retiro.png) |
+| 5 | Administrador | «Anular el retiro» #9 con motivo | **Anulado** + etiqueta **Rechazado**; stock devuelto y `cantidad_entregada` 0 | [40-07](40-07-detalle-retirado-admin-anular-retiro.png) / [40-08](40-08-dialogo-anular-retiro-motivo.png) / [40-09](40-09-detalle-anulado-rechazado-admin.png) |
+| 6 | Bodeguero | «Registrar retiro» #10 → confirmar | **Cerrado** + **Retirado** | [40-10](40-10-detalle-encurso-bodeguero-ticket10.png) / [40-11](40-11-detalle-retirado-ticket10.png) |
+| 7 | Solicitante | «Confirmar entrega» #10 → diálogo → confirmar | **Entregado**; «no admite más acciones»; estado canónico `Cerrado` | [40-12](40-12-detalle-retirado-solicitante-confirmar-entrega.png) / [40-13](40-13-dialogo-confirmar-entrega.png) / [40-14](40-14-detalle-entregado-solicitante.png) |
+| 8 | Administrador | Intento de anular #10 ya confirmado | **409** `La entrega de este pedido ya fue confirmada por el solicitante: el retiro no puede anularse`; la acción no se ofrece | [40-15](40-15-detalle-entregado-admin-sin-acciones.png) |
+| 9 | Administrador | Tablero / Dashboard | **En Revisión 4 / En Curso 3 / Terminados 4**; «Pedidos Activos» **7** | [40-16](40-16-tablero-3-columnas-cuatro-estados.png) / [40-17](40-17-dashboard-pedidos-activos-7.png) |
+
+El #11 («Cierre T44 confirmacion previa») se creó y aprobó en el mismo recorrido
+y quedó **EnCurso** para que el tablero tuviera datos de los cuatro estados.
+
+#### Verificación SQL (PostgreSQL real, `apt_erp` → `tenant_inst_001_038aa2a9`)
+
+| ticket | estado | `fecha_cierre` | `cantidad_entregada` |
+|---|---|---|---|
+| 9 | **Anulado** | NULL | 0 |
+| 10 | Cerrado | 2026-11-27 18:40:25.243352 | 3 |
+| 11 | EnCurso | NULL | 0 |
+
+Stock `stock_sede` (producto 10 / Sede Maipú): **45 → 42** (retiro #9) **→ 45**
+(devolución) **→ 42** (retiro #10).
+
+`movimiento_inventario`:
+
+| id | tipo | cantidad | observación |
+|---|---|---|---|
+| 4 | **SALIDA** | 3 | `Salida por retiro del ticket #9; detalle_id=9; producto_id=10` |
+| 5 | **ENTRADA** | 3 | `Devolución por anulación del retiro del ticket #9; detalle_id=9; producto_id=10` |
+| 6 | **SALIDA** | 3 | `Salida por retiro del ticket #10; detalle_id=10; producto_id=10` |
+
+`historial_transicion_ticket` (ids 1–10): #9 `(nulo) → EnRevision` →
+`EnRevision → EnCurso` → `EnCurso → Cerrado` → `Cerrado → Anulado`; #10
+`(nulo) → EnRevision` → `EnRevision → EnCurso` → `EnCurso → Cerrado` →
+`Cerrado → Cerrado` (`Entrega confirmada por el solicitante`); #11
+`(nulo) → EnRevision` → `EnRevision → EnCurso`.
+
+### 11.5 409 de anulación posterior a la confirmación
+
+Con la sesión del Administrador y el pedido #10 ya confirmado, el servicio del
+detalle (`POST /tickets/10/anulacion`) respondió **409** con
+`{"detail":"La entrega de este pedido ya fue confirmada por el solicitante: el retiro no puede anularse"}`.
+SQL posterior: #10 sigue `Cerrado`, `fecha_cierre` 18:40:25 y
+`cantidad_entregada` 3 intactas, historial con 4 filas (la de confirmación no se
+borró) y ningún movimiento nuevo.
+
+### 11.6 Humo en 8080 (imagen reconstruida)
+
+`docker compose -f docker-compose.yml build frontend` + `up -d frontend`; el
+contenedor seguía con la imagen anterior (ID `7d925c…`, ya sin tag), así que se
+recreó con `up -d --force-recreate frontend`. Imagen vigente
+`evidenciasproyecto-frontend:latest` (`sha256:8c7ca2…`), contenedor **healthy**;
+`index.html` sirve **`main-IRJLFDU6.js`** (el mismo del `ng build` del host).
+`GET /` y `GET /tickets/10` responden **200** (try_files de nginx).
+
+- Tablero: **En Revisión 4 / En Curso 3 / Terminados 4**; detalle #10
+  **Entregado** (canónico `Cerrado`, «no admite más acciones») y detalle #9
+  **Anulado/Rechazado**. Capturas [40-18](40-18-8080-tablero-3-columnas.png),
+  [40-19](40-19-8080-detalle-entregado.png) y
+  [40-20](40-20-8080-detalle-anulado.png).
+- Red: `main-IRJLFDU6.js` **[200]**; sin errores de consola (solo el aviso de
+  claves de desarrollo de Clerk y un aviso de accesibilidad de 5 campos sin
+  `id`/`name`, ajeno a esta enmienda).
+- La sesión Clerk de `localhost` se comparte entre 4200 y 8080; no hizo falta un
+  login nuevo.
+- **Recaptura 8080:** `40-18` se volvió a capturar en `http://localhost:8080/tickets`
+  (196.983 bytes, hash distinto de `40-16`). `40-19` se volvió a capturar en
+  `http://localhost:8080/tickets/10`; su archivo es idéntico a `40-15` porque la UI y
+  los datos son los mismos, así que el humo 8080 se sostiene además en el hash
+  `main-IRJLFDU6.js` y en `40-20`.
+
+### 11.7 Mapeo AC-50…AC-68 → evidencia
+
+| AC | Evidencia |
+|---|---|
+| AC-50 | `test_catalogo_estados_013.py::test_el_catalogo_del_aprovisionamiento_tiene_las_cuatro_filas_ac_50`; gated `test_catalogo_retiro_postgres_013.py` (5 passed) y `test_instalacion_limpia_postgres.py` (8 passed); SQL de §11.3: 4 filas, distribución de la semilla, ningún `Anulado`, `Cerrado` con fecha y cantidad. Delta 25/22/`026.1` por la 012 |
+| AC-51 | `test_ciclo_vida_alta_inicial_013.py` (6 pruebas) y `tickets.component.spec.ts`; 4200: #9–#11 nacen `EnRevision` con estado fijo (40-01/40-02) |
+| AC-52 | `test_ciclo_vida_aprobacion_013.py` y `test_catalogo_estados_013.py::test_aprobar_desde_enrevision_deja_en_curso_ac_52`; 4200: #9–#11 a `EnCurso` con actor `QA, Admin` (40-03/40-04) |
+| AC-53 | `test_ciclo_vida_edicion_013.py` (12 pruebas) y `ticket-detalle.component.spec.ts`; edición sin cambiar estado/solicitante/sede/institución |
+| AC-54 | `test_anulacion_retiro_013.py::test_la_anulacion_desde_enrevision_conserva_su_contrato_sin_stock_ac_54` y `test_catalogo_estados_013.py::test_anular_y_rechazar_solo_desde_enrevision_ac_54`; 4200: #9 `Anulado` «Rechazado» (40-09) |
+| AC-55 | `test_retiro_transaccional_013.py` y `test_permisos_retiro_013.py`; contrato vivo 72 v1/74 y `/despacho` ausente; 4200: #9/#10 retirados por el Bodeguero (40-05/40-06/40-10/40-11). Delta 75/77 → 72/74 por la 012 |
+| AC-56 | `test_retiro_sede_013.py` (4 pruebas: sede propia 200; otra sede 404 idéntico; sin sede 409; ticket sin sede 409); 4200: retiro de Sede Maipú |
+| AC-57 | `test_retiro_transaccional_013.py` (17 pruebas) y gated `test_retiro_anulacion_postgres_013.py`; SQL de §11.4: `SALIDA` literal, stock 45→42, cantidad 3, fecha e historial |
+| AC-58 | `test_anulacion_retiro_013.py` (14 pruebas) y gated de anulación; SQL de §11.4: #9 `Anulado`, fecha NULL, cantidad 0, stock 42→45, `ENTRADA` literal e historial `Cerrado → Anulado`; 4200: 40-07/40-08/40-09 |
+| AC-59 | `test_retiro_anulacion_postgres_013.py` (anulación concurrente `(200, 409)`, una sola `ENTRADA`, creación de `stock_sede`, cruce con confirmación) y pruebas de atomicidad de `test_anulacion_retiro_013.py`; gated completo 2287/3 |
+| AC-60 | `test_patch_estado_retiro_013.py` (8 pruebas) y `test_ciclo_vida_aprobacion_013.py::test_patch_estado_conserva_su_contrato_de_legado_para_el_administrador_ac_49` |
+| AC-61 | `test_confirmacion_anulacion_013.py` (6 pruebas) y e2e `test_flujo_retiro_013.py`; SQL de §11.4: #10 `Cerrado`, fecha y cantidad intactas, historial `Cerrado → Cerrado`; 4200: 40-12/40-13/40-14; 409 de §11.5 |
+| AC-62 | `tickets.component.spec.ts` (3 columnas, sin `Pendiente` ni `Anulado` separada, contadores); 4200: 4/3/4 (40-16); 8080: 4/3/4 (40-18) |
+| AC-63 | `ticket-detalle.component.spec.ts` y `roles.spec.ts`; 4200 con Administrador/Bodeguero/Solicitante: retiro (Bodeguero), anulación (Administrador solo en `Cerrado` sin confirmar) y confirmación (Solicitante); el Superadmin queda fuera de `/tickets` (`ROLES_TICKETS` y `roles.spec.ts`); «Entregado»/«Rechazado» (40-05…40-15) |
+| AC-64 | `test_permisos_retiro_013.py` (11 pruebas: matriz 72, `/retiro` solo Bodeguero, movimientos solo Bodeguero, `/anulacion` y `PATCH` intactos, OpenAPI 72/74, `/despacho` ausente) y `roles.spec.ts` (espejo). Delta 75/77 → 72/74 por la 012 |
+| AC-65 | `test_ciclo_vida_dashboard_013.py` (excluye `Anulado` por nombre; ámbito del Solicitante; resto intacto); 4200: «Pedidos Activos» 7 (40-17) |
+| AC-66 | e2e `test_flujo_retiro_013.py::test_compras_021_no_cambia_por_la_devolucion_ac_35` y suite 020/021; 4200: `/compras/necesidades` 4 filas / 33 sugeridas y devolución reflejada en `stock_sede` |
+| AC-67 | `stack.md` §2 (enmienda y superación) con los cuatro estados, el retiro y la anulación con devolución; grep ampliado a `docs/diagramas/` y `docs/informes/`: 0 afirmaciones vigentes de `Pendiente`, `/despacho`, `Despachado`, «cinco estados», «cuatro columnas», `75/77` ni `026.0`; 06/07/10/11 actualizados con PNG regenerados, 4+1 03/01 con banner histórico, informe Word regenerado y solo notas históricas/slugs de archivo (§11.9) |
+| AC-68 | §11.1 (suites y build), §11.2 (contrato), §11.4–§11.5 (4200 con escritura real) y §11.6 (8080 reconstruido) |
+
+### 11.8 Hallazgos y datos residuales
+
+- **Datos QA residuales:** #9 `Anulado`, #10 `Cerrado`/«Entregado» y #11
+  `EnCurso`; producto 10 / Sede Maipú con stock **42**; movimientos 4–6 e
+  historial 1–10 del recorrido. No se crearon usuarios, productos, proveedores
+  ni OC. Las credenciales no se registraron.
+- **Deltas externos asumidos:** la base vigente es **72 v1 / 74 entradas**,
+  **25/22** tablas y **`026.1`** por la enmienda de la 012 del 27/Nov; la 013 no
+  cambia la cardinalidad de operaciones ni el DDL. `roadmap.md:92` conserva la
+  fila histórica de la 013 con `Pendiente`, matriz 49 y `013.1` (no se toca;
+  pendiente para el coordinador). Las menciones históricas de `/despacho` en
+  `008-particionamiento-institucional/spec.md` se conservan con la nota de superación; los
+  diagramas corrientes se actualizaron y los 4+1 históricos llevan banner (§11.9).
+- **8080 y la imagen:** `up -d frontend` no recreó el contenedor aunque la
+  imagen acababa de reconstruirse; seguía sirviendo la imagen anterior. Hay que
+  verificar el ID de imagen del contenedor o usar `up -d --force-recreate
+  frontend` para que el humo sea válido.
+- **Observación menor — RESUELTA en la corrección post-validación (27/Nov/2026):**
+  `ticket_proceso.py` ya dice «…lo confirme y retire» y «Rechazado: el pedido no se
+  retirará»; las fixtures de `test_ticket_proceso_013` (unitario e integración) se
+  actualizaron y la suite SQLite completa volvió a quedar en **2163 passed / 127 skipped /
+  0 failed** (13:04).
+
+### 11.9 Corrección post-validación (27/Nov/2026): coherencia de diagramas e informes
+
+La validación del reviewer detectó que AC-67/T43 aún dejaba menciones vigentes a
+`/despacho` y `Pendiente` en diagramas e informes. Se corrigió sin tocar el contrato
+funcional, `database/`, `plan.md`, `stack.md` ni los archivos del refactor externo de
+la 012.
+
+| Archivo | Tratamiento |
+|---|---|
+| `docs/diagramas/flujos-actores/README.md` | El límite conocido pasa a `POST /api/v1/tickets/{id}/retiro`; el flujo 07 se describe como retiro y se anota el slug histórico. |
+| `06-administrador-pedidos.html` / `.png` | **Actualizado:** «Aprobar o rechazar», edición en En revisión y nota de cierre reservado al retiro + anulación administrativa. PNG regenerado (2400×1120). |
+| `07-bodeguero-pedidos-despacho.html` / `.png` | **Actualizado:** «Pedidos y preparación del retiro», «Rechazar si no procede», «Preparar el retiro», «Registrar el retiro» y nota con «Registrar retiro» en el detalle. PNG regenerado. |
+| `10-solicitante-crear-pedido`, `11-solicitante-seguimiento`, `04`, `08` y `09` | **Actualizados** de `Pendiente`/«despacho» a `En revisión`/«retiro»; PNG regenerados. |
+| `4+1-kruchten/01-vista-logica/03-secuencia-despacho.html` | **Marcado histórico:** banner visible «La ruta vigente es `/retiro` y `registrar_retiro_ticket`; ver 013 §10». Se conserva el artefacto original. |
+| `4+1-kruchten/02-vista-procesos/01-actividad-ciclo-ticket.html` | **Marcado histórico:** banner visible con el catálogo de cuatro estados y «Registrar retiro». |
+| `4+1-kruchten/01-vista-logica/02-clases-inventario-tickets.html` | Colofón actualizado a `registrar_retiro_ticket`. |
+| `docs/informes/_generar_informe.py` + `Informe_Flujos_Actores.docx` | Cadenas actualizadas al contrato vigente (retiro, En revisión, solo Bodeguero para retiro y movimientos) y DOCX regenerado con los 12 PNG. |
+| `docs/informes/_generar_planilla_pruebas.py` | Etiquetas de taxonomía «transacción/retiro» y «transacciones/retiro». |
+
+El índice `4+1-kruchten/00-indice.html` marca los enlaces a la secuencia y a la actividad
+como «histórico».
+
+**Grep de cierre ampliado** a `docs/diagramas/` y `docs/informes/`: no quedan
+`/despacho`, `Pendiente`, `Despachado` ni `despachar_ticket` **vigentes**. Las únicas
+coincidencias son históricas y están cubiertas por los banners de esta §11.9 o por
+slugs de archivo (`07-bodeguero-pedidos-despacho`), que no son rutas ni estados.
+
+**PNG:** se regeneraron `04`, `06`, `07`, `08`, `09`, `10` y `11` (2400×1120); el
+`03-administrador-administracion.png` es el actualizado externamente el 27/Nov a las
+15:05 y **no se tocó**; los de `00`, `01`, `02` y `05` no cambiaron porque sus flujos no
+se tocaron. Los PNG de los 4+1 `03-secuencia` y `01-actividad` no se regeneraron: son
+recortes del SVG (2880×1920 y 2880×2520) y el banner histórico vive en el HTML; se
+conservan como artefactos. El PNG de `02-clases` no cambia porque el colofón está fuera
+del SVG.
+
+**Copy y capturas:** las capturas `40-05` y `40-09` se tomaron antes del ajuste de copy
+de `ticket_proceso.py`; conservan «despache»/«no se despachará» como registro histórico
+del recorrido. El copy vigente es «retire»/«no se retirará» y está cubierto por los
+tests actualizados.
+
+**Corrección visual del tablero (27/Nov/2026):** `tickets.component.html` pasó de
+`md:grid-cols-4` a `md:grid-cols-3` (contenedor `data-testid="tablero-pedidos"`), con el
+comentario ajustado a dos operativas + «Terminados». Regresión en
+`tickets.component.spec.ts`; `ng test` **684 SUCCESS / 0 FAILED**, `ng build` limpio
+(`main-6T35N3WS.js`) y 4200 con tres columnas de ~385 px sobre 1202 px (viewport 1536).
+
+**Corrección del shell (27/Nov/2026):** `app.component.html` añade `overflow-hidden` y
+`[contain:paint]` al contenedor `flex h-screen`, y `min-h-0 overflow-y-auto` al `nav`; el
+`<main>` conserva su `overflow-y-auto`. Regresión en `app.component.spec.ts` (shell, nav y
+main). `ng test` **685 SUCCESS / 0 FAILED**; `ng build` limpio (`main-SHBQMIGH.js`).
+4200: documento **674 = ventana 674**, `window.scrollTo(9999)` no mueve, nav forzado
+**272 > 160** con `scrollTop` 112 y main **1329/610** con scroll interno.
+
+**8080 (27/Nov/2026, tras la corrección del shell):** imagen
+`evidenciasproyecto-frontend:latest` reconstruida (`sha256:317fbdf…`) y contenedor recreado
+con `--force-recreate`; `index.html` sirve **`main-SHBQMIGH.js`**; `main-6T35N3WS.js`,
+`main-IRJLFDU6.js` y `main-72C5Q3DY.js` responden **404**; mismas métricas de shell y
+capturas [40-21](40-21-8080-tablero-3-columnas-fix.png) y
+[40-22](40-22-8080-shell-sin-scroll.png).
+
+**Capturas 8080:** `40-18` se recapturó en `http://localhost:8080/tickets` (196.983
+bytes, hash distinto de `40-16`); `40-19` se recapturó en
+`http://localhost:8080/tickets/10` y su archivo coincide con `40-15` porque la UI y
+los datos son los mismos. El humo original se sostuvo en `main-IRJLFDU6.js`; la
+verificación final usa `main-SHBQMIGH.js` y `40-22` (§11.9).

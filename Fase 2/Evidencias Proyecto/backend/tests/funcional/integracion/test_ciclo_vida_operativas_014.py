@@ -11,7 +11,7 @@ y compatibilidad de la 014 (D-7/AC-4/AC-9/AC-10):
   resolviendo producto y categoria aunque esten inactivos;
 * un movimiento nuevo sobre producto inactivo responde 409 sin cambios; el alta
   de ticket con producto inactivo responde 409 sin escritura; la edicion de un
-  ticket `Pendiente` conserva y permite cambiar la cantidad de un producto
+  ticket `EnRevision` conserva y permite cambiar la cantidad de un producto
   inactivo que **ya figura** en sus detalles, pero rechaza con 409 uno nuevo;
 * el despacho de tickets abiertos no tiene regla especial de catalogo: con saldo
   cero falla con el error vigente de stock insuficiente y sin efectos parciales;
@@ -159,7 +159,7 @@ def test_referencias_historicas_siguen_resolviendo_inactivos_ac_4(motor, mundo):
     producto = crear_producto(motor, mundo, nombre="Historico 014", stock_sede=0)
     stock_sede_id = _stock_sede_id(motor, mundo, producto)
 
-    with _admin(motor, mundo) as cliente:
+    with _cli(motor, mundo, "Bodeguero") as cliente:
         entrada = cliente.post(
             "/api/v1/inventario/movimientos",
             json={
@@ -221,7 +221,7 @@ def test_movimiento_sobre_producto_inactivo_responde_409_sin_cambios_ac_9(motor,
     _retirar_producto(motor, mundo, producto)
     movimientos_antes = contar(motor, MovimientoInventario)
 
-    with _admin(motor, mundo) as cliente:
+    with _cli(motor, mundo, "Bodeguero") as cliente:
         respuesta = cliente.post(
             "/api/v1/inventario/movimientos",
             json={
@@ -252,7 +252,7 @@ def test_alta_de_ticket_con_producto_inactivo_responde_409_sin_escritura_ac_9(
             json={
                 "usuario_id": mundo["usuarios_inst01"]["Solicitante"],
                 "prioridad_id": mundo["prioridad_id"],
-                "estado_id": mundo["estados"]["Pendiente"],
+                "estado_id": mundo["estados"]["EnRevision"],
                 "asunto": "Solicitud de producto inactivo",
                 "descripcion": "No debe crearse.",
                 "detalles": [
@@ -330,9 +330,9 @@ def test_edicion_pendiente_rechaza_inactivo_no_presente_ac_9(motor, mundo):
         ] == [(mundo["producto_id"], 3)], "el 409 no puede reemplazar los detalles"
 
 
-def test_despacho_abierto_con_saldo_cero_conserva_el_error_vigente_ac_9(motor, mundo):
-    """AC-9: el despacho no tiene regla especial; con saldo cero falla como antes."""
-    producto = crear_producto(motor, mundo, nombre="Despacho sin saldo", stock_sede=0)
+def test_retiro_abierto_con_saldo_cero_conserva_el_error_vigente_ac_9(motor, mundo):
+    """AC-9: el retiro no tiene regla especial; con saldo cero falla como antes."""
+    producto = crear_producto(motor, mundo, nombre="Retiro sin saldo", stock_sede=0)
     ticket_id = sembrar_ticket(
         motor,
         mundo,
@@ -343,10 +343,10 @@ def test_despacho_abierto_con_saldo_cero_conserva_el_error_vigente_ac_9(motor, m
     _retirar_producto(motor, mundo, producto)
     movimientos_antes = contar(motor, MovimientoInventario)
 
-    with _admin(motor, mundo) as cliente:
+    with _cli(motor, mundo, "Bodeguero") as cliente:
         respuesta = cliente.post(
-            f"/api/v1/tickets/{ticket_id}/despacho",
-            json={"usuario_id": mundo["usuario_id"]},
+            f"/api/v1/tickets/{ticket_id}/retiro",
+            json={"usuario_id": mundo["usuarios_inst01"]["Bodeguero"]},
         )
         assert respuesta.status_code == 409, respuesta.text
         assert "insuficiente" in respuesta.json()["detail"].lower(), respuesta.json()
@@ -354,7 +354,7 @@ def test_despacho_abierto_con_saldo_cero_conserva_el_error_vigente_ac_9(motor, m
         tickets = cliente.get("/api/v1/tickets/")
         ticket = next(t for t in tickets.json() if t["ticket_id"] == ticket_id)
         assert ticket["estado_id"] == mundo["estados"]["EnCurso"], (
-            "el fallo de despacho no puede cambiar el estado"
+            "el fallo de retiro no puede cambiar el estado"
         )
     assert contar(motor, MovimientoInventario) == movimientos_antes
 

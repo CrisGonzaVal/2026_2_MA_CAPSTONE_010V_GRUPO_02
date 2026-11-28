@@ -5,13 +5,13 @@ los rechazos 409, los 404 de referencia y el sellado de `fecha_cierre` se
 observan desde `PATCH /tickets/{id}/estado`, nunca tocando la sesion.
 
 Las fixtures de catalogo reemplazan los dos estados de `datos_base`
-(Pendiente, Cerrado) por catalogos a medida, siguio siempre el orden de
+(EnRevision, Cerrado) por catalogos a medida, siguiendo siempre el orden de
 `spec.md` §5. El DELETE es seguro porque en este punto no existe ningun
 ticket que referencie los estados borrados.
 
-Enmienda post-cierre 05/Nov/2026 (AC-27): el alta solo admite `Pendiente`, de
-modo que los escenarios que necesitan un ticket en otro estado lo siembran por
-ORM (`sembrar_ticket`) en vez de crearlo por HTTP.
+Enmienda 26/Nov/2026 (AC-51): el alta solo admite `EnRevision`, de modo que los
+escenarios que necesitan un ticket en otro estado lo siembran por ORM
+(`sembrar_ticket`) en vez de crearlo por HTTP.
 """
 
 from datetime import datetime
@@ -91,19 +91,18 @@ def _datos_prueba(datos_base):
 
 @pytest.fixture
 def datos_flujo_canonico(motor, datos_base):
-    """Catalogo canonico de 4 estados en orden, con `Cerrado` al final."""
+    """Catalogo de la enmienda: `EnRevision`, `EnCurso`, `Cerrado` (+Archivado)."""
     ids = _instalar_catalogo(
-        motor, ("Pendiente", "EnRevision", "EnCurso", "Cerrado")
+        motor, ("Archivado", "EnRevision", "EnCurso", "Cerrado")
     )
     datos = _datos_prueba(datos_base)
     datos.update(
         {
-            "estado_pendiente_id": ids["Pendiente"],
+            "estado_archivado_id": ids["Archivado"],
             "estado_en_revision_id": ids["EnRevision"],
             "estado_en_curso_id": ids["EnCurso"],
             "estado_cerrado_id": ids["Cerrado"],
             "estados_orden": [
-                ids["Pendiente"],
                 ids["EnRevision"],
                 ids["EnCurso"],
                 ids["Cerrado"],
@@ -119,7 +118,7 @@ def datos_flujo_cerrado_id_avanzado(motor, datos_base):
     que asumía el código viejo. Sirve para probar que la guardia de cierre
     resuelve `EnCurso`/`Cerrado` por nombre, sin depender de un id fijo."""
     ids = _instalar_catalogo(
-        motor, ("Archivado", "Pendiente", "EnRevision", "EnCurso", "Cerrado")
+        motor, ("Reabierto", "Archivado", "EnRevision", "EnCurso", "Cerrado")
     )
     datos = _datos_prueba(datos_base)
     datos.update(
@@ -142,12 +141,12 @@ def datos_flujo_cerrado_duplicado(motor, datos_base):
     el último del catálogo.
     """
     ids = _instalar_catalogo_lista(
-        motor, ("Pendiente", "EnRevision", "EnCurso", "Cerrado", "Cerrado")
+        motor, ("Archivado", "EnRevision", "EnCurso", "Cerrado", "Cerrado")
     )
     datos = _datos_prueba(datos_base)
     datos.update(
         {
-            "estado_pendiente_id": ids[0],
+            "estado_archivado_id": ids[0],
             "estado_en_revision_id": ids[1],
             "estado_en_curso_id": ids[2],
             "estado_cerrado_id": ids[3],  # el de menor id: el canónico
@@ -160,7 +159,7 @@ def datos_flujo_cerrado_duplicado(motor, datos_base):
 @pytest.fixture
 def datos_flujo_cerrado_minuscula(motor, datos_base):
     """Terminal llamado `CERRADO`: ejercita el `casefold()` del sellado."""
-    ids = _instalar_catalogo(motor, ("Pendiente", "EnRevision", "CERRADO"))
+    ids = _instalar_catalogo(motor, ("Archivado", "EnRevision", "CERRADO"))
     datos = _datos_prueba(datos_base)
     datos.update(
         {
@@ -177,7 +176,7 @@ def datos_flujo_cerrado_no_terminal(motor, datos_base):
     entrar dos veces, asi que solo un catalogo degenerado habilita la
     reentrada que D-3 debe sobrevivir."""
     ids = _instalar_catalogo(
-        motor, ("Pendiente", "EnRevision", "Cerrado", "Archivado", "Reabierto")
+        motor, ("Archivado", "EnRevision", "Cerrado", "Reabierto", "Otro")
     )
     datos = _datos_prueba(datos_base)
     datos.update(
@@ -205,10 +204,11 @@ def _payload_alta(datos, estado_id: int) -> dict:
 
 
 def crear_ticket_con_estado(cliente, actuar_como, datos, estado_id: int) -> int:
-    """Alta via API en `Pendiente` como Solicitante; devuelve el `ticket_id`.
+    """Alta via API en `EnRevision` como Solicitante; devuelve el `ticket_id`.
 
-    Enmienda 26/Nov/2026: el alta solo la ejerce el Solicitante. Al volver, la
-    sesion queda en Administrador para conservar el flujo por `PATCH`.
+    Enmienda 26/Nov/2026: el alta solo la ejerce el Solicitante y nace en
+    `EnRevision`. Al volver, la sesion queda en Administrador para conservar el
+    flujo por `PATCH`.
     """
     actuar_como("Solicitante")
     respuesta = cliente.post("/api/v1/tickets/", json=_payload_alta(datos, estado_id))
@@ -221,8 +221,8 @@ def crear_ticket_con_estado(cliente, actuar_como, datos, estado_id: int) -> int:
 def sembrar_ticket(motor, datos, estado_id: int, *, fecha_cierre=None) -> int:
     """Inserta un ticket con un detalle por ORM, sin pasar por el alta.
 
-    AC-27 reserva el alta a `Pendiente`: los escenarios que necesitan otro
-    estado (EnRevision, EnCurso, Cerrado) se siembran aqui, con la misma
+    AC-51 reserva el alta a `EnRevision`: los escenarios que necesitan otro
+    estado (EnCurso, Cerrado) se siembran aqui, con la misma
     tecnica que la suite de la 013.
     """
     db = sessionmaker(bind=motor)()
@@ -273,9 +273,26 @@ def cambiar_estado(cliente, ticket_id: int, estado_id: int):
 def test_avanzar_un_paso_pasa_al_siguiente_estado(
     cliente, actuar_como, datos_flujo_canonico
 ):
-    """Pendiente -> EnRevision es un paso: 200 y el ticket queda ahí."""
+    """`EnRevision -> EnCurso` es un paso: 200 y el ticket queda ahí."""
     ticket_id = crear_ticket_con_estado(
-        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
+        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_en_revision_id"]
+    )
+
+    respuesta = cambiar_estado(
+        cliente, ticket_id, datos_flujo_canonico["estado_en_curso_id"]
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["estado_id"] == datos_flujo_canonico["estado_en_curso_id"]
+    assert respuesta.json()["fecha_cierre"] is None, "avanzar a EnCurso no sella fecha"
+
+
+def test_retroceder_un_paso_vuelve_al_estado_anterior(
+    motor, cliente, datos_flujo_canonico
+):
+    """EnCurso -> EnRevision es un paso hacia atrás: 200."""
+    ticket_id = sembrar_ticket(
+        motor, datos_flujo_canonico, datos_flujo_canonico["estado_en_curso_id"]
     )
 
     respuesta = cambiar_estado(
@@ -284,23 +301,6 @@ def test_avanzar_un_paso_pasa_al_siguiente_estado(
 
     assert respuesta.status_code == 200, respuesta.text
     assert respuesta.json()["estado_id"] == datos_flujo_canonico["estado_en_revision_id"]
-    assert respuesta.json()["fecha_cierre"] is None, "avanzar a EnRevision no sella fecha"
-
-
-def test_retroceder_un_paso_vuelve_al_estado_anterior(
-    motor, cliente, datos_flujo_canonico
-):
-    """EnRevision -> Pendiente es un paso hacia atrás: 200."""
-    ticket_id = sembrar_ticket(
-        motor, datos_flujo_canonico, datos_flujo_canonico["estado_en_revision_id"]
-    )
-
-    respuesta = cambiar_estado(
-        cliente, ticket_id, datos_flujo_canonico["estado_pendiente_id"]
-    )
-
-    assert respuesta.status_code == 200, respuesta.text
-    assert respuesta.json()["estado_id"] == datos_flujo_canonico["estado_pendiente_id"]
 
 
 # --- Rechazos del flujo (AC-13) ---
@@ -309,18 +309,18 @@ def test_retroceder_un_paso_vuelve_al_estado_anterior(
 def test_salto_de_estado_se_rechaza_con_409(
     cliente, actuar_como, datos_flujo_canonico
 ):
-    """Pendiente -> EnCurso salta EnRevision: 409 y el ticket no cambia."""
+    """EnRevision -> Cerrado salta EnCurso: 409 y el ticket no cambia."""
     ticket_id = crear_ticket_con_estado(
-        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
+        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_en_revision_id"]
     )
 
     respuesta = cambiar_estado(
-        cliente, ticket_id, datos_flujo_canonico["estado_en_curso_id"]
+        cliente, ticket_id, datos_flujo_canonico["estado_cerrado_id"]
     )
 
     assert respuesta.status_code == 409, respuesta.text
     assert ticket_en_api(cliente, ticket_id)["estado_id"] == datos_flujo_canonico[
-        "estado_pendiente_id"
+        "estado_en_revision_id"
     ], "un 409 no puede dejar el ticket en otro estado"
 
 
@@ -329,16 +329,16 @@ def test_pedir_el_estado_actual_se_rechaza_con_409(
 ):
     """Pedir el estado en el que ya está no es una transición: 409."""
     ticket_id = crear_ticket_con_estado(
-        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_pendiente_id"]
+        cliente, actuar_como, datos_flujo_canonico, datos_flujo_canonico["estado_en_revision_id"]
     )
 
     respuesta = cambiar_estado(
-        cliente, ticket_id, datos_flujo_canonico["estado_pendiente_id"]
+        cliente, ticket_id, datos_flujo_canonico["estado_en_revision_id"]
     )
 
     assert respuesta.status_code == 409, respuesta.text
     assert ticket_en_api(cliente, ticket_id)["estado_id"] == datos_flujo_canonico[
-        "estado_pendiente_id"
+        "estado_en_revision_id"
     ]
 
 
@@ -379,7 +379,7 @@ def test_estado_inexistente_responde_404_sin_modificar(
         cliente_sin_excepcion,
         actuar_como,
         datos_flujo_canonico,
-        datos_flujo_canonico["estado_pendiente_id"],
+        datos_flujo_canonico["estado_en_revision_id"],
     )
 
     respuesta = cambiar_estado(cliente_sin_excepcion, ticket_id, 999999)
@@ -387,7 +387,7 @@ def test_estado_inexistente_responde_404_sin_modificar(
     assert respuesta.status_code == 404, respuesta.text
     assert "estado" in respuesta.json()["detail"].lower()
     assert ticket_en_api(cliente_sin_excepcion, ticket_id)["estado_id"] == (
-        datos_flujo_canonico["estado_pendiente_id"]
+        datos_flujo_canonico["estado_en_revision_id"]
     ), "un 404 no puede modificar el ticket"
 
 
@@ -411,17 +411,17 @@ def test_el_ticket_se_valida_antes_que_el_estado(cliente, datos_flujo_canonico):
     assert "estado" not in detalle
 
 
-# --- Cierre manual reservado al despacho (AC-15) ---
+# --- Cierre manual reservado al retiro (AC-15) ---
 
 
-def test_avanzar_a_cerrado_esta_reservado_al_despacho(
+def test_avanzar_a_cerrado_esta_reservado_al_retiro(
     motor, cliente, datos_flujo_canonico
 ):
     """Migrado de AC-16 (004): `EnCurso -> Cerrado` por PATCH ya no cierra.
 
-    La spec 005 reserva ese cierre al despacho transaccional, de modo que el
+    La spec 005 reserva ese cierre al retiro transaccional, de modo que el
     PATCH responde 409 con el detalle literal, sin mover el ticket ni sellar
-    `fecha_cierre`. El sellado por cierre se cubre en el despacho.
+    `fecha_cierre`. El sellado por cierre se cubre en el retiro.
     """
     ticket_id = sembrar_ticket(
         motor, datos_flujo_canonico, datos_flujo_canonico["estado_en_curso_id"]
@@ -433,8 +433,8 @@ def test_avanzar_a_cerrado_esta_reservado_al_despacho(
 
     assert respuesta.status_code == 409, respuesta.text
     assert respuesta.json()["detail"] == (
-        "El cierre requiere despacho; use "
-        f"POST /api/v1/tickets/{ticket_id}/despacho"
+        "El cierre requiere retiro; use "
+        f"POST /api/v1/tickets/{ticket_id}/retiro"
     )
 
     ticket = ticket_en_api(cliente, ticket_id)
@@ -442,7 +442,7 @@ def test_avanzar_a_cerrado_esta_reservado_al_despacho(
         "un 409 por cierre reservado no puede mover el ticket"
     )
     assert ticket["fecha_cierre"] is None, (
-        "el PATCH no sella cierre: el sellado corresponde al despacho"
+        "el PATCH no sella cierre: el sellado corresponde al retiro"
     )
 
 
@@ -468,8 +468,8 @@ def test_el_cierre_manual_con_cerrado_duplicado_usa_el_de_menor_id(
 
     assert respuesta.status_code == 409, respuesta.text
     assert respuesta.json()["detail"] == (
-        "El cierre requiere despacho; use "
-        f"POST /api/v1/tickets/{ticket_id}/despacho"
+        "El cierre requiere retiro; use "
+        f"POST /api/v1/tickets/{ticket_id}/retiro"
     )
 
     ticket = ticket_en_api(cliente, ticket_id)
@@ -494,8 +494,8 @@ def test_el_cierre_reservado_no_depende_del_id_del_estado(
 
     assert respuesta.status_code == 409, respuesta.text
     assert respuesta.json()["detail"] == (
-        "El cierre requiere despacho; use "
-        f"POST /api/v1/tickets/{ticket_id}/despacho"
+        "El cierre requiere retiro; use "
+        f"POST /api/v1/tickets/{ticket_id}/retiro"
     )
     assert ticket_en_api(cliente, ticket_id)["estado_id"] == (
         datos_flujo_cerrado_id_avanzado["estado_en_curso_id"]
@@ -534,7 +534,7 @@ def test_el_alta_en_cerrado_minuscula_se_rechaza_con_409(
     """Enmienda AC-27 (05/Nov/2026): derogado el alta directa en `Cerrado`.
 
     Antes este escenario verificaba el `casefold()` del sellado en el alta (D-3,
-    AC-18 de la 004); hoy el unico estado inicial es `Pendiente` y el alta en
+    AC-18 de la 004); hoy el unico estado inicial es `EnRevision` y el alta en
     `CERRADO` responde 409, con independencia del casing.
     """
     actuar_como("Solicitante")
@@ -547,7 +547,7 @@ def test_el_alta_en_cerrado_minuscula_se_rechaza_con_409(
     )
 
     assert respuesta.status_code == 409, respuesta.text
-    assert "Pendiente" in respuesta.json()["detail"]
+    assert "EnRevision" in respuesta.json()["detail"]
 
 
 def test_salir_de_cerrado_responde_409_y_conserva_la_fecha_sellada(
@@ -578,9 +578,9 @@ def test_salir_de_cerrado_responde_409_y_conserva_la_fecha_sellada(
     )
 
     assert fuera.status_code == 409, fuera.text
-    assert "despacho" in fuera.json()["detail"].lower(), (
+    assert "retiro" in fuera.json()["detail"].lower(), (
         "el 409 de salida desde Cerrado declara que el cierre es definitivo y "
-        f"que el despacho es el unico camino a el: {fuera.text}"
+        f"que el retiro es el unico camino a el: {fuera.text}"
     )
     despues = ticket_en_api(cliente, ticket_id)
     assert despues["estado_id"] == datos_flujo_cerrado_no_terminal[
@@ -596,7 +596,7 @@ def test_crear_ticket_en_cerrado_se_rechaza_con_409(
 ):
     """Enmienda AC-27 (05/Nov/2026): derogado el AC-17 de la 004 en el alta.
 
-    `Cerrado` solo se alcanza por el despacho transaccional de la 005; el alta
+    `Cerrado` solo se alcanza por el retiro transaccional; el alta
     en ese estado responde 409 y no sella nada porque no escribe nada.
     """
     actuar_como("Solicitante")
@@ -608,7 +608,7 @@ def test_crear_ticket_en_cerrado_se_rechaza_con_409(
     )
 
     assert respuesta.status_code == 409, respuesta.text
-    assert "Pendiente" in respuesta.json()["detail"]
+    assert "EnRevision" in respuesta.json()["detail"]
 
 
 # --- Listado: orden explícito y sin N+1 (AC-27) ---
@@ -628,7 +628,7 @@ def test_listar_tickets_ordena_por_fecha_desc_y_ticket_id_desc(
             cliente,
             actuar_como,
             datos_flujo_canonico,
-            datos_flujo_canonico["estado_pendiente_id"],
+            datos_flujo_canonico["estado_en_revision_id"],
         )
         for _ in range(3)
     ]
@@ -667,7 +667,7 @@ def test_listar_tickets_no_hace_consultas_por_ticket(
             cliente,
             actuar_como,
             datos_flujo_canonico,
-            datos_flujo_canonico["estado_pendiente_id"],
+            datos_flujo_canonico["estado_en_revision_id"],
         )
         contador["n"] = 0
         assert cliente.get("/api/v1/tickets/").status_code == 200
@@ -678,7 +678,7 @@ def test_listar_tickets_no_hace_consultas_por_ticket(
                 cliente,
                 actuar_como,
                 datos_flujo_canonico,
-                datos_flujo_canonico["estado_pendiente_id"],
+                datos_flujo_canonico["estado_en_revision_id"],
             )
         contador["n"] = 0
         assert cliente.get("/api/v1/tickets/").status_code == 200
@@ -698,7 +698,7 @@ def test_listar_tickets_no_hace_consultas_por_ticket(
     # del numero de tickets; por eso el tope sube de 5 a 7. Ampliacion de la 013
     # (§9.2): el read model de proceso suma cinco consultas fijas —estado eager,
     # cobertura de OC, resolucion del `Cerrado` canonico, confirmaciones y
-    # gestores— y deja el tope en 12; con estos tickets `Pendiente` no hay
+    # gestores— y deja el tope en 12; con estos tickets `EnRevision` no hay
     # simulacion de stock. Lo que protege esta prueba es que el numero NO crezca
     # con los tickets.
     assert with_tres <= 12, (
@@ -722,7 +722,7 @@ def test_el_contrato_del_patch_documenta_404_409_y_sellado(cliente):
 
 
 def test_el_contrato_del_patch_documenta_el_cierre_reservado(cliente):
-    """AC-15/AC-21: el PATCH documenta el 409 reservado al despacho, literal.
+    """AC-15/AC-21: el PATCH documenta el 409 reservado al retiro, literal.
 
     El 409 de negocio se documenta en la `description` (convención del
     proyecto, que no usa `responses=`), y el detalle exacto del rechazo debe
@@ -733,9 +733,9 @@ def test_el_contrato_del_patch_documenta_el_cierre_reservado(cliente):
     descripcion = operacion["description"]
 
     literal = (
-        "El cierre requiere despacho; use POST "
-        "/api/v1/tickets/{ticket_id}/despacho"
+        "El cierre requiere retiro; use POST "
+        "/api/v1/tickets/{ticket_id}/retiro"
     )
     assert literal in descripcion, (
-        "falta el detalle literal del cierre reservado al despacho (AC-15)"
+        "falta el detalle literal del cierre reservado al retiro (AC-15)"
     )

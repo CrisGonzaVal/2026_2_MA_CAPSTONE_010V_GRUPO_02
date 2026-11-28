@@ -61,8 +61,15 @@ _MOVIMIENTOS: frozenset[str] = frozenset({_ADMINISTRADOR, _BODEGUERO})
 # acotado a estas entradas; el resto de la matriz 007 no se modifica.
 #: Escritura de catalogo institucional (alta de producto). Solo el Administrador.
 _ESCRITURA_CATALOGO: frozenset[str] = frozenset({_ADMINISTRADOR})
-#: Escritura de stock/movimientos y operaciones de ticket (despacho, estado).
-_ESCRITURA_STOCK: frozenset[str] = frozenset({_ADMINISTRADOR, _BODEGUERO})
+#: Registro manual de movimientos de stock (entrada/salida por sede): operacion
+#: **de bodega** desde la enmienda 26/Nov/2026 (D-31/AC-64). El Administrador
+#: deja de escribir movimientos manuales. El retiro de tickets no comparte este
+#: conjunto: tiene su propia ruta y su propio conjunto (`_RETIRO_TICKETS`).
+_ESCRITURA_STOCK: frozenset[str] = frozenset({_BODEGUERO})
+#: Enmienda 26/Nov/2026 (D-30/AC-55): el retiro es **solo** del Bodeguero, con
+#: un conjunto dedicado e independiente de `_ESCRITURA_STOCK` (registro manual
+#: de movimientos, tambien de bodega desde D-31).
+_RETIRO_TICKETS: frozenset[str] = frozenset({_BODEGUERO})
 
 # --- Ampliacion 25/Nov/2026 de la Feature 013 (spec §9.3/§9.10, AC-45/AC-49) --
 # La aprobacion del pedido es una decision de flujo del Administrador
@@ -72,11 +79,11 @@ _ESCRITURA_STOCK: frozenset[str] = frozenset({_ADMINISTRADOR, _BODEGUERO})
 _ESCRITURA_TICKETS_ADMIN: frozenset[str] = frozenset({_ADMINISTRADOR})
 
 # --- Ajuste puntual de la Feature 011 (spec D-4/D-5, AC-5) ------------------
-# Las asignaciones organizacionales (sede de departamento, sede de Bodeguero y
-# gestion de encargados) son administracion institucional: solo el Administrador.
-# Superadmin no escribe datos de negocio en tenants; los roles operativos no
-# gestionan la organizacion. Tambien la consulta de sedes queda reservada al
-# Administrador en esta feature (la lectura operativa de existencias llega en T8).
+# Las asignaciones organizacionales (sede de departamento y sede de Bodeguero)
+# son administracion institucional: solo el Administrador. Superadmin no escribe
+# datos de negocio en tenants; los roles operativos no gestionan la organizacion.
+# Tambien la consulta de sedes queda reservada al Administrador en esta feature
+# (la lectura operativa de existencias llega en T8).
 _ORGANIZACION: frozenset[str] = frozenset({_ADMINISTRADOR})
 
 # --- Feature 014 (spec D-8/D-9, AC-2/AC-12/AC-15) ---------------------------
@@ -138,7 +145,9 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
     ("GET", "/api/v1/inventario/stock"): _LECTURA_NEGOCIO,
     # 017 D-9: historial de movimientos sin Superadmin; sigue sin Solicitante.
     ("GET", "/api/v1/inventario/movimientos"): _MOVIMIENTOS,
-    # 008 D-3: movimientos de stock sin Superadmin (escritura institucional).
+    # 008 D-3 + enmienda 26/Nov/2026 (D-31/AC-64): el registro manual de
+    # movimientos es una operacion de bodega. El Administrador recibe 403 y el
+    # Superadmin no escribe; el retiro de tickets conserva su conjunto dedicado.
     ("POST", "/api/v1/inventario/movimientos"): _ESCRITURA_STOCK,
     # Tickets: estado y despacho sin Solicitante; desde la enmienda del
     # 26/Nov/2026 (D-11) el **alta** queda reservada al Solicitante. Feature 017:
@@ -151,11 +160,12 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
     # **solo** del Solicitante. Administrador, Bodeguero y Superadmin reciben
     # 403 por matriz con un cuerpo JSON **parseable** (válido o inválido), antes
     # de validar el payload; un JSON malformado puede responder 422 antes de las
-    # dependencias. No se agrega ni se retira ninguna fila: la matriz conserva
-    # 75 operaciones.
+    # dependencias. No se agrega ni se retira ninguna fila.
     ("POST", "/api/v1/tickets/"): frozenset({_SOLICITANTE}),
-    # 008 D-3: despacho y cambio de estado sin Superadmin.
-    ("POST", "/api/v1/tickets/{ticket_id}/despacho"): _ESCRITURA_STOCK,
+    # 008 D-3: el cambio de estado queda sin Superadmin.
+    # Enmienda 26/Nov/2026 (D-29/D-30/AC-55): `/despacho` pasa a `/retiro` y se
+    # concede **solo** al Bodeguero; la cardinalidad no cambia.
+    ("POST", "/api/v1/tickets/{ticket_id}/retiro"): _RETIRO_TICKETS,
     # Ampliacion 25/Nov/2026 (spec §9.10, AC-49): el `PATCH /estado` de legado
     # deja de concederse al Bodeguero y queda **solo** para el Administrador;
     # conserva su entrada (no cambia el numero de operaciones).
@@ -211,24 +221,14 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
         "POST",
         "/api/v1/usuarios/{usuario_id}/invitacion/reenvio",
     ): _ORGANIZACION,
-    # Feature 011 (D-4/D-5, AC-5): gestion organizacional minima. Las seis
-    # operaciones las autoriza solo el Administrador institucional; no hay permiso
-    # implicito para el resto de roles ni escritura de Superadmin en tenants.
+    # Feature 011 (D-4/D-5, AC-5): gestion organizacional minima. Las tres
+    # operaciones vigentes las autoriza solo el Administrador institucional; no hay
+    # permiso implicito para el resto de roles ni escritura de Superadmin en
+    # tenants. La enmienda 27/Nov/2026 de la 012 retiro las tres de la tabla puente
+    # auxiliar.
     ("GET", "/api/v1/organizacion/sedes"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/departamentos/{departamento_id}/sede"): _ORGANIZACION,
     ("PUT", "/api/v1/organizacion/usuarios/{usuario_id}/sede"): _ORGANIZACION,
-    (
-        "GET",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "POST",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados",
-    ): _ORGANIZACION,
-    (
-        "DELETE",
-        "/api/v1/organizacion/departamentos/{departamento_id}/encargados/{usuario_id}",
-    ): _ORGANIZACION,
     # Feature 013 (AC-17, plan §2): ciclo de vida del ticket. Son las cinco
     # operaciones nuevas **aditivas** de la 013 (matriz 44 -> 49): ninguna
     # entrada previa se modifica ni se retira. Los roles son exactamente los

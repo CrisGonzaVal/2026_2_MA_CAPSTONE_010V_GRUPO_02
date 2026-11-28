@@ -836,3 +836,14 @@ recorridos de 4200 y 8080 usaron sesiones Clerk reales de la instancia dev (sin 
   resolverán en el plan técnico. No se permite descartar o reinicializar la base como
   sustituto de la migración.
 - No se guardan secretos ni contraseñas reales en esta especificación.
+
+> **Nota de enmienda (26/Nov/2026, Feature 013 §10).** La matriz central de la 013 conserva
+> **75** operaciones (baseline 013; vigente **72** por la enmienda externa de la 012 del
+> 27/Nov/2026), con tres ajustes de la enmienda: `POST /api/v1/tickets/{ticket_id}/retiro` queda
+> **solo Bodeguero** (clave renombrada desde `/despacho`, que desaparece) y
+> `POST /api/v1/inventario/movimientos` queda **solo Bodeguero**; `POST /…/anulacion` conserva
+> `{Administrador, Solicitante}`. Las filas históricas de despacho (`{Administrador, Bodeguero}`)
+> y de movimientos (`{Administrador, Bodeguero}`) quedan **superadas** por esas dos entradas. El
+> espejo del frontend usa `ROLES_RETIRO_TICKETS` y `puedeRegistrarRetiro` (solo Bodeguero), y
+> `puedeAnularTicket` conserva Administrador/Solicitante. No cambian la autenticación ni las
+> capacidades. Detalle en `../013-ciclo-vida-ticket/spec.md` §10 (D-30/D-31, AC-55, AC-64).

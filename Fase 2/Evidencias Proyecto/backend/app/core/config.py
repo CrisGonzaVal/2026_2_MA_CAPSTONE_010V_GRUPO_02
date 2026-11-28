@@ -30,8 +30,10 @@ VERSION_APLICACION = "1.0.0"
 #: en control y en cada tenant, de modo que el objetivo sube de `020.1` a `021.1`
 #: (spec 021, AC-6/AC-11). La Feature 026 retira la tabla `inventario` (el saldo
 #: vigente es `stock_sede`), anade indices P0 y restricciones de dominio, de modo
-#: que el objetivo sube a `026.0` (spec 026, AC-13/AC-14).
-VERSION_ESQUEMA_OBJETIVO = "026.0"
+#: que el objetivo sube a `026.0` (spec 026, AC-13/AC-14). La enmienda
+#: 27/Nov/2026 de la 012 retira la tabla puente auxiliar del modelo
+#: organizacional, de modo que el objetivo sube a `026.1` (spec 012, AC-33/AC-34).
+VERSION_ESQUEMA_OBJETIVO = "026.1"
 
 
 #: Raiz de `backend/`. Localiza los `.env` sin depender del directorio desde el

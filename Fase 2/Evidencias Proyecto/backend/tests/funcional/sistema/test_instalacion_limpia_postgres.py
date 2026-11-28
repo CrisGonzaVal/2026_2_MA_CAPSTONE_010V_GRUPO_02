@@ -6,11 +6,12 @@ una base vacia, tal como lo hace el volumen de `docker compose`
 ni el DDL por esquema, asi que lo que la instalacion limpia exige solo se
 acredita contra PostgreSQL 16 real:
 
-  * `control` con las 26 tablas globales (Feature 017 anade
+  * `control` con las 25 tablas globales (Feature 017 anade
     `registro_motivo_constancia`; la 014, los dos historiales de transicion del
     catalogo; la 020, el catalogo de proveedores y las tres tablas de compras;
-    la 021, el puente orden de compra-ticket; la 026 retira `inventario`) y
-    **un esquema tenant por institucion** con las 23 tablas de negocio replicadas;
+    la 021, el puente orden de compra-ticket; la 026 retira `inventario` y la
+    enmienda 27/Nov/2026 de la 012 retira la tabla puente auxiliar) y
+    **un esquema tenant por institucion** con las 22 tablas de negocio replicadas;
   * reparto deterministico de sedes (2/3/4/2 para INST-001..004) y de
     departamentos por round-robin sobre `departamento_id` ascendente;
   * `control` queda como contexto global (sin filas de negocio), con la
@@ -18,8 +19,8 @@ acredita contra PostgreSQL 16 real:
     catalogo de roles, el estado `Anulado`, la identidad administrativa del
     Superadmin, los 3 proveedores del catalogo global y el mapa
     `correo -> esquema` con las 14 identidades;
-  * version objetivo `026.0` en `control` y en cada tenant (expectativa
-    planificada de la Feature 026: se fija como literal, no se sigue del token),
+  * version objetivo `026.1` en `control` y en cada tenant (expectativa
+    planificada de la enmienda 012: se fija como literal, no se sigue del token),
     con el catalogo sembrado activo por tenant y el routing exigiendo esa misma
     version (una version menor no se enruta);
   * guardia fail-closed: una segunda ejecucion de `02_` aborta sin cambios.
@@ -73,18 +74,17 @@ SEMILLA_SQL = RAIZ / "database" / "02_datos_semilla.sql"
 #: Reparto fijo de sedes por institucion (Feature 011, D-7).
 SEDES_ESPERADAS = {"INST-001": 2, "INST-002": 3, "INST-003": 4, "INST-004": 2}
 
-#: Version objetivo vigente (Feature 026). Se fija como literal para que la
-#: expectativa no siga automaticamente al token del codigo.
-VERSION_OBJETIVO_VIGENTE = "026.0"
+#: Version objetivo vigente (enmienda 27/Nov/2026 de la 012). Se fija como
+#: literal para que la expectativa no siga automaticamente al token del codigo.
+VERSION_OBJETIVO_VIGENTE = "026.1"
 
-#: Las 26 tablas globales de `control`.
+#: Las 25 tablas globales de `control`.
 TABLAS_CONTROL = {
     "institucion",
     "sede",
     "departamento",
     "rol",
     "usuario",
-    "departamento_encargado",
     "categoria",
     "producto",
     "stock_sede",
@@ -111,7 +111,7 @@ TABLAS_CONTROL = {
     "orden_compra_ticket",
 }
 
-#: Las 23 tablas de negocio que cada tenant replica. Las tres auxiliares de
+#: Las 22 tablas de negocio que cada tenant replica. Las tres auxiliares de
 #: control (capacidades, mapa y motivos/constancias) nunca viajan al tenant.
 TABLAS_TENANT = TABLAS_CONTROL - {
     "funcion_institucion",
@@ -140,7 +140,6 @@ CONTROL_ESPERADO = {
 #: los dos historiales de la 014, que no se siembran con transiciones ficticias.
 CONTROL_VACIAS = (
     "sede",
-    "departamento_encargado",
     "categoria",
     "producto",
     "stock_sede",
@@ -172,7 +171,6 @@ TOTALES_TENANT = {
     "sede": 11,
     "departamento": 10,
     "usuario": 16,
-    "departamento_encargado": 5,
     "categoria": 10,
     "producto": 14,
     "stock_sede": 14,
@@ -301,8 +299,8 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
     with _base_temporal() as conexion:
         _instalar(conexion)
 
-        assert len(TABLAS_CONTROL) == 26, len(TABLAS_CONTROL)
-        assert len(TABLAS_TENANT) == 23, len(TABLAS_TENANT)
+        assert len(TABLAS_CONTROL) == 25, len(TABLAS_CONTROL)
+        assert len(TABLAS_TENANT) == 22, len(TABLAS_TENANT)
         assert _tablas_del_esquema(conexion, "control") == TABLAS_CONTROL
         instituciones = _instituciones(conexion)
         assert instituciones == list(SEDES_ESPERADAS)
@@ -317,7 +315,7 @@ def test_instalacion_limpia_crea_control_y_tenants_versionados():
 
 
 def test_el_token_de_codigo_apunta_a_la_version_vigente():
-    """AC-14: el objetivo del despliegue es `026.0` (lo sube T1 con el DDL)."""
+    """AC-34: el objetivo del despliegue es `026.1` (enmienda de la 012)."""
     assert VERSION_ESQUEMA_OBJETIVO == VERSION_OBJETIVO_VIGENTE, VERSION_ESQUEMA_OBJETIVO
 
 
@@ -326,7 +324,7 @@ def test_estructura_de_invitacion_y_motivos_vive_solo_en_control():
 
     Verifica el catalogo real de PostgreSQL: las cuatro columnas de invitacion
     y la tabla `registro_motivo_constancia` con su clave idempotente unica, su
-    `CHECK` de estado y su `FK` local a `institucion`. Cada tenant conserva sus 23
+    `CHECK` de estado y su `FK` local a `institucion`. Cada tenant conserva sus 22
     tablas de negocio y **no** recibe ninguna de las estructuras auxiliares.
     """
     with _base_temporal() as conexion:
@@ -509,9 +507,10 @@ def test_control_queda_como_contexto_global_y_los_totales_viven_en_los_tenants()
             assert suma == total, (tabla, suma)
 
         # Rol y estado se replican en cada tenant (el Superadmin vive solo en control).
+        # Enmienda 26/Nov/2026: el catalogo queda en cuatro nombres (sin `Pendiente`).
         for esquema in esquemas:
             assert _conteo_tabla(conexion, esquema, "rol") == 3, esquema
-            assert _conteo_tabla(conexion, esquema, "estado_ticket") == 5, esquema
+            assert _conteo_tabla(conexion, esquema, "estado_ticket") == 4, esquema
             assert _conteo_tabla(conexion, esquema, "prioridad") == 3, esquema
 
 
@@ -604,7 +603,7 @@ def test_instalacion_limpia_enruta_en_la_version_vigente_y_deniega_una_version_m
     """AC-14: la version instalada es la unica, compatible y exigida por routing.
 
     Con la instalacion limpia (`01_` + `02_`) el token del codigo y el de los
-    esquemas coinciden (`026.0`) y la identidad mapeada se enruta; bajada la
+    esquemas coinciden (`026.1`) y la identidad mapeada se enruta; bajada la
     version del tenant a una menor, el routing la deniega en cerrado (mismo
     patron que la regresion de cadena de la Feature 013).
     """

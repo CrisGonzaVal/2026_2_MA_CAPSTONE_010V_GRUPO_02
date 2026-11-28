@@ -2,9 +2,9 @@
 
 Clasificación de los specs de Angular por **tipo de prueba**.
 
-Son **42 archivos** de spec bajo `src/app/` que ejecutan **559 casos** en la
-última corrida verificada. El índice los cubre todos; al final hay un comando
-para detectar si alguno queda fuera.
+Son **44 archivos** de spec bajo `src/app/` que ejecutan **671 casos** en la
+última corrida verificada (27/Nov/2026). El índice los cubre todos; al final hay
+un comando para detectar si alguno queda fuera.
 
 ## Por qué hay un índice y no una mudanza
 
@@ -29,6 +29,8 @@ rápidos).
 | [`app/core/auth/roles.spec.ts`](../../app/core/auth/roles.spec.ts) | Resolución de roles y capacidades |
 | [`app/shared/utils/etiqueta-estado.spec.ts`](../../app/shared/utils/etiqueta-estado.spec.ts) | Etiquetado de estados |
 | [`app/shared/utils/errores-http.spec.ts`](../../app/shared/utils/errores-http.spec.ts) | Mapeo de errores HTTP |
+| [`app/shared/utils/rut.spec.ts`](../../app/shared/utils/rut.spec.ts) | RUT: módulo 11 y forma visible |
+| [`app/shared/utils/validacion-http.spec.ts`](../../app/shared/utils/validacion-http.spec.ts) | Parser de `loc`/`type` del 422 |
 
 ### Integración — servicios, guards, interceptores y rutas
 
@@ -47,6 +49,7 @@ rápidos).
 | [`app/features/dashboard/services/dashboard.service.spec.ts`](../../app/features/dashboard/services/dashboard.service.spec.ts) | Servicio de métricas |
 | [`app/features/inventario/services/inventario.service.spec.ts`](../../app/features/inventario/services/inventario.service.spec.ts) | Servicio de inventario |
 | [`app/features/administracion/services/administracion.service.spec.ts`](../../app/features/administracion/services/administracion.service.spec.ts) | Servicio de administración |
+| [`app/features/tickets/services/ticket.service.spec.ts`](../../app/features/tickets/services/ticket.service.spec.ts) | Servicio de tickets |
 | [`app/features/compras/services/compras.service.spec.ts`](../../app/features/compras/services/compras.service.spec.ts) | Servicio de compras |
 | [`app/features/control/services/control.service.spec.ts`](../../app/features/control/services/control.service.spec.ts) | Servicio del panel SaaS |
 | [`app/app.routes.spec.ts`](../../app/app.routes.spec.ts) | Rutas raíz, guards y carga diferida |
@@ -65,7 +68,6 @@ rápidos).
 | [`app/features/administracion/usuarios.component.spec.ts`](../../app/features/administracion/usuarios.component.spec.ts) | Usuarios, roles y asignación |
 | [`app/features/administracion/sedes.component.spec.ts`](../../app/features/administracion/sedes.component.spec.ts) | CRUD de sedes y 409 por duplicado |
 | [`app/features/administracion/departamentos.component.spec.ts`](../../app/features/administracion/departamentos.component.spec.ts) | CRUD de departamentos y sede asignada |
-| [`app/features/administracion/encargados.component.spec.ts`](../../app/features/administracion/encargados.component.spec.ts) | Encargados por departamento |
 | [`app/features/compras/lista-ordenes/lista-ordenes.component.spec.ts`](../../app/features/compras/lista-ordenes/lista-ordenes.component.spec.ts) | Órdenes de compra: filtros, emisión y cancelación |
 | [`app/features/compras/necesidades/necesidades.component.spec.ts`](../../app/features/compras/necesidades/necesidades.component.spec.ts) | Necesidades de compra por sede |
 | [`app/features/compras/nueva-orden/nueva-orden.component.spec.ts`](../../app/features/compras/nueva-orden/nueva-orden.component.spec.ts) | Alta de orden de compra y de proveedor |

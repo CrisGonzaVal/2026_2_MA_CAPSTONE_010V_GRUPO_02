@@ -13,6 +13,13 @@
 > verificada. Esta enmienda acotada amplía `GET /auth/me` con el contexto organizacional
 > (`sede` y `departamento`) que la cabecera necesita; no reabre el particionamiento, no
 > cambia la matriz de permisos y no toca el esquema de la base.
+>
+> **Nota de superación (27/Nov/2026, Feature 013 §10):** las menciones a «despacho» y
+> `/despacho` de esta especificación son **históricas**. El contrato vigente es el
+> **retiro** (`POST /api/v1/tickets/{ticket_id}/retiro`, DTO `TicketRetiro` y servicio
+> `registrar_retiro_ticket`), solo para el Bodeguero de la sede del pedido, y la anulación
+> administrativa del retiro `Cerrado → Anulado`. No se reescribe la evidencia de los AC
+> de la 008.
 
 ## 1. Problema
 

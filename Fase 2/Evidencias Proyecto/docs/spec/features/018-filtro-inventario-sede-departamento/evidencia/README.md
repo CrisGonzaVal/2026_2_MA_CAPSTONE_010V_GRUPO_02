@@ -274,3 +274,85 @@ Red observada en el navegador (misma pestaña, rol a rol): `GET /inventario/ambi
 3. **Sesión Clerk compartida por `localhost`**: al ser mismo host, la cookie sirve a
    `4200` y `8080`, así que no hubo que reautenticar por puerto; los cambios de rol
    se hicieron con «Cerrar sesión» + tarjeta prebuilt y código `424242`.
+
+## 12. Enmienda 27/Nov/2026 — checkbox «Solo con stock» (T15)
+
+Verificación de la §11 de la spec (AC-10…AC-13), **solo frontend**: sin cambios de
+API, contrato, DDL, matriz, capacidades ni `stack.md`. La implementación es la T14
+(`inventario.component.ts/.html/.spec.ts`); esta sección registra las suites, el
+recorrido 4200, el humo 8080 y las capturas.
+
+### 12.1 Suites y build (27/Nov/2026)
+
+| Comando | Resultado real |
+|---|---|
+| `$env:CHROME_BIN=…msedge.exe; npx ng test --watch=false --browsers=ChromeHeadless` | **683 SUCCESS / 0 FAILED** (20,3 s; 671 del baseline 013 + **12** nuevas de AC-10…AC-13), mismo conteo que dejó T14 |
+| `npx ng build` | **limpio**, sin avisos de presupuesto: `main-72C5Q3DY.js`, `styles-CEN4FPRR.css`, **Initial total 339,98 kB** crudo / **94,03 kB** transferido; chunk lazy `inventario-component` **35,43 kB** |
+
+### 12.2 Recorrido 4200 (Administrador y Solicitante)
+
+El dev server **PID 22204 ya estaba levantado y no se reinició** (respondió **200**;
+`ng serve` recompiló el código de T14). Sesiones Clerk reales con código `424242`:
+`admin020.test+clerk_test@example.com` (Administrador) y
+`solicitante.test+clerk_test@example.com` (Solicitante, sede 2 / Biblioteca).
+
+| # | Rol | Acción | Resultado real observado | AC | Captura |
+|---|---|---|---|---|---|
+| R1 | Administrador | Abrir `/inventario` | Checkbox **`#solo-con-stock`** visible, `name="solo-con-stock"`, `<label for>` «Solo con stock», **desmarcado**; franja **10 / 10 / 3** con 10 filas (el catálogo vigente no tiene productos en cero en el agregado, por eso el caso de cero se demuestra con el rol operativo) | AC-10 | — |
+| R2 | Administrador | Enfocar «Solo stock crítico» y pulsar **Tab**, luego **Espacio** | El foco pasa a `#solo-con-stock` (`document.activeElement`), `:focus-visible` = **true** y el `box-shadow` incluye el anillo azul `rgb(59,130,246)` de Tailwind; **Espacio** marca y desmarca (`checked` true→false) | AC-10 | — |
+| R3 | Administrador | Texto `toner` + categoría «Toner y Cartuchos» + «Solo stock crítico» + «Solo con stock» | Queda **1 fila** (Toner Negro 26A Comp., stock 3 crítico); el panel anuncia «Toner y Cartuchos 1 insumos»; **no hay petición nueva** (`performance` mantiene una sola `GET /inventario/existencias`, la inicial); franja **10 / 10 / 3** intacta | **AC-12** | `t15-02-admin-combinacion-filtros.png` |
+| R4 | Administrador | Con texto `grapadora` + «Solo stock crítico» + «Solo con stock», elegir la categoría «Papeleria» (no contiene ese producto) | **0 filas** y mensaje **«Ningún insumo con stock coincide con los filtros aplicados.»** (no el genérico ni el de catálogo vacío); franja **10 / 10 / 3** sin cambios | **AC-13** | `t15-01-admin-vacio-sin-stock.png` |
+| R5 | Administrador | «Limpiar filtros» | Checkbox, búsqueda, categoría y críticos vuelven a su estado inicial; 10 filas y franja **10 / 10 / 3**; **sin** lectura nueva de existencias (la única del recorrido sigue siendo la de la carga) | **AC-12** | — |
+| R6 | Solicitante | Abrir `/inventario` | **0 `<select>`** (sin filtros organizacionales); 10 filas y **5 en cero** (`Cinta Adhesiva 48mm`, `Grapadora Estandar`, `Resma Carta 75g A4`, `Toner HP 26A Negro`, `Toner Negro 26A Comp.`); franja **10 / 5 / 6**; checkbox desmarcado | **AC-10**, **AC-11** | `t15-03-solicitante-desmarcado-con-cero.png` |
+| R7 | Solicitante | Marcar «Solo con stock» | Pasa de **10 a 5 filas** (Boligrafo, Clip, Folder, Papel Premium, Rotulador), **0 filas en cero**; la franja sigue **10 / 5 / 6** y no hay petición nueva | **AC-11** | `t15-04-solicitante-marcado-sin-ceros.png` |
+| R8 | Solicitante | Con el checkbox marcado, elegir categoría «Limpieza» (su único producto, Cinta, está en cero en su sede) | **0 filas** y mensaje **«Ningún insumo con stock coincide con los filtros aplicados.»**; franja **10 / 5 / 6** | **AC-13** | `t15-05-solicitante-vacio-sin-stock.png` |
+| R9 | Solicitante | Recargar `/inventario` | El checkbox vuelve **desmarcado** y reaparecen las 10 filas: sin persistencia (D-13) | **AC-10** | — |
+
+**No realizada — pendiente:** la verificación visual del **Bodeguero** en 4200 y 8080
+quedó **pendiente** porque el reinicio del entorno de trabajo detuvo el dev server
+(PID 22204) y Docker después de las capturas. No se presenta como realizada: la
+visibilidad del checkbox para los **tres** roles está cubierta por los **3 casos** de
+`inventario.component.spec.ts` (bucle de rol), y solo Administrador y Solicitante
+quedaron verificados en vivo.
+
+### 12.3 Humo 8080 tras rebuild (27/Nov/2026)
+
+| Paso | Resultado real |
+|---|---|
+| Imagen previa | `evidenciasproyecto-frontend:latest` **`8c7ca2dcee41`** (creada 14:52); el contenedor usaba `sha256:8c7ca2dcee41…` |
+| `docker compose -f docker-compose.yml build frontend` | **sin errores** (exit 0); build **intermedio** **`8b92a5b83857`** (18:36), superado por la imagen final de la fila siguiente |
+| `docker compose -f docker-compose.yml up -d --force-recreate frontend` | `compustock_frontend` **recreado** y **healthy**; el contenedor usa la **imagen final `sha256:837e4f90a775`** (creada 27/11 18:36), `db`/`backend` intactos |
+| `GET /` en `http://localhost:8080` | **200**; el shell referencia **`main-72C5Q3DY.js`** y `styles-CEN4FPRR.css`; el bundle previo **`main-7QF7T5XQ.js` → 404** |
+| `/inventario` (deep link nginx) | **200**; carga el bundle nuevo y la vista de existencias |
+| Humo Solicitante (cookie Clerk compartida por `localhost`) | Checkbox presente (`id`/`name`/`label`), desmarcado, franja **10 / 5 / 6**, 10 filas con 5 en cero; al marcar queda **5 filas / 0 ceros** con la franja intacta |
+| Captura | `t15-06-8080-solicitante-solo-con-stock.png` |
+
+La comprobación se hizo **antes** de que el reinicio del entorno detuviera Docker; el
+contenedor, el hash servido y el comportamiento del checkbox quedaron registrados en
+esta sección y en la captura.
+
+### 12.4 Mapeo AC-10…AC-13
+
+| AC | Evidencia real |
+|---|---|
+| **AC-10** | `inventario.component.spec.ts`: bucle `for` de **3 casos** *««Solo con stock» está visible para {rol} y arranca desmarcado»* (`spec.ts:1615-1631`) y *«el checkbox «Solo con stock» declara id, name y label, y no persiste al remontar la vista»*: `id`, `name`, `<label for>`, **clic en la etiqueta** (`spec.ts:1648-1656`) y no persistencia. 4200 R1/R2: `id`/`name`/`<label for>` y **Tab+Espacio** con anillo `focus-visible` (R2 es la conmutación **por teclado**; el clic lo cubre el spec); R9: recarga sin persistencia. 8080: el mismo control en la imagen nueva. `ng build` sin `styles` embebidos. |
+| **AC-11** | `inventario.component.spec.ts`: *«marcar «Solo con stock» oculta los productos con stock_total 0 sin alterar la franja ni pedir existencias»* y *«desmarcar «Solo con stock» recupera los productos sin saldo»*, con `httpMock` sin pendientes. 4200 R6/R7 y 8080: 10→5 filas, desaparecen los 5 ceros, franja **10 / 5 / 6** intacta y una sola `GET /inventario/existencias`. El contrato de `GET /inventario/existencias` no cambió. |
+| **AC-12** | `inventario.component.spec.ts`: *««Solo con stock» se combina con texto, categoría, críticos y filtros organizacionales»*, *«el panel de categorías excluye los productos sin saldo al marcar «Solo con stock»»* y *««Limpiar filtros» desmarca «Solo con stock» y no pide existencias si el único filtro era de cliente»* (+ la rama con filtro organizacional). 4200 R3: combinación con texto/categoría/críticos y panel «Toner y Cartuchos 1 insumos»; R5: «Limpiar filtros» restablece sin lectura nueva. |
+| **AC-13** | `inventario.component.spec.ts`: *«sin productos con stock muestra un vacío que distingue la falta de stock»* y *«el vacío de catálogo prevalece sobre el vacío de «Solo con stock»»*; la prueba de error de AC-6 sigue intacta. 4200 R4 y R8: mensaje **«Ningún insumo con stock coincide con los filtros aplicados.»** con franja sin cambios. El caso «catálogo vacío + checkbox» se acredita en el spec: provocarlo en vivo exigiría vaciar datos del tenant, fuera del alcance de T15. |
+
+### 12.5 Capturas de la enmienda
+
+| Archivo | Contenido |
+|---|---|
+| `t15-01-admin-vacio-sin-stock.png` | Admin, filtros de cliente sin coincidencias y checkbox marcado: vacío propio de stock |
+| `t15-02-admin-combinacion-filtros.png` | Admin: texto `toner` + categoría Toner y Cartuchos + críticos + «Solo con stock»: 1 fila |
+| `t15-03-solicitante-desmarcado-con-cero.png` | Solicitante: checkbox desmarcado y 5 productos con stock 0 (p. ej. Cinta Adhesiva) |
+| `t15-04-solicitante-marcado-sin-ceros.png` | Solicitante: checkbox marcado, 5 filas y ningún cero |
+| `t15-05-solicitante-vacio-sin-stock.png` | Solicitante: categoría Limpieza + checkbox marcado: vacío propio de stock |
+| `t15-06-8080-solicitante-solo-con-stock.png` | 8080 con la imagen nueva: checkbox marcado, 5 filas / 0 ceros |
+
+### 12.6 Integridad de datos
+
+No hubo escrituras de negocio ni SQL de escritura durante T15: solo lecturas de
+contraste, inicios de sesión de Clerk y la reconstrucción de la imagen del frontend.
+No se reseteó la base ni se modificó `database/`, `backend/` ni `inventario.service.ts`.

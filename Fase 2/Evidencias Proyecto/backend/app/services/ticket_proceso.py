@@ -18,23 +18,20 @@ from typing import Optional, Tuple
 MOTIVO_APROBACION = "Aprobación del pedido"
 MOTIVO_CONFIRMACION_ENTREGA = "Entrega confirmada por el solicitante"
 
-#: Etiquetas canonicas de proceso (spec D-22). No son estados canonicos.
-ETIQUETA_EN_APROBACION = "En aprobación"
+#: Etiquetas canonicas de proceso (spec D-22; enmienda 26/Nov/2026 D-37).
+#: No son estados canonicos.
 ETIQUETA_EN_REVISION = "En revisión"
 ETIQUETA_RECHAZADO = "Rechazado"
-ETIQUETA_DESPACHADO = "Despachado"
+ETIQUETA_RETIRADO = "Retirado"
 ETIQUETA_ENTREGADO = "Entregado"
 ETIQUETA_EN_CONFIRMACION_STOCK = "En confirmación de stock local"
 ETIQUETA_FACTURADO = "Facturado"
 ETIQUETA_EN_COMPRA = "En compra"
 ETIQUETA_POR_COMPRAR = "Por comprar"
 
-#: Frases cortas de `explicacion_proceso` (spec §9.8).
-EXPLICACION_EN_APROBACION = (
-    "En aprobación: pendiente de revisión por Bodega o Administración."
-)
+#: Frases cortas de `explicacion_proceso` (spec §9.8; enmienda 26/Nov/2026).
 EXPLICACION_EN_REVISION = (
-    "En revisión: estado heredado; se aprueba con la acción Aprobar."
+    "En revisión: estado inicial; se aprueba con la acción Aprobar."
 )
 EXPLICACION_EN_COMPRA = (
     "En compra: la orden está emitida y pendiente de facturación."
@@ -44,12 +41,12 @@ EXPLICACION_FACTURADO = (
 )
 EXPLICACION_EN_CONFIRMACION_STOCK = (
     "En confirmación de stock local: el stock local está disponible; falta que "
-    "el Bodeguero lo confirme y despache."
+    "el Bodeguero lo confirme y retire."
 )
 EXPLICACION_POR_COMPRAR = "Por comprar: no hay stock suficiente ni compra vigente."
-EXPLICACION_DESPACHADO = "Despachado: pendiente de confirmación de entrega."
+EXPLICACION_RETIRADO = "Retirado: pendiente de confirmación de entrega."
 EXPLICACION_ENTREGADO = "Entregado: confirmado por el solicitante."
-EXPLICACION_RECHAZADO = "Rechazado: el pedido no se despachará."
+EXPLICACION_RECHAZADO = "Rechazado: el pedido no se retirará."
 EXPLICACION_ESTADO_DESCONOCIDO = "Estado no reconocido por la etiqueta de proceso"
 
 #: Rango de avance de la OC activa que cubre el pedido (AC-38). La escala es
@@ -84,10 +81,11 @@ def derivar_etiqueta(
 ) -> Tuple[str, str]:
     """Deriva `(etiqueta_proceso, explicacion_proceso)` de un pedido.
 
-    Implementa la precedencia exacta de la spec D-22 (AC-37/AC-38):
+    Implementa la precedencia exacta de la spec D-22 (AC-37/AC-38) con la
+    enmienda 26/Nov/2026 (D-37):
 
-    - `Pendiente`, `EnRevision` y `Anulado` tienen etiqueta propia.
-    - `Cerrado` distingue `Despachado` de `Entregado` por `entrega_confirmada`.
+    - `EnRevision` y `Anulado` tienen etiqueta propia; `Pendiente` ya no existe.
+    - `Cerrado` distingue `Retirado` de `Entregado` por `entrega_confirmada`.
     - `EnCurso` se decide por la OC activa mas avanzada que cubre el pedido:
       `Recibida` > `Facturada` > `Emitida`; sin cobertura activa decide
       `stock_disponible` y, si no hay, `Por comprar`.
@@ -97,8 +95,6 @@ def derivar_etiqueta(
     nombre_visible = (estado_canonico or "").strip()
     clave = nombre_visible.casefold()
 
-    if clave == "pendiente":
-        return ETIQUETA_EN_APROBACION, EXPLICACION_EN_APROBACION
     if clave == "enrevision":
         return ETIQUETA_EN_REVISION, EXPLICACION_EN_REVISION
     if clave == "anulado":
@@ -106,7 +102,7 @@ def derivar_etiqueta(
     if clave == "cerrado":
         if entrega_confirmada:
             return ETIQUETA_ENTREGADO, EXPLICACION_ENTREGADO
-        return ETIQUETA_DESPACHADO, EXPLICACION_DESPACHADO
+        return ETIQUETA_RETIRADO, EXPLICACION_RETIRADO
     if clave == "encurso":
         rango = rango_estado_orden(estado_orden_cobertura)
         if rango >= 3:

@@ -209,3 +209,268 @@ Sin cambios a rutas hijas, guard, deep links, backend, APIs/contratos, matriz ce
 | AC-17 | `tabpanel` y `aria-labelledby` enlazado a la pestaña activa: `administracion.component.html` y test layout/nav. |
 | AC-18 | Integridad de las cuatro rutas/guards/deep links: no modificar `administracion.routes.ts`; tests existentes de rutas/vistas y pruebas nav con Router real. |
 | AC-19 | Tests nuevos + regresión, build, 4200 y humo 8080 con evidencia: tareas E17-1…E17-4 y Cierre E17-C1…C4. |
+
+## Enmienda funcional posterior al cierre (27/Nov/2026): campos por rol y retiro de encargados
+
+> **Spec aprobada:** `spec.md`, «Enmienda funcional posterior al cierre (27/Nov/2026): alta y
+> edición de usuarios según rol» y «Segundo bloque de la enmienda (27/Nov/2026): eliminación
+> del concepto de encargado de departamento». AC-20…AC-41. No se crea Feature 028; la Feature
+> 012 conserva su cierre y este plan no reabre AC-1…AC-19.
+>
+> **Histórico supersedido:** las tareas T7, T8, T10, T12–T16 y E17-1…E17-C4 de este documento
+> que mencionan encargados o 4 pestañas se conservan como registro y quedan
+> **históricas/supersedidas** por esta enmienda. No se reejecutan ni se cambian sus `[x]`.
+> La navegación vigente es de **3 pestañas** (AC-38).
+
+### 1. Estrategia y orden
+
+1. **Bloque B primero (baseline limpio).** El retiro de `departamento_encargado` toca DDL,
+   semilla, modelo, esquemas, servicios, rutas, matriz, capacidad, frontend y un conjunto
+   amplio de pruebas de conteo/versión. Se hace antes del Bloque A para no reescribir dos
+   veces esas pruebas y para que el baseline quede en **25/22**, **`026.1`**, matriz **72** y
+   OpenAPI **74** antes de tocar el alta/edición.
+2. **B1 es una tarea vertical atómica.** No se puede retirar la tabla del DDL mientras el
+   modelo, las rutas y los tests sigan consultándola sin dejar `pytest`/gated en rojo. B1
+   incluye DDL, semilla, token, backend y la actualización/eliminación de pruebas; se ejecuta
+   con sub-pasos y cierra con el reset y las suites en verde. **B2** retira el frontend y deja
+   `ng test` verde con 3 pestañas.
+3. **Bloque A después.** A1/A2/A3 implementan el contrato y la resolución de «Suministros» en
+   backend; A4/A5/A6 implementan el formulario y las pruebas por rol. No se toca el flujo de
+   invitación de la 017.
+4. **Cierre C1–C3.** Suites, build, OpenAPI, grep, reset, gated, 4200 y 8080; documentación,
+   evidencias y coherencia. El backend se recarga solo; **8080 exige reconstruir la imagen**.
+
+Cada tarea termina con `pytest` (SQLite y, cuando aplique, gated) o `ng test` en verde. Las
+tareas que cambian DDL exigen `down -v` + `up -d` antes de dar por cerrada la verificación.
+
+### 2. Bloque B — DDL, semilla y token
+
+- **`database/01_esquema.sql`:**
+  - retirar `control.departamento_encargado` (CREATE, constraints y comentarios de cabecera);
+  - retirar el `CREATE TABLE %1$I.departamento_encargado` del template tenant (y su
+    constraint/índice implícito);
+  - cambiar el check **fail-closed de 23 tablas por tenant** (líneas 1433-1443) y el
+    comentario «23 tablas» (línea 1027) a **22**; sin esto el reset limpio falla;
+  - actualizar el comentario de versión `026.0` de la cabecera a **`026.1`**.
+- **`database/02_datos_semilla.sql`:**
+  - quitar `departamento_encargado` de las listas de tablas (líneas 129 y 149);
+  - eliminar el `INSERT` de las **5** asociaciones (319-324), el `setval` de su secuencia
+    (515), su entrada en la lista de tablas/secuencias (549), el bloque de copia
+    `control → tenant` (654-655) y el `DELETE` (947);
+  - cambiar `v_version_objetivo constant text := '026.0'` a **`026.1`** (590) y cualquier
+    comentario/aserción de versión.
+- **`backend/app/core/config.py`:** `VERSION_ESQUEMA_OBJETIVO = "026.1"`.
+- **`database/README.md`:** 25/22 y `026.1` en el cierre (D-20).
+- **Reset:** `docker compose -f docker-compose.yml down -v` + `up -d`; verificar 25 tablas en
+  `control`, 22 por tenant, ausencia de tabla/secuencia, sin las 5 filas y `026.1` en todos
+  los esquemas.
+- **Aserciones de versión/conteo:** actualizar las pruebas gated de instalación limpia,
+  salud del esquema, control, dashboard técnico, catálogo, cobertura y validación de entradas
+  inventariadas en `spec.md` §10.3 (incluidas las que fijan 75/77, 26/23 y `026.0`).
+
+### 3. Bloque B — Backend
+
+| Archivo | Responsabilidad |
+|---|---|
+| `backend/app/models/organizacion.py` | Eliminar `DepartamentoEncargado` y sus relaciones. |
+| `backend/app/models/__init__.py` | Quitar el import, el docstring y la exportación de `DepartamentoEncargado`. |
+| `backend/app/schemas/organizacion_schema.py` | Eliminar `EncargadoCrear` y `EncargadoRespuesta`, y sus referencias. |
+| `backend/app/services/organizacion_service.py` | Eliminar `_consulta_encargados`, `listar_encargados`, `asociar_encargado`, `retirar_encargado`, el import de `DepartamentoEncargado`, los comentarios de encargados y `_dependencias_usuario` con su 409; conservar las demás dependencias de baja. |
+| `backend/app/api/v1/endpoints/organizacion.py` | Eliminar las 3 rutas, `RUTA_ENCARGADOS`, `_encargado_respuesta` e imports. |
+| `backend/app/api/v1/api.py` | Ajustar el comentario que menciona encargados. |
+| `backend/app/api/v1/endpoints/usuarios.py` | Ajustar el docstring del 409 por encargado. |
+| `backend/app/core/permisos.py` | Quitar las 3 entradas de `/encargados` y actualizar el comentario de la línea 83; conservar el resto de la matriz. |
+| `backend/app/core/capacidades.py` | Quitar los 3 mapeos de `/encargados` y el comentario; conservar `gestion_organizacional` para sedes/departamentos/usuarios. |
+| `backend/app/core/config.py` | `VERSION_ESQUEMA_OBJETIVO` (B1). |
+
+**Contrato:** OpenAPI **77 → 74** = **75 → 72 operaciones v1 + `GET /` + `/health`**; matriz
+**75 → 72**. Las 3 rutas no se publican. `gestion_organizacional` conserva sus operaciones y
+roles. `PUT /organizacion/usuarios/{id}/sede` conserva su 409 a no-Bodeguero.
+
+**Pruebas:** eliminar/actualizar las que crean `DepartamentoEncargado`, esperan `/encargados`,
+fijan 75/77, 26/23 o `026.0`, y las de instalación limpia/gated. La lista completa está en
+`spec.md` §10.3; el implementador debe correr el grep de cierre sobre `backend/tests`,
+`frontend/src` y `database/` y revisar los falsos positivos de «Bodeguero / Encargado de
+Suministros».
+
+### 4. Bloque B — Frontend
+
+| Archivo | Responsabilidad |
+|---|---|
+| `frontend/src/app/features/administracion/encargados.component.ts|html|spec.ts` | Eliminar el componente y su spec. |
+| `frontend/src/app/features/administracion/administracion.routes.ts` | Quitar la ruta hija `encargados`; conservar sedes, departamentos y usuarios. |
+| `frontend/src/app/features/administracion/administracion.routes.spec.ts` | Actualizar la lista esperada de hijas a 3. |
+| `frontend/src/app/features/administracion/administracion-nav.component.ts` | Quitar el enlace de Encargados; `ENLACES_ADMINISTRACION` queda con 3; el wraparound pasa a Sedes↔Usuarios; conservar IDs/ARIA. |
+| `frontend/src/app/features/administracion/administracion-nav.component.html` | Revisar que itere `enlaces`; no debe quedar markup ni texto de Encargados. |
+| `frontend/src/app/features/administracion/administracion-nav.component.spec.ts` | 3 pestañas, 3 destinos, wraparound y `tabpanel`; quitar el mock `listarEncargados`; renombrar los casos «cuatro» a «tres». |
+| `frontend/src/app/features/administracion/administracion.component.ts|html` | Quitar «encargados» del docstring/texto; el `tabpanel` sigue derivando la sección activa de 3. |
+| `frontend/src/app/features/administracion/services/administracion.service.ts` | Quitar el import `Encargado` y los 3 métodos de encargados. |
+| `frontend/src/app/features/administracion/services/administracion.service.spec.ts` | Quitar el docstring y los 3 casos de encargados. |
+| `frontend/src/app/shared/interfaces/index.ts` | Quitar `Encargado` y `EncargadoCrear`. |
+| `frontend/src/app/features/administracion/usuarios.component.html` | Quitar el texto del 409 por encargado del diálogo de baja. |
+| `frontend/src/app/features/administracion/usuarios.component.spec.ts` | Quitar/reescribir el caso del 409 por encargado; conservar la baja genérica. |
+| `frontend/src/app/features/control/control.routes.ts` | Ajustar el comentario que menciona encargados. |
+| `frontend/src/testing/funcional/README.md` | Quitar la fila de `encargados.component.spec.ts`. |
+| `frontend/src/app/core/guards/superficies-retiradas.spec.ts` | Sin cambios: la búsqueda no encontró encargados. |
+
+**Navegación y rutas:** `/administracion/encargados` deja de existir y cae en el wildcard
+`**` → `/dashboard`; los deep links de sedes/departamentos/usuarios y el `role="tabpanel"`
+con `aria-labelledby` de la pestaña activa se conservan. `ng test` debe quedar verde con 3
+pestañas.
+
+### 5. Bloque A — Backend
+
+**Archivos:** `backend/app/schemas/usuario_schema.py`;
+`backend/app/services/departamento_suministros.py` (nuevo);
+`backend/app/services/usuario_service.py`; `backend/app/services/organizacion_service.py`;
+`backend/tests/funcional/unitarios/test_departamento_suministros_012.py` (nuevo);
+`backend/tests/funcional/integracion/test_alta_suministros_012.py` (nuevo);
+`backend/tests/funcional/integracion/test_edicion_suministros_012.py` (nuevo);
+`backend/tests/funcional/integracion/test_contrato_usuarios_suministros_012.py` (nuevo);
+`backend/tests/funcional/sistema/test_suministros_postgres_012.py` (nuevo, gated).
+
+**Contrato (`usuario_schema.py`).** `UsuarioBase` y `UsuarioRespuesta` conservan
+`departamento_id` obligatorio. La opcionalidad se declara **solo en `UsuarioCrear`**
+(redeclarando `departamento_id: int | None = Field(default=None, ge=1)`) y en
+`UsuarioEdicion` (que ya es independiente). `ge=1` se aplica a todos: `0`/negativo → 422.
+
+**Resolución de «Suministros».** Nuevo helper compartido (propuesta:
+`backend/app/services/departamento_suministros.py`) con
+`resolver_departamento_suministros(db, institucion_id)`:
+- busca por `func.lower(func.trim(Departamento.nombre_dep)) == "suministros"` y
+  `institucion_id`;
+- si existe activo, lo reutiliza; si existe inactivo, lo reactiva; si no existe, lo crea con
+  `descripcion = "Unidad de suministros asignada automáticamente a los Bodegueros"`,
+  `sede_id = NULL`, `activo = True`;
+- no hace `commit`; usa `db.flush()` dentro de la transacción del llamador;
+- concurrencia: savepoint `db.begin_nested()` para el alta; si el `flush` lanza
+  `IntegrityError`, el savepoint revierte y se relee la fila; si no aparece, se re-lanza. Es el
+  patrón que evita duplicar o devolver 500 sin abortar la transacción del usuario. La
+  verificación de la carrera es PostgreSQL gated; SQLite no la acredita.
+
+**Alta (`usuario_service.crear_usuario`).**
+- resolver el nombre del rol contra `rol`;
+- si es Bodeguero: ignorar la existencia/ámbito del `departamento_id` positivo, resolver
+  «Suministros» en la institución del actor o en `institucion_id` (ruta de control), y usarlo
+  como `departamento_id`; si el campo falta, también se resuelve; si el DTO recibió 0/negativo,
+  el 422 de Pydantic ocurre antes;
+- si no es Bodeguero: exigir `departamento_id` (ausente/null → 422), conservar
+  `validar_departamento_en_alcance` (403/404), rechazar «Suministros» (422) y conservar la
+  regla de rol asignable (403);
+- la resolución y el `INSERT`/`UPDATE` del usuario comparten la transacción del tenant; si la
+  frontera de invitación falla antes del commit, no se confirma «Suministros»; el flujo de dos
+  fases de la 017 (validar → invitar → tenant → mapa) no cambia;
+- `institucion_para_evidencia` se deriva de la institución del actor/`institucion_id`, no del
+  departamento cuando es Bodeguero.
+
+**Edición (`organizacion_service.editar_usuario`).**
+- resolver el rol contra `rol`;
+- Bodeguero: resolver «Suministros» y usarlo para `cambio_efectivo`; si el departamento
+  persistido no es «Suministros», el cambio es efectivo y exige motivo D-5 (legacy incluido);
+- no-Bodeguero: exigir `departamento_id` (422 si falta), rechazar «Suministros» (422),
+  conservar `_departamento_en_alcance` y el motivo por cambio efectivo;
+- el cambio desde Bodeguero solo va a **Solicitante**; no se consulta encargados ni se toca
+  `usuario.sede_id`; el 409 del último Administrador se conserva;
+- el `PUT .../sede` sigue fuera de motivos y sin cambios.
+
+**Pruebas backend Bloque A:** unitarios de esquema (`UsuarioCrear`/`UsuarioEdicion`
+opcionales, `UsuarioRespuesta` obligatorio); integración de alta/edición Bodeguero,
+Solicitante, Administrador y Superadmin; 422 por ausencia, por `0`/negativo y por
+«Suministros»; reutilización/reactivación; aislamiento; motivo/legacy; último Administrador;
+contrato/OpenAPI (campo opcional, 422 documentado, sin rutas nuevas); gated de concurrencia
+con dos sesiones/`Barrier` y conteo de «Suministros».
+
+### 6. Bloque A — Frontend
+
+**Archivos:** `frontend/src/app/features/administracion/usuarios.component.ts|html|spec.ts`;
+`frontend/src/app/shared/interfaces/index.ts`.
+
+**Tipos:** `frontend/src/app/shared/interfaces/index.ts` deja `departamento_id?: number | null`
+en `UsuarioCrear` y `UsuarioEdicion`; `Usuario` y `DepartamentoGestion` no cambian de forma.
+
+**Alta (`frontend/src/app/features/administracion/usuarios.component.ts|html`).**
+- señal reactiva del rol (`rolCreacion` ya existe; añadir `creacionEsSolicitante` si simplifica);
+- Sede visible para Bodeguero y Solicitante; Bodeguero: obligatoria, sin «Sin asignar»;
+  Solicitante: filtro opcional (por defecto sin filtro), no persistida;
+- Departamento: deshabilitado para Bodeguero con texto «Suministros (asignación automática)»;
+  para Solicitante, obligatorio y filtrado por la sede; para Administrador, obligatorio sin
+  filtro (sin Sede);
+- al elegir departamento en Solicitante, sincronizar la Sede con `departamento.sede_id`; al
+  cambiar la sede, limpiar una selección de departamento incompatible; si no hay sedes, el
+  Bodeguero no puede enviar y el formulario lo indica;
+- payload: omitir `departamento_id` para Bodeguero; enviarlo para los demás; `sede_id` nunca
+  viaja en el payload; tras el alta de Bodeguero, llamar a `asignarSedeTrasAlta` y conservar el
+  mensaje de éxito parcial y el enlace de invitación.
+
+**Edición (`frontend/src/app/features/administracion/usuarios.component.ts|html`).**
+- añadir `sede_id` al `formularioEdicion` y la señal reactiva del rol de edición;
+- Bodeguero: Departamento deshabilitado/«Suministros (asignación automática)», Sede editable y
+  obligatoria; al guardar, `PUT /usuarios/{id}` y después `PUT .../sede`; si el segundo falla,
+  éxito parcial y reintento;
+- Solicitante: Sede (filtro, inicializada con la sede del departamento) y Departamento
+  obligatorio/filtrado; no se llama a `PUT .../sede`;
+- `hayCambiosEdicion` debe considerar efectivo el paso de un Bodeguero legacy a «Suministros»
+  (comparar el nombre del departamento persistido normalizado) y exigir motivo; una vez en
+  «Suministros», una edición sin cambios no exige motivo;
+- cambio de rol a Bodeguero: sede obligatoria y resolución; cambio desde Bodeguero: solo a
+  Solicitante, Departamento válido distinto de «Suministros» y sin `PUT .../sede`;
+- último Administrador: conservar el 409;
+- tras guardar, refrescar el catálogo de departamentos (o el listado) para mostrar
+  «Suministros» y no «—».
+
+**Accesibilidad:** labels/`aria-describedby`, estado `disabled` del Departamento del Bodeguero,
+marcador de obligatorio en Sede y mensajes `role="status"`/`role="alert"`; la Sede del
+Solicitante es un filtro y no un dato persistido.
+
+**Pruebas frontend:** specs de `usuarios.component` por rol y cambio de rol; filtro y
+sincronización del Solicitante; Bodeguero sin sedes; tenant con solo «Suministros»;
+`hayCambiosEdicion` del legacy; éxito parcial de la sede; `ng test` y `ng build`.
+
+### 7. Riesgos y mitigaciones
+
+| Riesgo | Mitigación |
+|---|---|
+| B1 se intenta dividir y deja la suite roja entre DDL y backend | Ejecutar B1 como corte vertical atómico; los sub-pasos de DDL/seed/backend/tests se cierran juntos con reset y `pytest`/gated verde. |
+| Carrera de dos altas que crean «Suministros» | `begin_nested()` + `IntegrityError` + relectura; índice único normalizado; gated PostgreSQL con dos sesiones/`Barrier`. |
+| Bodegueros legacy conservan «Biblioteca» | No migrar; al editar se resuelve «Suministros» y se exige motivo; probar el caso de la semilla en 4200. |
+| `UsuarioBase`/`UsuarioRespuesta` se vuelven opcionales por herencia | Redefinir `departamento_id` solo en `UsuarioCrear`; `UsuarioEdicion` independiente; test de esquema de respuesta. |
+| `PUT .../sede` se intenta para no-Bodeguero | Conservar el 409 y no llamarlo desde Solicitante/Administrador; test de regresión. |
+| `gestion_organizacional` se elimina por error al quitar encargados | Conservar la capacidad y sus rutas de sedes/departamentos/usuarios; AC-36. |
+| 3 pestañas/ARIA/wraparound/deep links | Actualizar nav/routes/specs; probar Sedes↔Usuarios, IDs, `tabpanel` y `/administracion/encargados` → wildcard. |
+| 8080 sirve una imagen vieja | `docker compose build frontend` + `up -d frontend` antes del humo; verificar bundle/hash y repetir las rutas. |
+| Doble reset (B1 y C2) | Son resets QA; `down -v` elimina datos locales no respaldados. Documentar y no ejecutar sobre una base con datos que se quieran conservar. |
+| Aserciones de 75/77, 26/23 y `026.0` dispersas | Actualizar el inventario de `spec.md` §10.3; grep de cierre en `backend/tests`, `frontend/src` y `database/`. |
+| Informe/diagramas reintroducen encargados | Actualizar generadores/datos del informe y diagramas en C3; grep de coherencia. |
+| Backend recargado pero 8080 congelado | 4200 es el recorrido funcional; 8080 exige rebuild; el backend se recarga solo. |
+
+### 8. Verificación y cierre
+
+1. **C1 — Suites y contrato:** `cd backend && pytest`; gated PostgreSQL con
+   `POSTGRES_TEST_URL`; regresión de la 017 (`test_gobierno_identidades_017.py`,
+   `test_provisionamiento_identidades_017.py`, `test_frontera_clerk_017.py`,
+   `test_gobierno_administradores_017.py`, `test_gobierno_correcciones_017.py`,
+   `test_aceptacion_invitacion_017.py`); `cd frontend; $env:CHROME_BIN=...; npx ng test
+   --watch=false --browsers=ChromeHeadless`; `npx ng build`; `/openapi.json` con **74**
+   totales = 72 v1 + `GET /` + `/health` y matriz **72**; `grep` de coherencia.
+2. **C2 — Reset y 4200:** `down -v` + `up -d`; 25/22/`026.1`; recorrido 4200 con alta de
+   Bodeguero (sin sede no se envía), alta de Solicitante (filtro/sincronización), edición del
+   Bodeguero legacy con motivo, cambio de rol a/desde Bodeguero, tenant sin sedes, tenant con
+   solo «Suministros», éxito parcial de sede y 3 pestañas; `/administracion/encargados` cae en
+   `/dashboard`.
+3. **C3 — 8080 y documentación:** `docker compose -f docker-compose.yml build frontend` +
+   `up -d frontend`; humo de las 3 pestañas, deep links y flujo básico. Actualizar
+   `database/README.md`, `AGENTS.md` §4/§7, `MEMORY.md`, `.agents/skills/*`, `docs/diagramas/`,
+   `Informe_Flujos_Actores.docx`, `roadmap.md` y `evidencia/README.md`; completar la evidencia
+   de AC-20…AC-41; grep de coherencia y cierre según `AGENTS.md` §8.5–§8.7.
+4. **No marcar la enmienda cerrada** hasta que C1–C3 estén observados y cada AC tenga su
+   evidencia. El cierre de la Feature 012 original no se reabre.
+
+### 9. Trazabilidad AC ↔ tareas
+
+| AC | Tareas |
+|---|---|
+| AC-20…AC-26, AC-30, AC-31 | E12-A1, E12-A3, E12-A4, E12-A6, E12-C2 |
+| AC-27…AC-29 | E12-A2, E12-A3, E12-A5, E12-A6, E12-C2 |
+| AC-33…AC-37, AC-39 | E12-B1, E12-B2, E12-C1 |
+| AC-38 | E12-B2, E12-A6, E12-C2 |
+| AC-40, AC-41 | E12-C1, E12-C2, E12-C3 |

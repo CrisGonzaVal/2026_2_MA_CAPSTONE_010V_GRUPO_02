@@ -1,8 +1,9 @@
-"""T2 (Feature 013): edicion del ticket en `Pendiente` (AC-13…AC-16).
+"""T2 (Feature 013): edicion del ticket en `EnRevision` (AC-13…AC-16).
 
-Seam bajo prueba: la interfaz HTTP (`TestClient`). El contrato (spec D-9):
+Seam bajo prueba: la interfaz HTTP (`TestClient`). El contrato (spec D-9) con
+la enmienda 26/Nov/2026 (D-28/AC-53):
 `PUT /tickets/{id}` reemplaza asunto, descripcion, prioridad y el **conjunto
-completo** de detalles solo en `Pendiente`; valida todo antes de escribir
+completo** de detalles solo en `EnRevision`; valida todo antes de escribir
 (referencias 404, forma 422) y nunca toca estado, solicitante, sede ni
 institucion. Bodeguero y Superadmin no editan (403); un ticket ajeno responde
 404 identico al inexistente (D-8).
@@ -114,18 +115,18 @@ def _assert_intacto(cliente, motor, datos, ticket_id: int, asunto_original: str)
     """Cabecera y detalles sin ningun cambio parcial."""
     ticket = abrir_ticket(cliente, ticket_id)
     assert ticket["asunto"] == asunto_original, "la cabecera no puede cambiar"
-    assert ticket["estado_id"] == datos["estados"]["Pendiente"]
+    assert ticket["estado_id"] == datos["estados"]["EnRevision"]
     assert _detalles_de(ticket) == [(datos["producto_id"], 3)], (
         "los detalles no pueden cambiar parcialmente"
     )
 
 
 # ---------------------------------------------------------------------------
-# AC-13: reemplazo integro en Pendiente
+# AC-13: reemplazo integro en EnRevision
 # ---------------------------------------------------------------------------
 
 
-def test_edicion_en_pendiente_reemplaza_cabecera_y_detalles_ac_13(
+def test_edicion_en_revision_reemplaza_cabecera_y_detalles_ac_13(
     motor, datos_013
 ):
     """AC-13: 200 con cabecera reflejada y el conjunto de items reemplazado."""
@@ -168,7 +169,7 @@ def test_edicion_conserva_estado_solicitante_sede_e_institucion_ac_13(
         assert respuesta.status_code == 200, respuesta.text
 
         ticket = abrir_ticket(cliente, ticket_id)
-        assert ticket["estado_id"] == datos_013["estados"]["Pendiente"], (
+        assert ticket["estado_id"] == datos_013["estados"]["EnRevision"], (
             "la edicion no puede mover el estado"
         )
         assert ticket["usuario_id"] == solicitante, (
@@ -189,15 +190,15 @@ def test_edicion_conserva_estado_solicitante_sede_e_institucion_ac_13(
 
 
 # ---------------------------------------------------------------------------
-# AC-14: 409 fuera de Pendiente
+# AC-14: 409 fuera de EnRevision
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("estado", ["EnRevision", "EnCurso", "Cerrado", "Anulado"])
-def test_edicion_fuera_de_pendiente_responde_409_sin_efectos_ac_14(
+@pytest.mark.parametrize("estado", ["EnCurso", "Cerrado", "Anulado"])
+def test_edicion_fuera_de_enrevision_responde_409_sin_efectos_ac_14(
     motor, datos_013, estado
 ):
-    """AC-14: fuera de `Pendiente` la edicion es 409 y no toca cabecera ni items."""
+    """AC-14: fuera de `EnRevision` la edicion es 409 y no toca cabecera ni items."""
     asunto_original = f"Ticket en estado {estado} no editable"
     ticket_id = sembrar_ticket(
         motor, datos_013, estado_id=datos_013["estados"][estado],
@@ -354,7 +355,7 @@ def test_bodeguero_y_superadmin_no_pueden_editar_ac_16(motor, datos_013, rol):
             with sesion(motor) as db:
                 ticket = db.get(Ticket, ticket_id)
                 assert ticket.asunto == "Ticket sembrado para el ciclo de vida 013"
-                assert ticket.estado_id == datos_013["estados"]["Pendiente"]
+                assert ticket.estado_id == datos_013["estados"]["EnRevision"]
         else:
             _assert_intacto(
                 cliente,

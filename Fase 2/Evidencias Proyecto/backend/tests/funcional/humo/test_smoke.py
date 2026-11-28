@@ -9,7 +9,10 @@ solo se prueban los casos felices.
 
 import pytest
 
-from tests.funcional.integracion._soporte_sede_011 import asegurar_sede_de_departamento
+from tests.funcional.integracion._soporte_sede_011 import (
+    asegurar_sede_de_departamento,
+    cliente as cliente_de_rol,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -102,17 +105,24 @@ def test_crear_producto_responde_201(cliente, datos_base):
     assert respuesta.json()["nombre"] == "Resma de papel bond"
 
 
-def test_registrar_movimiento_responde_201(cliente, datos_base, sede_base):
+def test_registrar_movimiento_responde_201(motor, datos_base, sede_base):
+    """Enmienda 26/Nov/2026 (D-31/AC-64): el registro manual es del Bodeguero."""
     stock_sede_id = sede_base["stock_sede_ids"][datos_base["producto_id"]]
-    respuesta = cliente.post(
-        "/api/v1/inventario/movimientos",
-        json={
-            "tipo_movimiento": "ENTRADA",
-            "cantidad": 25,
-            "observacion": "Recepcion de mercaderia",
-            "stock_sede_id": stock_sede_id,
-        },
-    )
+    with cliente_de_rol(
+        motor,
+        "Bodeguero",
+        departamento_id=datos_base["departamento_id"],
+        sede_id=sede_base["sede_id"],
+    ) as cliente:
+        respuesta = cliente.post(
+            "/api/v1/inventario/movimientos",
+            json={
+                "tipo_movimiento": "ENTRADA",
+                "cantidad": 25,
+                "observacion": "Recepcion de mercaderia",
+                "stock_sede_id": stock_sede_id,
+            },
+        )
     assert respuesta.status_code == 201, respuesta.text
     # 50 iniciales + 25 de entrada.
     assert respuesta.json()["nuevo_stock"] == 75
@@ -146,8 +156,8 @@ def test_actualizar_estado_ticket_hacia_cerrado_responde_409(
     ya no existe en **ningun** catalogo.
 
     Este smoke cerraba el ticket con `INGRESADO → CERRADO` = 200; con la
-    terminalidad por nombre, el unico camino a `Cerrado` es el despacho
-    transaccional de la 005, de modo que esa misma peticion responde hoy 409
+    terminalidad por nombre, el unico camino a `Cerrado` es el retiro
+    transaccional, de modo que esa misma peticion responde hoy 409
     con su detalle literal y sin tocar el ticket. El flujo lineal entre
     estados operativos sigue respondiendo 200 (verificado en el modulo de la
     004)."""
@@ -170,8 +180,8 @@ def test_actualizar_estado_ticket_hacia_cerrado_responde_409(
     )
     assert respuesta.status_code == 409, respuesta.text
     assert respuesta.json()["detail"] == (
-        "El cierre requiere despacho; use "
-        f"POST /api/v1/tickets/{creado['ticket_id']}/despacho"
+        "El cierre requiere retiro; use "
+        f"POST /api/v1/tickets/{creado['ticket_id']}/retiro"
     )
     tickets = cliente.get("/api/v1/tickets/").json()
     ticket = next(t for t in tickets if t["ticket_id"] == creado["ticket_id"])

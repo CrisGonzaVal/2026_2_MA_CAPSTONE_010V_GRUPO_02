@@ -10,10 +10,10 @@ from app.schemas.ticket_schema import (
     TicketActualizarEstado,
     TicketCrear,
     TicketDetalleRespuesta,
-    TicketDespacho,
     TicketEditar,
     TicketMotivo,
     TicketRespuesta,
+    TicketRetiro,
 )
 from app.services import ticket_service
 from app.services import global_service
@@ -110,12 +110,12 @@ def listar_tickets(
         "**404** nombrando la referencia, no 500. Los errores de forma del payload "
         "(asunto de menos de 3 caracteres, `detalles` vacio, cantidad no positiva) "
         "devuelven **422**.\n\n"
-        "Estado inicial (enmienda 05/Nov/2026, AC-27): todo ticket nuevo nace en "
-        "`Pendiente`. `estado_id` es obligatorio y debe ser el id de ese estado "
-        "(resuelto por nombre canonico); cualquier otro id existente —o un "
-        "catalogo sin `Pendiente`— devuelve **409** sin escribir nada. Ya no se "
-        "admite nacer en `Cerrado`: ese estado solo se alcanza por el despacho "
-        "transaccional de la 005.\n\n"
+        "Estado inicial (enmienda 26/Nov/2026, D-27/AC-51): todo ticket nuevo "
+        "nace en `EnRevision`. `estado_id` es obligatorio y debe ser el id de "
+        "ese estado (resuelto por nombre canonico); cualquier otro id existente "
+        "—o un catalogo sin `EnRevision`— devuelve **409** sin escribir nada. "
+        "No se admite nacer en `Cerrado`: ese estado solo se alcanza por el "
+        "retiro transaccional.\n\n"
         "Atribucion (enmienda 22/Oct/2026 de 003/007/008): la autoria es **siempre "
         "la identidad autenticada**. `usuario_id` es opcional e ignorado: enviarlo "
         "(propio, ajeno o inexistente) no produce 404 ni 422 ni cambia el autor.\n\n"
@@ -152,25 +152,29 @@ def crear_ticket(
 
 
 @router.post(
-    "/{ticket_id}/despacho",
+    "/{ticket_id}/retiro",
     response_model=TicketRespuesta,
     status_code=status.HTTP_200_OK,
-    summary="Despachar un ticket y rebajar su inventario",
+    summary="Registrar el retiro de un ticket y rebajar su inventario",
     description=(
-        "Despacha un ticket que esta en el estado `EnCurso` y lo lleva a "
-        "`Cerrado`, **rebajando el stock, fijando las cantidades entregadas y "
-        "registrando una salida de auditoria por detalle en una sola "
-        "transaccion**. La entrega es completa: cada detalle entrega su "
-        "`cantidad_solicitada`.\n\n"
-        "El ticket inexistente o un `usuario_id` inexistente devuelven **404**. "
-        "Un ticket de otra institucion (rol limitado) devuelve **404** sin mutar "
-        "stock ni estado (Feature 007). El estado no elegible (ya despachado), el "
-        "catalogo sin los nombres requeridos, un ticket sin detalles, un detalle "
-        "sin producto resoluble, el inventario ausente o ambiguo, el stock "
-        "insuficiente y una referencia cruzada de institucion (producto o "
-        "inventario de otra institucion que la del ticket, Feature 008) devuelven "
-        "**409** sin escribir nada. Un payload invalido o "
-        "un `usuario_id` ausente/no entero devuelven **422**."
+        "Registra el retiro de un ticket que esta en el estado `EnCurso` y lo "
+        "lleva a `Cerrado`, **rebajando el stock de la sede del pedido, fijando "
+        "las cantidades entregadas y registrando una salida de auditoria por "
+        "detalle en una sola transaccion** (enmienda 26/Nov/2026, D-29). La "
+        "entrega es completa: cada detalle entrega su `cantidad_solicitada`.\n\n"
+        "Actores: **solo el Bodeguero** de la sede del pedido (D-30/AC-55). El "
+        "Administrador, el Solicitante y el Superadmin reciben **403** por "
+        "matriz; un Bodeguero sin sede asignada, **409**. El ticket inexistente, "
+        "el de otra sede y un `usuario_id` inexistente devuelven **404** "
+        "identico, sin revelar existencia (D-30/AC-56).\n\n"
+        "El estado no elegible (ya retirado), el catalogo sin los nombres "
+        "requeridos, un ticket sin detalles, un detalle sin producto resoluble, "
+        "el stock ausente, el stock insuficiente y una referencia cruzada de "
+        "institucion (producto o stock de otra institucion que la del ticket, "
+        "Feature 008) devuelven **409** sin escribir nada. Un payload invalido o "
+        "un `usuario_id` ausente/no entero devuelven **422**. La observacion de "
+        "cada `SALIDA` es `Salida por retiro del ticket #{ticket_id}; "
+        "detalle_id={detalle_ticket_id}; producto_id={producto_id}`."
     ),
     responses={
         **dependencies.respuestas_de_autorizacion(),
@@ -180,22 +184,22 @@ def crear_ticket(
     dependencies=[
         Depends(
             dependencies.requiere_capacidad(
-                "POST", "/api/v1/tickets/{ticket_id}/despacho"
+                "POST", "/api/v1/tickets/{ticket_id}/retiro"
             )
         )
     ],
 )
-def despachar_ticket(
+def registrar_retiro_ticket(
     ticket_id: int,
-    datos: TicketDespacho,
+    datos: TicketRetiro,
     identidad: IdentidadAutenticada = Depends(
         dependencies.requiere_operacion(
-            "POST", "/api/v1/tickets/{ticket_id}/despacho"
+            "POST", "/api/v1/tickets/{ticket_id}/retiro"
         )
     ),
     db: Session = Depends(dependencies.get_db_negocio),
 ):
-    return ticket_service.despachar_ticket(db, ticket_id, datos, identidad)
+    return ticket_service.registrar_retiro_ticket(db, ticket_id, datos, identidad)
 
 
 @router.post(
@@ -210,10 +214,10 @@ def despachar_ticket(
         "**no** evalua stock, no reserva, no incluye el pedido en ninguna "
         "simulacion y no toca `fecha_cierre`, el inventario ni Compras. El stock "
         "solo decide la etiqueta de proceso posterior (`En confirmación de stock "
-        "local` o `Por comprar`); el despacho de la 005 sigue siendo la "
+        "local` o `Por comprar`); el retiro sigue siendo la "
         "validacion real y el unico camino a `Cerrado`.\n\n"
-        "Origen: `Pendiente` o `EnRevision` (estado **heredado**; el flujo "
-        "nuevo no lo produce). Cualquier otro estado —`EnCurso`, `Cerrado`, "
+        "Origen: solo `EnRevision` (enmienda 26/Nov/2026, D-28/AC-52). "
+        "Cualquier otro estado —`EnCurso`, `Cerrado`, "
         "`Anulado` o uno fuera del catalogo— responde **409** sin escribir, "
         "igual que un catalogo sin `EnCurso` (fail-closed).\n\n"
         "Registra **exactamente una** fila de historial con el origen real, "
@@ -256,10 +260,10 @@ def aprobar_ticket(
     "/{ticket_id}/confirmacion-entrega",
     response_model=TicketRespuesta,
     status_code=status.HTTP_200_OK,
-    summary="Confirmar la entrega de un pedido despachado",
+    summary="Confirmar la entrega de un pedido retirado",
     description=(
         "Registra que el **Solicitante dueño** recibio los insumos de un pedido "
-        "ya despachado (Feature 013, ampliacion 25/Nov/2026, spec §9.9, "
+        "ya retirado (Feature 013, ampliacion 25/Nov/2026, spec §9.9, "
         "D-25/D-26). Es un **evento** del ciclo de vida, no una transicion de "
         "estado: el pedido sigue en `Cerrado` y no se reabre.\n\n"
         "Escribe **exactamente una** fila de historial con origen y destino "
@@ -276,7 +280,7 @@ def aprobar_ticket(
         "responde **404** identico (ocultamiento), uno que no esta `Cerrado` "
         "responde **409** sin escribir y una segunda confirmacion responde "
         "**409** sin duplicar la fila. Un pedido creado por un Administrador o "
-        "un Bodeguero no tiene dueño `Solicitante`: permanece «Despachado». No "
+        "un Bodeguero no tiene dueño `Solicitante`: permanece «Retirado». No "
         "hay payload obligatorio ni 422 por cuerpo."
     ),
     responses={
@@ -333,15 +337,15 @@ def confirmar_entrega_ticket(
         "si el estado pedido no existe en el catálogo. Un ticket de otra "
         "institucion (rol limitado) tambien devuelve **404** sin modificar nada "
         "(Feature 007).\n\n"
-        "El paso de `EnCurso` a `Cerrado` está **reservado al despacho** "
+        "El paso de `EnCurso` a `Cerrado` está **reservado al retiro** "
         "(Feature 005): cualquier petición cuyo destino sea el `Cerrado` "
         "canónico —ambos por nombre, con menor `estado_id` ante "
         "duplicados— responde **409** sin modificar estado ni fecha, con el "
-        "detalle exacto `El cierre requiere despacho; use POST "
-        "/api/v1/tickets/{ticket_id}/despacho`.\n\n"
+        "detalle exacto `El cierre requiere retiro; use POST "
+        "/api/v1/tickets/{ticket_id}/retiro`.\n\n"
         "`fecha_cierre` ya no se sella en esta operación: los dos caminos "
         "vigentes de sellado del cierre son el alta directa (004 AC-17) y el "
-        "despacho transaccional (005), y ninguno de los dos la sobrescribe."
+        "retiro transaccional, y ninguno de los dos la sobrescribe."
     ),
     responses={
         **dependencies.respuestas_de_autorizacion(),
@@ -375,20 +379,30 @@ def actualizar_estado_ticket(
     status_code=status.HTTP_200_OK,
     summary="Anular un ticket con motivo",
     description=(
-        "Anula un ticket que esta en `Pendiente` o `EnRevision` y lo lleva al "
-        "estado terminal `Anulado`, **con su fila de historial y el motivo "
-        "literal en la misma transaccion** (Feature 013, spec D-1/D-3/D-6). "
-        "`fecha_cierre` queda nula y no se escribe stock ni movimiento de "
-        "inventario: la anulacion no es un cierre por despacho.\n\n"
+        "Anula un ticket con motivo y lo lleva al estado terminal `Anulado`, "
+        "**con su fila de historial y el motivo literal en la misma "
+        "transaccion** (Feature 013, spec D-1/D-3/D-6; enmienda 26/Nov/2026, "
+        "D-32/D-33/D-34). Desde `EnRevision` no se escribe stock ni movimiento "
+        "de inventario: la anulacion no es un cierre por retiro y "
+        "`fecha_cierre` queda nula.\n\n"
+        "Enmienda 26/Nov/2026 (D-32): el **Administrador** puede anular un "
+        "retiro `Cerrado` **sin confirmar**; la operacion **devuelve el "
+        "stock** con una `ENTRADA` por detalle entregado, resetea las "
+        "cantidades entregadas, deja `fecha_cierre` nula y registra "
+        "`Cerrado -> Anulado` en la misma transaccion. Si el Solicitante ya "
+        "confirmo la entrega, responde **409** sin borrar ni reescribir la "
+        "fila canonica de confirmacion (D-34/AC-61); un ticket `Cerrado` sin "
+        "sede tambien responde **409** (D-40.2).\n\n"
         "Actores: el dueño Solicitante y el Administrador de la institucion "
-        "(matriz AC-17). El orden de respuesta es estricto (AC-7): primero "
-        "**404** si el ticket no existe o esta fuera del alcance del rol "
-        "(indistinguibles, ocultamiento D-8); luego **409** si el estado "
-        "actual no admite la operacion (`EnCurso`, `Cerrado` o ya `Anulado`) "
-        "o si el catalogo del tenant no contiene el estado `Anulado`; por "
-        "ultimo **422** si el motivo falta, esta vacio o excede los 500 "
-        "caracteres (lo valida el servicio). Ningun rechazo deja escritura "
-        "parcial.\n\n"
+        "(matriz AC-17). La anulacion del retiro es **solo administrativa**: el "
+        "Solicitante dueño recibe **409** aunque la matriz le conceda la ruta "
+        "(D-33). El orden de respuesta es estricto (AC-7): **404** si el ticket "
+        "no existe o esta fuera del alcance del rol (indistinguibles, "
+        "ocultamiento D-8); **409** de estado (`EnCurso`, `Anulado`, o "
+        "`Cerrado` por `/rechazo`), de rol, de confirmacion previa o de sede "
+        "ausente; por ultimo **422** si el motivo falta, esta vacio o excede "
+        "los 500 caracteres (lo valida el servicio). Ningun rechazo deja "
+        "escritura parcial.\n\n"
         "Superadmin no opera tickets: **403** en toda escritura (AC-17)."
     ),
     responses={
@@ -423,7 +437,7 @@ def anular_ticket(
     status_code=status.HTTP_200_OK,
     summary="Rechazar un ticket con motivo",
     description=(
-        "Rechaza un ticket en `Pendiente` o `EnRevision` llevandolo al mismo "
+        "Rechaza un ticket en `EnRevision` llevandolo al mismo "
         "estado terminal `Anulado` que la anulacion (Feature 013, spec "
         "D-1/D-3/D-6): lo que distingue un rechazo de una anulacion es el "
         "actor y el motivo registrados en el historial, no una fila de "
@@ -462,10 +476,11 @@ def rechazar_ticket(
     "/{ticket_id}",
     response_model=TicketRespuesta,
     status_code=status.HTTP_200_OK,
-    summary="Editar un ticket en estado Pendiente",
+    summary="Editar un ticket en estado EnRevision",
     description=(
         "Edita asunto, descripcion, prioridad y el **conjunto completo** de "
-        "items detallados de un ticket en `Pendiente` (Feature 013, spec D-9). "
+        "items detallados de un ticket en `EnRevision` (Feature 013, spec D-9; "
+        "enmienda 26/Nov/2026, D-28/AC-53). "
         "El payload es equivalente al del alta, menos la autoria: no lleva "
         "`usuario_id` (el solicitante no cambia) ni `estado_id`. El conjunto "
         "de detalles reemplaza al previo por completo y cabecera + detalles se "
@@ -475,7 +490,7 @@ def rechazar_ticket(
         "Actores: el dueño Solicitante y el Administrador de la institucion "
         "(matriz AC-17). El orden de respuesta (AC-15): **404** de ocultamiento "
         "si el ticket no existe o esta fuera del alcance; **409** si el ticket "
-        "no esta en `Pendiente`; **404** nombrando la referencia ante una "
+        "no esta en `EnRevision`; **404** nombrando la referencia ante una "
         "prioridad o un producto inexistente o ajeno a la institucion; "
         "**422** ante forma invalida (asunto, cantidad no positiva o detalles "
         "vacios). La validacion total del payload precede a la primera "

@@ -472,7 +472,7 @@ _RUTAS_CON_404 = [
     ("post", "/api/v1/inventario/productos"),
     ("post", "/api/v1/inventario/movimientos"),
     ("post", "/api/v1/tickets/"),
-    ("post", "/api/v1/tickets/{ticket_id}/despacho"),
+    ("post", "/api/v1/tickets/{ticket_id}/retiro"),
     ("patch", "/api/v1/tickets/{ticket_id}/estado"),
 ]
 
@@ -489,12 +489,12 @@ def test_openapi_documenta_404_en_rutas_afectadas(motor, metodo, ruta):
 @pytest.mark.parametrize(
     "metodo,ruta",
     [
-        ("post", "/api/v1/tickets/{ticket_id}/despacho"),
+        ("post", "/api/v1/tickets/{ticket_id}/retiro"),
         ("patch", "/api/v1/tickets/{ticket_id}/estado"),
     ],
 )
 def test_openapi_documenta_409_en_operaciones_de_ticket(motor, metodo, ruta):
-    """AC-16: despacho y cambio de estado publican tambien el 409 de conflicto."""
+    """AC-16: retiro y cambio de estado publican tambien el 409 de conflicto."""
     esquema = app.openapi()
     operacion = esquema["paths"][ruta][metodo]
     assert "409" in operacion["responses"], (metodo, ruta, sorted(operacion["responses"]))

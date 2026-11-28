@@ -26,6 +26,11 @@ LOGGER_RAIZ = "compustock"
 LOGGER_ACCESO = "compustock.acceso"
 LOGGER_SALUD = "compustock.salud"
 LOGGER_LIMITE = "compustock.limite"
+LOGGER_TIEMPO_REAL = "compustock.tiempo_real"
+
+#: Ruta plantilla del canal SSE. La linea semantica nunca registra la URL con
+#: query string: el `request_id` de la 024 correlaciona la peticion.
+RUTA_TIEMPO_REAL = "/api/v1/eventos/"
 
 #: UUID canonico con guiones (8-4-4-4-12). Se valida con regex y no con
 #: `uuid.UUID` porque el constructor acepta formas sin guiones que la spec
@@ -52,6 +57,11 @@ CAMPOS_ADICIONALES = (
     "duration_ms",
     "evento",
     "error_type",
+    # Feature 028: linea semantica del canal SSE. `route` es la plantilla, no
+    # la URL; `resultado` y `motivo` son valores de un conjunto cerrado.
+    "route",
+    "resultado",
+    "motivo",
 )
 
 _NIVELES = {
@@ -75,6 +85,47 @@ def resolver_identificador(cabecera: str | None) -> str:
 def identificador_actual() -> str | None:
     """Identificador de la peticion en curso, o `None` fuera de una peticion."""
     return IDENTIFICADOR_PETICION.get()
+
+
+#: Resultados y motivos del canal SSE (Feature 028, plan §8). El `motivo` de
+#: una apertura es `sesion`; los cierres y las degradaciones usan la causa.
+RESULTADOS_TIEMPO_REAL = frozenset(
+    {"abierta", "cerrada", "degradada", "recuperada"}
+)
+MOTIVOS_TIEMPO_REAL = frozenset(
+    {"token_expirado", "vida_maxima", "sesion", "bus", "cliente", "error"}
+)
+
+
+def registrar_tiempo_real(
+    resultado: str,
+    motivo: str,
+    *,
+    request_id: str | None = None,
+    route: str = RUTA_TIEMPO_REAL,
+) -> None:
+    """Emite la linea semantica `compustock.tiempo_real` del canal SSE.
+
+    Campos: `request_id` (el de la 024), `route` plantilla, `resultado` y
+    `motivo`. El mensaje es fijo y los valores son de conjunto cerrado, de modo
+    que la linea **no** puede llevar token, correo, query string, IP,
+    institucion, usuario ni ids de negocio. El formateador JSON solo publica
+    los campos de la lista blanca `CAMPOS_ADICIONALES`.
+    """
+    registro = {
+        "request_id": (
+            request_id if request_id is not None else identificador_actual()
+        ),
+        "route": route,
+        "resultado": resultado,
+        "motivo": motivo,
+    }
+    logger = logging.getLogger(LOGGER_TIEMPO_REAL)
+    if resultado == "degradada":
+        logger.warning("conexion_tiempo_real", extra=registro)
+    else:
+        logger.info("conexion_tiempo_real", extra=registro)
+
 
 
 def resolver_formato(valor: str | None) -> str:

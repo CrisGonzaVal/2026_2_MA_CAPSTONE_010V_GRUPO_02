@@ -40,7 +40,7 @@ from app.schemas.ticket_schema import (
     TicketEditar,
     TicketRespuesta,
 )
-from app.services import ambito_service, compra_service
+from app.services import ambito_service, compra_service, evento_service
 from app.services.auth_service import IdentidadAutenticada
 from app.services.inventario_service import (
     TIPO_ENTRADA,
@@ -72,6 +72,20 @@ NOMBRE_ESTADO_EN_REVISION = "enrevision"
 #: servicio, nunca en Pydantic (plan decision 3), para no adelantar el 422 al
 #: 404/409 del orden AC-7.
 LONGITUD_MAXIMA_MOTIVO = 500
+
+#: Motivos de diagnostico de la senal de tiempo real de las mutaciones de
+#: pedidos (Feature 028, spec §6.1). El sobre los valida contra el conjunto
+#: cerrado de `app.core.eventos.MOTIVOS`; se fijan aqui para no repetir
+#: literales dentro de cada mutacion. El retiro usa `retiro` y la anulacion
+#: administrativa que devuelve stock mantiene `anulacion` (Anexo A, filas 4 y 7).
+MOTIVO_EVENTO_ALTA = "alta"
+MOTIVO_EVENTO_EDICION = "edicion"
+MOTIVO_EVENTO_APROBACION = "aprobacion"
+MOTIVO_EVENTO_RETIRO = "retiro"
+MOTIVO_EVENTO_CONFIRMACION_ENTREGA = "confirmacion_entrega"
+MOTIVO_EVENTO_ANULACION = "anulacion"
+MOTIVO_EVENTO_RECHAZO = "rechazo"
+MOTIVO_EVENTO_CAMBIO_ESTADO = "cambio_estado"
 
 #: Observacion literal de auditoria de cada salida de retiro (D-29/AC-57). El
 #: formato solo lleva ids enteros y etiquetas fijas, por lo que cabe en el
@@ -862,6 +876,45 @@ def _registrar_transicion(
     )
 
 
+def _publicar_pedido(ticket: Ticket, motivo: str) -> None:
+    """Anuncia `pedidos` por el cambio ya confirmado del ticket (028, T8).
+
+    Se invoca **despues** del `commit()` de la mutacion y antes de proyectar la
+    respuesta (plan §5.2): una mutacion rechazada, revertida o que termina en
+    error nunca llega aqui. El dueno es `ticket.usuario_id` y la institucion la
+    instantanea obligatoria `ticket.institucion_id` -la misma columna que usa el
+    filtro de audiencia del bus-, de modo que la publicacion no consulta la base
+    ni depende de una sesion ya cerrada.
+
+    El fail-open es del servicio de eventos (D-8/AC-8): un fallo del almacen o
+    del sobre no propaga, no revierte la transaccion confirmada y no cambia el
+    status ni el cuerpo de la mutacion.
+    """
+    evento_service.publicar_pedidos(
+        ticket.institucion_id,
+        motivo,
+        usuario_ids={ticket.usuario_id},
+    )
+
+
+def _publicar_pedido_e_inventario(ticket: Ticket, motivo: str) -> None:
+    """Anuncia `pedidos` e `inventario` en **un solo** sobre (028, T9).
+
+    Lo usan las dos mutaciones que mueven stock y pertenecen al pedido: el
+    retiro y la anulacion administrativa del retiro. Se invoca **despues** del
+    `commit()` de su unica transaccion, igual que `_publicar_pedido`, de modo
+    que un 409, un rollback o un fallo de escritura nunca publica. Un unico
+    mensaje con el conjunto de dominios evita que el suscriptor emita dos
+    frames para la misma mutacion (plan §5.1); el fail-open sigue siendo el del
+    servicio de eventos.
+    """
+    evento_service.publicar_pedidos_e_inventario(
+        ticket.institucion_id,
+        motivo,
+        usuario_ids={ticket.usuario_id},
+    )
+
+
 def crear_ticket(
     db: Session, datos: TicketCrear, identidad: IdentidadAutenticada | None = None
 ) -> TicketRespuesta:
@@ -1029,6 +1082,10 @@ def crear_ticket(
     except Exception:
         db.rollback()
         raise
+
+    # Feature 028 (T8): el alta confirmada anuncia `pedidos` con el solicitante
+    # como dueno, despues del commit y antes de proyectar el read model.
+    _publicar_pedido(nuevo_ticket, MOTIVO_EVENTO_ALTA)
 
     # T31: el `201` publica el mismo read model que el listado. La sesion sigue
     # abierta (el `commit` no la cierra), asi que la etiqueta, el stock, la
@@ -1234,6 +1291,10 @@ def actualizar_estado_ticket(
     except Exception:
         db.rollback()
         raise
+    # Feature 028 (T8): solo el cambio confirmado publica. Los 409 (mismo
+    # estado, terminales o flujo invalido) lanzan antes del `try` y nunca
+    # llegan aqui, de modo que una peticion sin efecto no anuncia nada.
+    _publicar_pedido(ticket, MOTIVO_EVENTO_CAMBIO_ESTADO)
     return ticket
 
 
@@ -1485,6 +1546,12 @@ def registrar_retiro_ticket(
         db.rollback()
         raise
 
+    # Feature 028 (T9): el retiro confirmado anuncia `pedidos` e `inventario`
+    # en un unico sobre, despues de que la transaccion rebajo el stock y cerro
+    # el ticket. Un 409 (stock insuficiente, estado no elegible) o un rollback
+    # lanzan antes y nunca llegan aqui (plan §5.2, AC-7).
+    _publicar_pedido_e_inventario(ticket, MOTIVO_EVENTO_RETIRO)
+
     return ticket
 
 
@@ -1584,6 +1651,10 @@ def aprobar_ticket(
     except Exception:
         db.rollback()
         raise
+
+    # Feature 028 (T8): la aprobacion confirmada anuncia `pedidos` antes de
+    # proyectar la etiqueta de proceso.
+    _publicar_pedido(ticket, MOTIVO_EVENTO_APROBACION)
 
     return _respuesta_ticket_con_proceso(db, ticket)
 
@@ -1704,6 +1775,10 @@ def confirmar_entrega_ticket(
     except Exception:
         db.rollback()
         raise
+
+    # Feature 028 (T8): la confirmacion registrada anuncia `pedidos` antes de
+    # proyectar la etiqueta «Entregado».
+    _publicar_pedido(ticket, MOTIVO_EVENTO_CONFIRMACION_ENTREGA)
 
     return _respuesta_ticket_con_proceso(db, ticket)
 
@@ -1891,6 +1966,12 @@ def _anular_retiro_administrativo(
         db.rollback()
         raise
 
+    # Feature 028 (T9): la anulacion administrativa del retiro devuelve stock y
+    # cambia el estado; anuncia los dos dominios en un unico sobre. Se publica
+    # despues del commit unico: los 409 de rol, confirmacion previa, sede,
+    # estado o stock, y cualquier rollback, lanzan antes y no anuncian (AC-7).
+    _publicar_pedido_e_inventario(ticket, MOTIVO_EVENTO_ANULACION)
+
     return ticket
 
 
@@ -1972,6 +2053,9 @@ def _cambiar_a_anulado(
         ticket.estado_id == estado_cerrado.estado_id
         and tipo_operacion == "anulacion"
     ):
+        # Feature 028 (T9): esta rama publica `pedidos` + `inventario` dentro
+        # de `_anular_retiro_administrativo`, despues de su commit unico. El
+        # `return` evita que la rama `EnRevision` de abajo publique otra vez.
         return _anular_retiro_administrativo(
             db,
             ticket,
@@ -2017,6 +2101,18 @@ def _cambiar_a_anulado(
     except Exception:
         db.rollback()
         raise
+
+    # Feature 028 (T8): `tipo_operacion` ya es el motivo del contrato
+    # (`anulacion` o `rechazo`). Se publica **una sola vez** desde este helper
+    # compartido: `anular_ticket` y `rechazar_ticket` no duplican la llamada.
+    _publicar_pedido(
+        ticket,
+        (
+            MOTIVO_EVENTO_ANULACION
+            if tipo_operacion == "anulacion"
+            else MOTIVO_EVENTO_RECHAZO
+        ),
+    )
 
     return ticket
 
@@ -2164,6 +2260,10 @@ def editar_ticket(
     except Exception:
         db.rollback()
         raise
+
+    # Feature 028 (T8): la edicion confirmada anuncia `pedidos`; editar no es
+    # una transicion de estado y el dueno del pedido no cambia.
+    _publicar_pedido(ticket, MOTIVO_EVENTO_EDICION)
 
     return ticket
 

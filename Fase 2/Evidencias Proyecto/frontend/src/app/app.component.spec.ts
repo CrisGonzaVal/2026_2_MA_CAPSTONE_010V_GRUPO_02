@@ -5,6 +5,7 @@ import { Router, provideRouter } from '@angular/router';
 import { AppComponent } from './app.component';
 import { routes } from './app.routes';
 import { AutenticacionService, EstadoIdentidad } from './core/services/auth.service';
+import { TiempoRealService } from './core/services/tiempo-real.service';
 import {
   DepartamentoEfectivo,
   IdentidadAutenticada,
@@ -64,12 +65,23 @@ describe('AppComponent', () => {
     estadoIdentidad: WritableSignal<EstadoIdentidad>;
   };
 
+  /** Doble del hub raíz: registra arranque y parada sin abrir `fetch`. */
+  let tiempoRealFalso: {
+    iniciar: jasmine.Spy;
+    detener: jasmine.Spy;
+  };
+
   beforeEach(async () => {
     autenticacionFalsa = {
       cerrarSesion: jasmine.createSpy('cerrarSesion').and.resolveTo(undefined),
       estaAutenticado: signal(true),
       identidad: signal<IdentidadAutenticada | null>(IDENTIDAD_RESUELTA),
       estadoIdentidad: signal<EstadoIdentidad>('disponible'),
+    };
+
+    tiempoRealFalso = {
+      iniciar: jasmine.createSpy('iniciar'),
+      detener: jasmine.createSpy('detener'),
     };
 
     await TestBed.configureTestingModule({
@@ -81,6 +93,9 @@ describe('AppComponent', () => {
         // La shell no guarda token local: consume la sesion/identidad de Clerk
         // como señales. En la prueba se sustituyen por señales dobles.
         { provide: AutenticacionService, useValue: autenticacionFalsa },
+        // Feature 028: la shell arranca el hub raíz; el doble evita una
+        // conexión real y permite contar los arranques.
+        { provide: TiempoRealService, useValue: tiempoRealFalso },
       ],
     }).compileComponents();
   });
@@ -543,6 +558,69 @@ describe('AppComponent', () => {
 
       expect(compilado.querySelector('select')).toBeNull();
       expect(compilado.querySelector('input')).toBeNull();
+    });
+  });
+
+  /**
+   * Feature 028, AC-19/AC-22: la shell es el único punto de arranque del hub.
+   *
+   * `TiempoRealService` es `providedIn: 'root'` e idempotente, así que una sola
+   * llamada por shell mantiene una conexión por pestaña aunque se navegue entre
+   * rutas. El cierre de sesión lo resuelve el propio hub (observa la sesión); la
+   * shell solo lo detiene como red de seguridad al destruirse.
+   */
+  describe('arranque del hub en tiempo real (AC-19, AC-22)', () => {
+    it('inicia el hub una sola vez al montar la shell', () => {
+      const fixture = TestBed.createComponent(AppComponent);
+      fixture.detectChanges();
+      fixture.detectChanges();
+
+      expect(tiempoRealFalso.iniciar).toHaveBeenCalledTimes(1);
+      expect(tiempoRealFalso.detener).not.toHaveBeenCalled();
+    });
+
+    it('no duplica el hub ni cambia el layout al navegar entre rutas', async () => {
+      const router = TestBed.inject(Router);
+      const fixture = TestBed.createComponent(AppComponent);
+      fixture.detectChanges();
+      const compilado = fixture.nativeElement as HTMLElement;
+
+      await router.navigateByUrl('/acceso-denegado');
+      fixture.detectChanges();
+      await router.navigateByUrl('/acceso-denegado?revision=2');
+      fixture.detectChanges();
+
+      expect(tiempoRealFalso.iniciar).toHaveBeenCalledTimes(1);
+
+      const shell = compilado.querySelector('.flex.h-screen') as HTMLElement | null;
+      const navegacion = compilado.querySelector(
+        'nav[aria-label="Navegacion principal"]',
+      ) as HTMLElement | null;
+      expect(shell).not.toBeNull();
+      expect(shell!.classList.contains('overflow-hidden')).toBe(true);
+      expect(shell!.classList.contains('[contain:paint]')).toBe(true);
+      expect(navegacion!.classList.contains('overflow-y-auto')).toBe(true);
+    });
+
+    it('al cerrar sesión no reinicia el hub y lo detiene al destruir la shell', async () => {
+      const router = TestBed.inject(Router);
+      spyOn(router, 'navigate');
+      const fixture = TestBed.createComponent(AppComponent);
+      fixture.detectChanges();
+
+      autenticacionFalsa.estaAutenticado.set(false);
+      fixture.componentInstance.cerrarSesion();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // El hub observa la sesión y se cierra solo; la shell ni lo reabre ni lo
+      // reinicia después del cierre.
+      expect(tiempoRealFalso.iniciar).toHaveBeenCalledTimes(1);
+      expect(tiempoRealFalso.detener).not.toHaveBeenCalled();
+
+      // Red de seguridad: al desaparecer la shell no quedan timers ni reintentos.
+      fixture.destroy();
+      expect(tiempoRealFalso.detener).toHaveBeenCalledTimes(1);
     });
   });
 });

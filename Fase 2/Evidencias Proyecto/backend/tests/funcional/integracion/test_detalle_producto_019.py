@@ -130,14 +130,14 @@ CAPACIDADES_019: dict[tuple[str, str], str] = {
 
 #: Cardinalidad vigente de la matriz: 75 tras las ampliaciones documentadas de la
 #: 019, la 020, la 021 y la 013, menos las tres que retira la enmienda 27/Nov/2026
-#: de la 012.
-TOTAL_OPERACIONES_019 = 72
+#: de la 012, mas el canal de tiempo real de la Feature 028.
+TOTAL_OPERACIONES_019 = 73
 #: Las operaciones vigentes antes de la 019: baseline de las Features 014 y 018,
-#: ampliado por las diez rutas de compras de la 020, el preview de la 021 y la
-#: aprobacion y la confirmacion de entrega de la ampliacion de la 013, menos las
-#: tres de la enmienda 27/Nov/2026 de la 012; el conjunto previo a la propia 019
-#: pasa de 61 a 71.
-TOTAL_PREVIO_019 = 71
+#: ampliado por las diez rutas de compras de la 020, el preview de la 021, la
+#: aprobacion y la confirmacion de entrega de la ampliacion de la 013 y el canal
+#: de la 028, menos las tres de la enmienda 27/Nov/2026 de la 012; el conjunto
+#: previo a la propia 019 pasa de 61 a 72.
+TOTAL_PREVIO_019 = 72
 
 #: Respuestas que el contrato debe documentar para la lectura nueva (spec §8).
 RESPUESTAS_DETALLE = frozenset({"200", "401", "403", "404", "409", "422"})
@@ -982,7 +982,8 @@ def test_matriz_tiene_exactamente_62_operaciones_tras_019():
     La ampliacion 61 -> 62 se documenta aqui y en las aserciones absolutas de
     `test_ciclo_vida_autorizacion_014.py` y `test_filtros_inventario_018.py`; la
     Feature 020 suma diez filas de compras (62 -> 72) y la 021 el preview de
-    cobertura (72 -> 73). No reescribe ninguna transcripcion historica de roles.
+    cobertura (72 -> 73). La 028 (T5) suma el canal de tiempo real y deja 73. No
+    reescribe ninguna transcripcion historica de roles.
     """
     total = len(permisos.MATRIZ_PERMISOS)
     previas = set(permisos.MATRIZ_PERMISOS) - set(OPERACIONES_019)

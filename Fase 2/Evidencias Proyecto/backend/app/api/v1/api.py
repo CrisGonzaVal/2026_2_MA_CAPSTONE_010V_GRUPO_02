@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     compras,
     control,
     dashboard,
+    eventos,
     inventario,
     organizacion,
     tickets,
@@ -37,3 +38,5 @@ api_router.include_router(control.router)
 api_router.include_router(organizacion.router)
 # Feature 020: reabastecimiento externo y compras (proveedores, OC y recepcion).
 api_router.include_router(compras.router)
+# Feature 028: canal de actualizacion en tiempo real (SSE) por institucion.
+api_router.include_router(eventos.router)

@@ -561,7 +561,7 @@ def test_capacidad_tickets_apagada_deniega_y_al_rehabilitarla_crea_ac_28(
 def test_la_matriz_reserva_el_alta_al_solicitante_ac_29():
     """AC-29: la fila viva es exactamente `{Solicitante}` y no cambia el total."""
     assert permisos.MATRIZ_PERMISOS[CLAVE_MATRIZ_ALTA] == frozenset({ROL_AUTORIZADO})
-    assert len(permisos.MATRIZ_PERMISOS) == 72
+    assert len(permisos.MATRIZ_PERMISOS) == 73
 
 
 def test_openapi_del_alta_conserva_el_contrato_y_declara_el_rol_ac_29():

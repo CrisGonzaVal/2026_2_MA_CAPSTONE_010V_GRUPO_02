@@ -1,12 +1,18 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { WritableSignal, signal } from '@angular/core';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { of } from 'rxjs';
 
 import { URL_API } from '../../shared/config/url-api';
 import { AutenticacionService } from '../../core/services/auth.service';
+import { TiempoRealService } from '../../core/services/tiempo-real.service';
+import type {
+  CambioTiempoReal,
+  DominioTiempoReal,
+  MotivoTiempoReal,
+} from '../../core/services/tiempo-real.service';
 import {
   CatalogosTicket,
   HistorialTransicion,
@@ -188,6 +194,66 @@ function crearHistorial(): HistorialTransicion[] {
   ];
 }
 
+/**
+ * Doble del hub de tiempo real (Feature 028, T15) para el detalle. Registra
+ * las suscripciones —cambio y resincronización— y permite emitir frames a mano
+ * sin abrir `fetch` ni tocar la sesión de Clerk.
+ */
+class TiempoRealServiceFalso {
+  readonly dominiosSuscritos: Array<readonly DominioTiempoReal[]> = [];
+
+  private readonly suscripcionesCambio: Array<{
+    readonly dominios: readonly DominioTiempoReal[];
+    readonly callback: (cambio: CambioTiempoReal) => void;
+  }> = [];
+
+  private readonly resincronizaciones = new Set<() => void>();
+
+  alCambio(
+    dominios: readonly DominioTiempoReal[],
+    callback: (cambio: CambioTiempoReal) => void,
+  ): () => void {
+    const suscripcion = { dominios, callback };
+    this.dominiosSuscritos.push(dominios);
+    this.suscripcionesCambio.push(suscripcion);
+    return () => {
+      const indice = this.suscripcionesCambio.indexOf(suscripcion);
+      if (indice >= 0) {
+        this.suscripcionesCambio.splice(indice, 1);
+      }
+    };
+  }
+
+  alResincronizar(callback: () => void): () => void {
+    this.resincronizaciones.add(callback);
+    return () => {
+      this.resincronizaciones.delete(callback);
+    };
+  }
+
+  /** Suscripciones vivas: una de cambio y una de resincronización por vista. */
+  get suscripcionesActivas(): number {
+    return this.suscripcionesCambio.length + this.resincronizaciones.size;
+  }
+
+  emitirCambio(
+    dominios: readonly DominioTiempoReal[],
+    motivo: MotivoTiempoReal = 'cambio',
+  ): void {
+    for (const suscripcion of [...this.suscripcionesCambio]) {
+      if (dominios.some((dominio) => suscripcion.dominios.includes(dominio))) {
+        suscripcion.callback({ dominios, motivo });
+      }
+    }
+  }
+
+  emitirResincronizacion(): void {
+    for (const callback of [...this.resincronizaciones]) {
+      callback();
+    }
+  }
+}
+
 describe('TicketDetalleComponent', () => {
   let fixture: ComponentFixture<TicketDetalleComponent>;
   let componente: TicketDetalleComponent;
@@ -196,6 +262,9 @@ describe('TicketDetalleComponent', () => {
 
   /** Identidad local (`/auth/me`) que el componente lee para condicionar la UI. */
   let identidad: WritableSignal<IdentidadAutenticada | null>;
+
+  /** Hub de tiempo real falso (Feature 028, T18). */
+  let tiempoReal: TiempoRealServiceFalso;
 
   function crearIdentidad(rol: string, usuario_id = 9): IdentidadAutenticada {
     return {
@@ -296,6 +365,7 @@ describe('TicketDetalleComponent', () => {
 
   beforeEach(async () => {
     identidad = signal<IdentidadAutenticada | null>(crearIdentidad('Administrador'));
+    tiempoReal = new TiempoRealServiceFalso();
 
     await TestBed.configureTestingModule({
       imports: [TicketDetalleComponent],
@@ -303,6 +373,7 @@ describe('TicketDetalleComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: AutenticacionService, useValue: { identidad } },
+        { provide: TiempoRealService, useValue: tiempoReal },
         {
           provide: ActivatedRoute,
           useValue: { paramMap: of(convertToParamMap({ ticketId: '7' })) },
@@ -1531,5 +1602,184 @@ describe('TicketDetalleComponent', () => {
       expect(alertas().some((texto) => texto.includes('EnCurso'))).toBe(true);
       expect(componente.enOperacion()).toBe(false);
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Actualización en tiempo real (Feature 028, T18)
+  // ---------------------------------------------------------------------------
+
+  describe('actualización en tiempo real (Feature 028, T18)', () => {
+    it('se suscribe una sola vez a pedidos e inventario', () => {
+      responderCarga();
+
+      expect(tiempoReal.dominiosSuscritos).toEqual([['pedidos', 'inventario']]);
+      expect(tiempoReal.suscripcionesActivas).toBe(2);
+    });
+
+    it('un frame pedidos recarga detalle e historial una vez sin cerrar el diálogo ni borrar el motivo', fakeAsync(() => {
+      responderCarga(crearDetalle(1));
+
+      boton('Anular')!.click();
+      fixture.detectChanges();
+      expect(componente.confirmando()).toBe('anular');
+      componente.motivoForm.controls.motivo.setValue('Ya no se necesita el pedido');
+      const dialogo = dialogoConfirmacion();
+      expect(dialogo.open).toBe(true);
+
+      tiempoReal.emitirCambio(['pedidos'], 'aprobacion');
+
+      // La agrupación espera la ventana de silencio de 250 ms.
+      tick(249);
+      httpMock.expectNone(RUTA_DETALLE);
+      tick(1);
+
+      const detalles = httpMock.match(RUTA_DETALLE);
+      const historiales = httpMock.match(RUTA_HISTORIAL);
+      expect(detalles.length).toBe(1);
+      expect(historiales.length).toBe(1);
+
+      detalles[0].flush(crearDetalle(1));
+      historiales[0].flush(crearHistorial());
+      tick();
+      fixture.detectChanges();
+
+      expect(componente.confirmando()).toBe('anular');
+      expect(dialogoConfirmacion().open).toBe(true);
+      expect(componente.motivoForm.controls.motivo.value).toBe(
+        'Ya no se necesita el pedido',
+      );
+      httpMock.expectNone(RUTA_DETALLE);
+    }));
+
+    it('las acciones se recalculan con el estado nuevo sin borrar el motivo', fakeAsync(() => {
+      responderCarga(crearDetalle(1));
+      expect(botonesAccion()).toEqual(['Aprobar', 'Editar', 'Rechazar', 'Anular']);
+
+      boton('Anular')!.click();
+      fixture.detectChanges();
+      componente.motivoForm.controls.motivo.setValue('Motivo a medio escribir');
+
+      tiempoReal.emitirCambio(['pedidos'], 'cambio_estado');
+      tick(250);
+
+      httpMock.expectOne(RUTA_DETALLE).flush(crearDetalle(4));
+      httpMock.expectOne(RUTA_HISTORIAL).flush(crearHistorial());
+      tick();
+      fixture.detectChanges();
+
+      expect(componente.nombreEstado()).toBe('Anulado');
+      expect(componente.acciones()).toEqual({
+        aprobar: false,
+        registrarRetiro: false,
+        confirmarEntrega: false,
+        editar: false,
+        anular: false,
+        rechazar: false,
+      });
+      expect(botonesAccion()).toEqual([]);
+      // El diálogo abierto sobrevive: no se fuerza su cierre.
+      expect(componente.confirmando()).toBe('anular');
+      expect(componente.motivoForm.controls.motivo.value).toBe(
+        'Motivo a medio escribir',
+      );
+    }));
+
+    it('un frame inventario actualiza stock_disponible y habilita el retiro', fakeAsync(() => {
+      identidad.set({
+        ...crearIdentidad('Bodeguero'),
+        sede: { sede_id: 3, nombre: 'Sede Central' },
+      });
+      const sinStock = crearDetalleRetiro(2);
+      sinStock.stock_disponible = false;
+      sinStock.etiqueta_proceso = 'Por comprar';
+      responderCarga(sinStock, crearHistorial(), CATALOGOS_RETIRO);
+
+      expect(componente.ticket()?.stock_disponible).toBe(false);
+      expect(botonesAccion()).toEqual([]);
+      expect(textoPagina()).toContain('stock local aún no está disponible');
+
+      tiempoReal.emitirCambio(['inventario'], 'recepcion');
+      tick(250);
+
+      const conStock = crearDetalleRetiro(2);
+      conStock.stock_disponible = true;
+      conStock.etiqueta_proceso = 'En confirmación de stock local';
+      httpMock.expectOne(RUTA_DETALLE).flush(conStock);
+      httpMock.expectOne(RUTA_HISTORIAL).flush(crearHistorial());
+      tick();
+      fixture.detectChanges();
+
+      expect(componente.ticket()?.stock_disponible).toBe(true);
+      expect(botonesAccion()).toEqual(['Registrar retiro']);
+      expect(textoPagina()).toContain('Stock disponible — Listo para el retiro');
+    }));
+
+    it('el refresco silencioso no enciende cargando y un fallo conserva detalle e historial', fakeAsync(() => {
+      responderCarga(crearDetalle(2));
+      const detalleAntes = componente.ticket();
+      const historialAntes = componente.historial();
+      expect(componente.cargando()).toBe(false);
+
+      tiempoReal.emitirCambio(['pedidos'], 'edicion');
+      tick(250);
+
+      const peticionDetalle = httpMock.expectOne(RUTA_DETALLE);
+      expect(componente.cargando()).toBe(false);
+      expect(fixture.nativeElement.textContent).not.toContain('Cargando pedido');
+
+      peticionDetalle.flush('Falla', { status: 500, statusText: 'Server Error' });
+      httpMock.match(RUTA_HISTORIAL);
+      tick();
+      fixture.detectChanges();
+
+      expect(componente.ticket()).toBe(detalleAntes);
+      expect(componente.historial()).toBe(historialAntes);
+      expect(componente.errorCarga()).toBeNull();
+      expect(componente.cargando()).toBe(false);
+
+      // El agrupador quedó libre: una nueva invalidación vuelve a leer.
+      tiempoReal.emitirCambio(['pedidos'], 'edicion');
+      tick(250);
+      httpMock.expectOne(RUTA_DETALLE).flush(crearDetalle(2));
+      httpMock.expectOne(RUTA_HISTORIAL).flush(crearHistorial());
+      tick();
+    }));
+
+    it('una resincronización y un frame de la misma ráfaga producen un solo refresco', fakeAsync(() => {
+      responderCarga();
+
+      tiempoReal.emitirResincronizacion();
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tick(250);
+
+      const detalles = httpMock.match(RUTA_DETALLE);
+      const historiales = httpMock.match(RUTA_HISTORIAL);
+      expect(detalles.length).toBe(1);
+      expect(historiales.length).toBe(1);
+
+      detalles[0].flush(crearDetalle(1));
+      historiales[0].flush(crearHistorial());
+      tick();
+      httpMock.expectNone(RUTA_DETALLE);
+      httpMock.expectNone(RUTA_HISTORIAL);
+    }));
+
+    it('ngOnDestroy cancela las suscripciones y el agrupador', fakeAsync(() => {
+      responderCarga();
+      expect(tiempoReal.suscripcionesActivas).toBe(2);
+
+      // Deja un refresco programado y destruye antes de que dispare.
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tick(100);
+      fixture.destroy();
+
+      expect(tiempoReal.suscripcionesActivas).toBe(0);
+
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tiempoReal.emitirResincronizacion();
+      tick(1_000);
+      httpMock.expectNone(RUTA_DETALLE);
+      httpMock.expectNone(RUTA_HISTORIAL);
+    }));
   });
 });

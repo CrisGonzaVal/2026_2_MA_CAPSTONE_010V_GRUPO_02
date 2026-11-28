@@ -48,6 +48,7 @@ from app.core.config import settings
 from app.main import app
 from app.models.usuario import Usuario
 from app.models.rol import Rol
+from app.services import auth_service
 from app.services.auth_service import IdentidadAutenticada
 
 RUTA_ME = "/api/v1/auth/me"
@@ -509,6 +510,43 @@ def test_error_de_red_del_backend_api_responde_401(
     respuesta_clerk["excepcion"] = httpx.ConnectError("sin conexion")
     respuesta = cliente_auth.get(RUTA_ME, headers=_auth(firmar_token()))
     assert respuesta.status_code == 401, respuesta.text
+
+
+# ---------------------------------------------------------------------------
+# Expiracion de la identidad (Feature 028, T2/AC-3)
+# ---------------------------------------------------------------------------
+
+
+def test_resolver_identidad_copia_el_exp_del_token_validado(
+    motor,
+    datos_base,
+    respuesta_clerk,
+    firmar_token,
+    fuente_jwks_simulada,
+    transporte_clerk,
+    emisor,
+):
+    """`expira_en` es el `exp` del JWT ya validado: no se revalida ni se usa TTL fijo.
+
+    Es la fuente del cierre del flujo en `exp - MARGEN_RELOJ_SEGUNDOS` sin volver
+    a consultar Clerk ni deducir la vigencia de la configuracion.
+    """
+    _cuerpo_happy(datos_base, respuesta_clerk)
+    token = firmar_token(exp_delta=1234)
+    exp = jwt.decode(token, options={"verify_signature": False})["exp"]
+
+    with sessionmaker(bind=motor)() as db:
+        identidad = auth_service.resolver_identidad(
+            token=token,
+            issuer=emisor,
+            fuente_jwks=fuente_jwks_simulada,
+            secret_key="sk_test_valor_falso",
+            transport=transporte_clerk,
+            db=db,
+        )
+
+    assert identidad.expira_en == exp
+    assert identidad.usuario.usuario_id == datos_base["usuario_id"]
 
 
 # ---------------------------------------------------------------------------

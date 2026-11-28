@@ -340,6 +340,13 @@ MATRIZ_PERMISOS: dict[tuple[str, str], frozenset[str]] = {
         "POST",
         "/api/v1/compras/ordenes/{orden_id}/cancelar",
     ): _COMPRAS_ADMINISTRACION,
+    # Feature 028 (T5, spec §6.3): canal de actualizacion en tiempo real (SSE).
+    # Es una operacion **aditiva** (matriz 72 -> 73) para los tres roles
+    # institucionales; el Superadmin queda fuera (su superficie es `/control/*`).
+    # No se asocia a una capacidad: la visibilidad por dominio se resuelve por
+    # conexion con las capacidades del contexto y la marca `dashboard` usa la
+    # capacidad ya existente.
+    ("GET", "/api/v1/eventos/"): _LECTURA_NEGOCIO,
 }
 
 

@@ -13,9 +13,10 @@ requerido recibe 403. La matriz central de permisos vive en
 """
 
 from collections.abc import Callable, Generator
+from dataclasses import dataclass
 
 import httpx
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -28,7 +29,12 @@ from app.db.database import (
     crear_sesion_esquema,
     motor_readiness,
 )
-from app.services import auth_service, capacidad_service, tenant_service
+from app.services import (
+    ambito_service,
+    auth_service,
+    capacidad_service,
+    tenant_service,
+)
 from app.services.auth_service import IdentidadAutenticada
 from app.services.tenant_service import ContextoSolicitud
 
@@ -449,3 +455,142 @@ def requiere_capacidad(metodo: str, ruta: str) -> Callable[..., None]:
             raise _capacidad_deshabilitada()
 
     return dependencia
+
+
+# ---------------------------------------------------------------------------
+# Contexto del flujo de tiempo real (Feature 028, T2/T5)
+# ---------------------------------------------------------------------------
+
+#: Dominio del frame -> capacidad funcional y clave de `MATRIZ_PERMISOS` que lo
+#: gobiernan. La visibilidad por conexion combina ambos: una capacidad apagada o
+#: un rol sin acceso a la clave dejan el dominio fuera. El conjunto cerrado de
+#: capacidades de la 012 no se amplia.
+_DOMINIOS_TIEMPO_REAL: tuple[tuple[str, str, str, str], ...] = (
+    ("pedidos", "tickets", "GET", "/api/v1/tickets/"),
+    ("inventario", "inventario", "GET", "/api/v1/inventario/existencias"),
+    ("compras", "compras", "GET", "/api/v1/compras/ordenes"),
+    ("dashboard", "dashboard", "GET", "/api/v1/dashboard/"),
+)
+
+
+@dataclass(frozen=True)
+class ContextoTiempoReal:
+    """Copia inmutable del contexto resuelto **antes** de abrir un flujo SSE.
+
+    El generador del flujo solo lee esta copia: no vuelve a consultar la base ni
+    retiene una sesion del pool mientras espera eventos (Feature 028, D-3/AC-29).
+    """
+
+    usuario_id: int
+    rol: str
+    institucion_id: str
+    expira_en: int | None
+    dominios_visibles: frozenset[str]
+    request_id: str | None
+
+
+def _institucion_de_la_conexion(
+    db: Session, identidad: IdentidadAutenticada
+) -> str | None:
+    """Institucion efectiva de una conexion de tiempo real.
+
+    En **PostgreSQL** se resuelve con el mapa `correo -> esquema` de control
+    (`tenant_service.resolver_contexto_solicitud`), que es la misma autoridad de
+    routing que usa `get_db_negocio`: los departamentos de los usuarios viven en
+    su esquema tenant, no en `control`, asi que leerlos con la sesion de control
+    responderia 403 a toda identidad de negocio. La resolucion usa solo `db`
+    (control) y **no** abre una sesion de tenant.
+
+    En **SQLite** (contexto logico unico, suite ordinaria) se conserva
+    `ambito_service`, que lee el departamento de la unica sesion disponible.
+
+    Traduce los errores al contrato de la capa HTTP: institucion inactiva **401**
+    (identidad local no resoluble) y correo no mapeado o tenant fuera de version
+    **403**, sin degradar nunca a alcance global.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return ambito_service.alcance_institucional(db, identidad)
+
+    try:
+        contexto = tenant_service.resolver_contexto_solicitud(
+            db, identidad.usuario.correo
+        )
+    except tenant_service.ErrorInstitucionInactiva as exc:
+        raise _identidad_no_resoluble() from exc
+    except tenant_service.ErrorTenant as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="La identidad no tiene un tenant de negocio operativo",
+        ) from exc
+    return contexto.institucion_id
+
+
+def _dominios_visibles_del_contexto(
+    db: Session, *, institucion_id: str, rol: str
+) -> frozenset[str]:
+    """Dominios que la conexion puede recibir segun capacidad y matriz central."""
+    visibles = {
+        dominio
+        for dominio, capacidad, metodo, ruta in _DOMINIOS_TIEMPO_REAL
+        if capacidad_service.capacidad_habilitada(db, institucion_id, capacidad)
+        and permisos.rol_autorizado(rol, permisos.roles_de_operacion(metodo, ruta))
+    }
+    return frozenset(visibles)
+
+
+def contexto_tiempo_real(
+    request: Request,
+    identidad: IdentidadAutenticada = Depends(
+        requiere_operacion("GET", "/api/v1/eventos/")
+    ),
+    db: Session = Depends(get_db),
+) -> ContextoTiempoReal:
+    """Resuelve y copia el contexto de una conexion de tiempo real (Feature 028).
+
+    Es una dependencia **no generadora**: la identidad ya autorizada por la
+    matriz central, la institucion derivada de la identidad, el rol, la
+    expiracion del token validado y los dominios visibles se copian antes de que
+    el endpoint devuelva el `StreamingResponse`. La institucion se resuelve por
+    el mapa de control (`tenant_service`) en PostgreSQL —los departamentos de
+    los usuarios no viven en `control`— y con `ambito_service` en el contexto
+    logico unico de SQLite. En `finally` se cierra la sesion para no retener una
+    conexion del pool durante la espera; el `finally` de `get_db` vuelve a
+    cerrarla (idempotente).
+
+    Una institucion no resoluble responde **403** y nunca se degrada a alcance
+    global; el Superadmin queda fuera por la matriz (T5). `request_id` se lee del
+    mismo `scope["state"]` que fija el middleware de la 024.
+
+    Correccion T13 (28/Nov/2026): la version anterior resolvia la institucion con
+    `ambito_service.alcance_institucional(db, identidad)`, que lee
+    `departamento` con la sesion de **control**. En PostgreSQL los departamentos
+    de un usuario de negocio viven solo en su esquema tenant, de modo que toda
+    conexion respondia 403; el gated de T13 lo destapo. El comportamiento
+    aprobado (resolver la institucion desde la identidad, sin sesion tenant y sin
+    degradar a global) no cambia: cambia el mecanismo.
+    """
+    try:
+        institucion_id = _institucion_de_la_conexion(db, identidad)
+        if institucion_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "La identidad no tiene una institucion operativa para el "
+                    "tiempo real"
+                ),
+            )
+        rol = permisos.nombre_rol_de(identidad)
+        if rol is None:
+            raise _permiso_insuficiente()
+        return ContextoTiempoReal(
+            usuario_id=identidad.usuario.usuario_id,
+            rol=rol,
+            institucion_id=institucion_id,
+            expira_en=identidad.expira_en,
+            dominios_visibles=_dominios_visibles_del_contexto(
+                db, institucion_id=institucion_id, rol=rol
+            ),
+            request_id=request.scope.get("state", {}).get("request_id"),
+        )
+    finally:
+        db.close()

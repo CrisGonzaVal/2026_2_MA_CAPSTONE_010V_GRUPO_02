@@ -3,14 +3,15 @@
 Fase ROJA de TDD (T32). Se transcribe la matriz desde la spec §10.5/§10.10, no
 desde `permisos.MATRIZ_PERMISOS` como fuente de la expectativa:
 
-* la matriz conserva **72** operaciones (75 menos las tres que retira la
-  enmienda 27/Nov/2026 de la 012 con la tabla puente auxiliar);
+* la matriz conserva **73** operaciones (75 menos las tres que retira la
+  enmienda 27/Nov/2026 de la 012 con la tabla puente auxiliar, mas el canal de
+  tiempo real de la Feature 028);
 * `POST /tickets/{id}/retiro` existe con **solo `Bodeguero`** (capacidad
   `kanban`) y `/despacho` ya no esta;
 * `POST /inventario/movimientos` queda **solo** para el Bodeguero;
 * `POST /anulacion` conserva `{Administrador, Solicitante}` y `PATCH /estado`
   conserva `{Administrador}`;
-* `/openapi.json` publica 72 operaciones v1 (74 entradas) con `/retiro` y sin
+* `/openapi.json` publica 73 operaciones v1 (75 entradas) con `/retiro` y sin
   `/despacho`.
 """
 
@@ -47,15 +48,16 @@ def _operaciones(esquema: dict):
 # ---------------------------------------------------------------------------
 
 
-def test_la_matriz_conserva_72_operaciones_ac_64():
+def test_la_matriz_conserva_73_operaciones_ac_64():
     """AC-64: una clave renombrada y dos conjuntos ajustados, no una fila nueva.
 
     Enmienda 27/Nov/2026 de la 012: la matriz pasa de 75 a 72 al retirar las tres
-    operaciones de la tabla puente auxiliar.
+    operaciones de la tabla puente auxiliar; la Feature 028 (T5) la deja en 73
+    con el canal de tiempo real.
     """
-    assert len(permisos.MATRIZ_PERMISOS) == 72, (
-        "la enmienda de la 013 conserva sus filas y la de la 012 deja 72 "
-        "operaciones (D-29/AC-64)"
+    assert len(permisos.MATRIZ_PERMISOS) == 73, (
+        "la enmienda de la 013 conserva sus filas, la de la 012 deja 72 y la "
+        "028 (T5) suma el canal (D-29/AC-64)"
     )
 
 
@@ -139,8 +141,8 @@ def test_la_capacidad_del_retiro_es_kanban_ac_64():
 # ---------------------------------------------------------------------------
 
 
-def test_openapi_publica_72_operaciones_v1_y_74_entradas_ac_64(cliente):
-    """AC-64: el contrato queda en 72 v1 + `GET /` y `/health` = 74.
+def test_openapi_publica_73_operaciones_v1_y_75_entradas_ac_64(cliente):
+    """AC-64: el contrato queda en 73 v1 + `GET /` y `/health` = 75.
 
     Ademas fija las descripciones vigentes de la enmienda: el registro manual de
     movimientos es una operacion de bodega (403 del Administrador) y la
@@ -150,9 +152,9 @@ def test_openapi_publica_72_operaciones_v1_y_74_entradas_ac_64(cliente):
     esquema = cliente.get("/openapi.json").json()
     operaciones = list(_operaciones(esquema))
 
-    assert len(operaciones) == 74
+    assert len(operaciones) == 75
     v1 = [ruta for ruta, _ in operaciones if ruta.startswith("/api/v1")]
-    assert len(v1) == 72
+    assert len(v1) == 73
     assert sorted(
         ruta for ruta, _ in operaciones if not ruta.startswith("/api/v1")
     ) == ["/", "/health"]

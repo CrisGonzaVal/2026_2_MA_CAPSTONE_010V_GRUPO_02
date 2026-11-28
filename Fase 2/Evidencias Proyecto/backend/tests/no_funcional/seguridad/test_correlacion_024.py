@@ -2,9 +2,9 @@
 
 Las pruebas usan la interfaz HTTP real (`TestClient`) y, para el 500, una ruta
 temporal fuera de OpenAPI que se retira en `finally` para no alterar el conteo
-de 74 entradas del contrato (72 v1 + `GET /` + `/health`; la ampliacion
-25/Nov/2026 de la 013 llevo el total a 77 y la enmienda 27/Nov/2026 de la 012
-retiro tres operaciones).
+de 75 entradas del contrato (73 v1 + `GET /` + `/health`; la ampliacion
+25/Nov/2026 de la 013 llevo el total a 77, la enmienda 27/Nov/2026 de la 012
+retiro tres operaciones y la Feature 028 (T5) sumo el canal de tiempo real).
 """
 
 import json

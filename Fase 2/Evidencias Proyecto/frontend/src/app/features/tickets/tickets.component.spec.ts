@@ -1,10 +1,16 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { Router, UrlTree, provideRouter } from '@angular/router';
 import { WritableSignal, signal } from '@angular/core';
 
 import { AutenticacionService } from '../../core/services/auth.service';
+import { TiempoRealService } from '../../core/services/tiempo-real.service';
+import type {
+  CambioTiempoReal,
+  DominioTiempoReal,
+  MotivoTiempoReal,
+} from '../../core/services/tiempo-real.service';
 import { URL_API } from '../../shared/config/url-api';
 import { CatalogosTicket, IdentidadAutenticada, Ticket } from '../../shared/interfaces';
 import {
@@ -416,10 +422,71 @@ function ticketRespuestaConReadModel(ticket_id: number, estado_id = 1): Ticket {
   };
 }
 
+/**
+ * Doble del hub de tiempo real (Feature 028, T15) para el tablero. Registra
+ * las suscripciones —cambio y resincronización— y permite emitir frames a mano
+ * sin abrir `fetch` ni tocar la sesión de Clerk.
+ */
+class TiempoRealServiceFalso {
+  readonly dominiosSuscritos: Array<readonly DominioTiempoReal[]> = [];
+
+  private readonly suscripcionesCambio: Array<{
+    readonly dominios: readonly DominioTiempoReal[];
+    readonly callback: (cambio: CambioTiempoReal) => void;
+  }> = [];
+
+  private readonly resincronizaciones = new Set<() => void>();
+
+  alCambio(
+    dominios: readonly DominioTiempoReal[],
+    callback: (cambio: CambioTiempoReal) => void,
+  ): () => void {
+    const suscripcion = { dominios, callback };
+    this.dominiosSuscritos.push(dominios);
+    this.suscripcionesCambio.push(suscripcion);
+    return () => {
+      const indice = this.suscripcionesCambio.indexOf(suscripcion);
+      if (indice >= 0) {
+        this.suscripcionesCambio.splice(indice, 1);
+      }
+    };
+  }
+
+  alResincronizar(callback: () => void): () => void {
+    this.resincronizaciones.add(callback);
+    return () => {
+      this.resincronizaciones.delete(callback);
+    };
+  }
+
+  /** Suscripciones vivas: una de cambio y una de resincronización por vista. */
+  get suscripcionesActivas(): number {
+    return this.suscripcionesCambio.length + this.resincronizaciones.size;
+  }
+
+  emitirCambio(
+    dominios: readonly DominioTiempoReal[],
+    motivo: MotivoTiempoReal = 'cambio',
+  ): void {
+    for (const suscripcion of [...this.suscripcionesCambio]) {
+      if (dominios.some((dominio) => suscripcion.dominios.includes(dominio))) {
+        suscripcion.callback({ dominios, motivo });
+      }
+    }
+  }
+
+  emitirResincronizacion(): void {
+    for (const callback of [...this.resincronizaciones]) {
+      callback();
+    }
+  }
+}
+
 describe('TicketsComponent', () => {
   let fixture: ComponentFixture<TicketsComponent>;
   let componente: TicketsComponent;
   let httpMock: HttpTestingController;
+  let tiempoReal: TiempoRealServiceFalso;
 
   /**
    * Identidad local (`/auth/me`) que el modal presenta como autor informativo.
@@ -478,6 +545,7 @@ describe('TicketsComponent', () => {
     // el autor informativo (AC-34). Se inyecta un doble con una señal para
     // poder variarla.
     identidad = signal<IdentidadAutenticada | null>(crearIdentidad());
+    tiempoReal = new TiempoRealServiceFalso();
 
     await TestBed.configureTestingModule({
       imports: [TicketsComponent],
@@ -485,6 +553,7 @@ describe('TicketsComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: AutenticacionService, useValue: { identidad } },
+        { provide: TiempoRealService, useValue: tiempoReal },
         provideRouter([]),
       ],
     }).compileComponents();
@@ -2391,5 +2460,223 @@ describe('TicketsComponent', () => {
       expect(texto).toContain('Rechazado');
       expect(texto).not.toContain('Despachado');
     });
+  });
+
+  /**
+   * Feature 028, T17: el tablero se suscribe al hub y relee la lista de forma
+   * silenciosa ante `pedidos` e `inventario`. El refresco no enciende
+   * `cargandoTablero`, no toca filtros/orden/búsqueda y conserva las tarjetas
+   * y el scroll si la relectura falla (spec §5.4, AC-9/AC-10/AC-11/AC-14).
+   */
+  describe('actualización en tiempo real (Feature 028, T17)', () => {
+    /** Busca una tarjeta por el id de su ticket, aplanando las columnas. */
+    function tarjetaDe(ticketId: number) {
+      return componente
+        .columnas()
+        .flatMap((columna) => columna.tarjetas)
+        .find((tarjeta) => tarjeta.ticket.ticket_id === ticketId);
+    }
+
+    function idsVisibles(): number[] {
+      return componente
+        .columnas()
+        .flatMap((columna) => columna.tarjetas)
+        .map((tarjeta) => tarjeta.ticket.ticket_id);
+    }
+
+    /** Tickets del día para que «Hoy» no dependa de la fecha de ejecución. */
+    function ticketsDeHoy(): Ticket[] {
+      const ahora = new Date();
+      return [
+        ticketPeriodo(501, 1, fechaIsoLocal(ahora), 1, 'Reposición de papel'),
+        ticketPeriodo(502, 2, fechaIsoLocal(ahora), 2, 'Compra de resmas'),
+      ];
+    }
+
+    it('se suscribe una sola vez a pedidos e inventario', () => {
+      responderArranque();
+
+      expect(tiempoReal.dominiosSuscritos).toEqual([['pedidos', 'inventario']]);
+      expect(tiempoReal.suscripcionesActivas).toBe(2);
+    });
+
+    it('un frame pedidos produce una única recarga silenciosa de la lista', fakeAsync(() => {
+      responderArranque();
+      // El constructor ya hizo su carga; no queda ninguna petición viva.
+      httpMock.expectNone(RUTA_TICKETS);
+
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+
+      // La agrupación espera la ventana de silencio de 250 ms.
+      tick(249);
+      httpMock.expectNone(RUTA_TICKETS);
+
+      tick(1);
+      const peticiones = httpMock.match(RUTA_TICKETS);
+      expect(peticiones.length).toBe(1);
+      // El refresco relee solo la lista: no vuelve a pedir catálogos (§5.4).
+      httpMock.expectNone(RUTA_CATALOGOS);
+
+      peticiones[0].flush(TICKETS);
+      tick();
+      fixture.detectChanges();
+
+      httpMock.expectNone(RUTA_TICKETS);
+    }));
+
+    it('no enciende cargandoTablero y pinta la tarjeta nueva sin placeholder', fakeAsync(() => {
+      responderArranque(CATALOGOS_RETIRO, TICKETS);
+      expect(componente.cargandoTablero()).toBe(false);
+
+      const nuevo = ticketRetiro(9, 1, 'En revisión');
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tick(250);
+
+      const peticion = httpMock.expectOne(RUTA_TICKETS);
+      // En vuelo: ni estado de carga ni tablero vacío.
+      expect(componente.cargandoTablero()).toBe(false);
+      expect(idsVisibles().length).toBe(TICKETS.length);
+      expect(fixture.nativeElement.textContent).not.toContain('Cargando tablero');
+
+      peticion.flush([nuevo, ...TICKETS]);
+      tick();
+      fixture.detectChanges();
+
+      expect(componente.cargandoTablero()).toBe(false);
+      expect(componente.errorTablero()).toBeNull();
+      expect(componente.tickets().some((ticket) => ticket.ticket_id === 9)).toBe(true);
+      expect(tarjetaDe(9)).toBeTruthy();
+      expect(
+        fixture.nativeElement.querySelector('a[href="/tickets/9"]'),
+      ).not.toBeNull();
+    }));
+
+    it('conserva filtroPeriodo, orden, búsqueda, scroll y columnas durante el refresco', fakeAsync(() => {
+      const iniciales = ticketsDeHoy();
+      responderArranque(CATALOGOS_RETIRO, iniciales);
+      componente.filtroPeriodo.set('hoy');
+      componente.orden.set('antiguos');
+      componente.busqueda.set('papel');
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      host.style.display = 'block';
+      host.style.height = '100px';
+      host.style.overflowY = 'auto';
+      host.scrollTop = 40;
+      const scrollAntes = host.scrollTop;
+      const visiblesAntes = idsVisibles();
+      expect(visiblesAntes).toEqual([501]);
+
+      tiempoReal.emitirCambio(['pedidos'], 'edicion');
+      tick(250);
+      const peticion = httpMock.expectOne(RUTA_TICKETS);
+
+      // Mientras la relectura está en vuelo, las columnas siguen compuestas.
+      fixture.detectChanges();
+      expect(componente.cargandoTablero()).toBe(false);
+      expect(idsVisibles()).toEqual(visiblesAntes);
+      expect(host.scrollTop).toBe(scrollAntes);
+      expect(componente.filtroPeriodo()).toBe('hoy');
+      expect(componente.orden()).toBe('antiguos');
+      expect(componente.busqueda()).toBe('papel');
+
+      peticion.flush([
+        ...iniciales,
+        ticketPeriodo(503, 1, fechaIsoLocal(new Date()), 1, 'Solicitud de papel'),
+      ]);
+      tick();
+      fixture.detectChanges();
+
+      expect(componente.filtroPeriodo()).toBe('hoy');
+      expect(componente.orden()).toBe('antiguos');
+      expect(componente.busqueda()).toBe('papel');
+      expect(host.scrollTop).toBe(scrollAntes);
+      // El nuevo pedido entra con los mismos filtros activos.
+      expect(idsVisibles()).toEqual([501, 503]);
+    }));
+
+    it('un frame inventario también refresca el tablero y actualiza la etiqueta', fakeAsync(() => {
+      responderArranque(CATALOGOS_013, TICKETS_013);
+      expect(tarjetaDe(5)?.etiquetaProceso).toBe('Retirado');
+
+      const actualizados = TICKETS_013.map((ticket) =>
+        ticket.ticket_id === 5
+          ? {
+              ...ticket,
+              etiqueta_proceso: 'Entregado',
+              explicacion_proceso: 'Entregado: confirmado por el solicitante.',
+            }
+          : ticket,
+      );
+
+      tiempoReal.emitirCambio(['inventario'], 'movimiento');
+      tick(250);
+      const peticion = httpMock.expectOne(RUTA_TICKETS);
+      peticion.flush(actualizados);
+      tick();
+      fixture.detectChanges();
+
+      expect(tarjetaDe(5)?.etiquetaProceso).toBe('Entregado');
+      expect(fixture.nativeElement.textContent).toContain('Entregado');
+    }));
+
+    it('una resincronización comparte el agrupador con un frame de la misma ráfaga', fakeAsync(() => {
+      responderArranque();
+
+      tiempoReal.emitirCambio(['pedidos'], 'aprobacion');
+      tiempoReal.emitirResincronizacion();
+      tick(250);
+
+      const peticiones = httpMock.match(RUTA_TICKETS);
+      expect(peticiones.length).toBe(1);
+
+      peticiones[0].flush(TICKETS);
+      tick();
+    }));
+
+    it('un fallo de la recarga conserva las tarjetas y no muestra el error global', fakeAsync(() => {
+      responderArranque(CATALOGOS_013, TICKETS_013);
+      const antes = componente.tickets();
+
+      tiempoReal.emitirCambio(['pedidos'], 'retiro');
+      tick(250);
+      httpMock
+        .expectOne(RUTA_TICKETS)
+        .flush('Falla', { status: 500, statusText: 'Server Error' });
+      tick();
+      fixture.detectChanges();
+
+      expect(componente.tickets()).toBe(antes);
+      expect(componente.errorTablero()).toBeNull();
+      expect(componente.cargandoTablero()).toBe(false);
+      expect(idsVisibles().length).toBe(TICKETS_013.length);
+      expect(fixture.nativeElement.textContent).not.toContain(
+        'No se pudo cargar el tablero',
+      );
+
+      // El agrupador quedó libre: una nueva invalidación vuelve a releer.
+      tiempoReal.emitirCambio(['pedidos'], 'edicion');
+      tick(250);
+      httpMock.expectOne(RUTA_TICKETS).flush(TICKETS_013);
+      tick();
+    }));
+
+    it('ngOnDestroy cancela las suscripciones y el agrupador', fakeAsync(() => {
+      responderArranque();
+      expect(tiempoReal.suscripcionesActivas).toBe(2);
+
+      // Deja un refresco programado y destruye antes de que dispare.
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tick(100);
+      fixture.destroy();
+
+      expect(tiempoReal.suscripcionesActivas).toBe(0);
+
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tiempoReal.emitirResincronizacion();
+      tick(1_000);
+      httpMock.expectNone(RUTA_TICKETS);
+    }));
   });
 });

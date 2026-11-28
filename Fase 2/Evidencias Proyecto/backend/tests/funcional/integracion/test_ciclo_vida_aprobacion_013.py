@@ -617,10 +617,11 @@ def test_matriz_declara_la_aprobacion_y_el_patch_solo_para_administrador_ac_44()
     assert set(permisos.MATRIZ_PERMISOS[("PATCH", RUTA_ESTADO)]) == {
         "Administrador"
     }, "el PATCH de legado deja de concederse al Bodeguero"
-    assert len(permisos.MATRIZ_PERMISOS) == 72, (
+    assert len(permisos.MATRIZ_PERMISOS) == 73, (
         "la matriz suma una operacion por tarea de la ampliacion (73 -> 74 en "
-        "T21 y 74 -> 75 con la confirmacion de entrega en T22) y la enmienda "
-        "27/Nov/2026 de la 012 la deja en 72"
+        "T21 y 74 -> 75 con la confirmacion de entrega en T22), la enmienda "
+        "27/Nov/2026 de la 012 la deja en 72 y la Feature 028 (T5) suma el "
+        "canal de tiempo real"
     )
     # Las operaciones propias del Bodeguero no cambian de roles.
     assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_RETIRO)]) == {

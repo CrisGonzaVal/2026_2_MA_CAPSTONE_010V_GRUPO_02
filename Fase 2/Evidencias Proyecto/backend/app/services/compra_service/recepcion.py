@@ -24,7 +24,7 @@ from app.schemas.compra_schema import (
     RecepcionRespuesta,
     TicketDesbloqueadoRespuesta,
 )
-from app.services import inventario_service
+from app.services import evento_service, inventario_service
 from app.services.auth_service import IdentidadAutenticada
 
 from ._comun import (
@@ -40,6 +40,7 @@ from ._comun import (
     orden_a_respuesta,
 )
 from .cobertura import calcular_cobertura_tickets
+from .ordenes import _tickets_del_plan
 
 
 def _observacion_recepcion(
@@ -217,6 +218,23 @@ def recepcionar_orden_compra(
         db_tenant.flush()
 
     _confirmar(db_tenant, "No se pudo confirmar la recepcion de la orden")
+
+    # Feature 028 (T12): un unico sobre con stock, compras y, si la recepcion
+    # toca pedidos, el conjunto de duenos del plan mas los desbloqueados. El
+    # conjunto deduplica al pedido que esta en ambas fuentes; sin plan ni
+    # desbloqueo no se pasa `ticket_ids` (no se anuncia `pedidos`).
+    ticket_ids = sorted(
+        set(_tickets_del_plan(orden))
+        | {ticket.ticket_id for ticket in desbloqueados}
+    )
+    evento_service.publicar_compras(
+        institucion_id,
+        "recepcion",
+        db=db_tenant,
+        ticket_ids=ticket_ids or None,
+        con_inventario=True,
+    )
+
     orden = _cargar_orden(db_tenant, orden_id, institucion_id)
     return RecepcionRespuesta(
         orden=orden_a_respuesta(orden),

@@ -36,11 +36,14 @@ from app.schemas.producto_schema import (
     ProductoGestionRespuesta,
     TransicionCatalogo,
 )
-from app.services import ambito_service
+from app.services import ambito_service, evento_service
 from app.services.auth_service import IdentidadAutenticada
 
 TIPO_ENTRADA = "ENTRADA"
 TIPO_SALIDA = "SALIDA"
+
+#: Motivo literal del aviso de la Feature 028 (spec §5.2, Anexo A fila 10).
+MOTIVO_EVENTO_MOVIMIENTO = "movimiento"
 
 #: Longitud maxima del motivo libre de una transicion del catalogo (spec D-8).
 LONGITUD_MAXIMA_MOTIVO = 500
@@ -1240,6 +1243,15 @@ def _registrar_movimiento_por_sede(
     (categoria -> producto -> stock). Asi la entrada de stock y la baja de
     producto se serializan y nunca queda un producto inactivo con saldo
     positivo. La comprobacion de que el producto sigue activo se agrega en T8.
+
+    Feature 028 (T10): solo el movimiento **confirmado** publica `inventario`
+    con motivo `movimiento` (spec §5.2, Anexo A fila 10). La institucion sale de
+    la fila de saldo ya cargada (`referencia.institucion_id`) y se captura
+    **antes** del commit, de modo que la publicacion no consulta la base ni
+    depende de una sesion que el commit expire. La llamada va despues del
+    `commit()` y antes de proyectar la respuesta: un 404/409 o un fallo de
+    escritura lanza antes y nunca llega aqui. El fail-open es del servicio de
+    eventos; esta funcion no cambia el status ni el cuerpo por un bus caido.
     """
     referencia = db.get(StockSede, movimiento.stock_sede_id)
     detalle = "Stock por sede no encontrado"
@@ -1248,6 +1260,9 @@ def _registrar_movimiento_por_sede(
     ambito_service.exigir_pertenencia(
         referencia.institucion_id, institucion_id, detalle=detalle
     )
+    # Instantanea del tenant del saldo antes de mutar: es la columna que usa el
+    # filtro de audiencia del bus y evita una consulta extra despues del commit.
+    institucion_sobre = referencia.institucion_id
 
     if permisos.nombre_rol_de(identidad) == _BODEGUERO:
         sede_rol = sede_del_alcance_por_rol(db, identidad)
@@ -1304,4 +1319,7 @@ def _registrar_movimiento_por_sede(
     )
     db.commit()
     db.refresh(fila)
+    # Feature 028 (T10): la mutacion ya confirmo; el aviso es best-effort y no
+    # puede revertir ni cambiar la respuesta (D-8/AC-7).
+    evento_service.publicar_inventario(institucion_sobre, MOTIVO_EVENTO_MOVIMIENTO)
     return fila

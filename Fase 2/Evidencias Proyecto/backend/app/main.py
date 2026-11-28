@@ -18,6 +18,7 @@ from app.api.v1.api import api_router
 from app.core.config import VERSION_APLICACION, settings
 from app.core.cors import CORSEstricto
 from app.core.errores_bd import manejador_error_bd
+from app.core.eventos import cerrar_almacen
 from app.core.limite_tasa import AlmacenRedis, LimitadorTasa
 from app.core.observabilidad import configurar_registro
 from app.middleware.limite_tasa import MiddlewareLimiteTasa
@@ -103,6 +104,9 @@ def crear_app(cliente_limite=None) -> FastAPI:
 
     aplicacion.include_router(api_router, prefix="/api/v1")
     aplicacion.include_router(router_operativo)
+    # Feature 028: el almacen de eventos (Redis perezoso o el doble de la suite)
+    # se cierra al apagar el proceso, igual que el cliente del limitador.
+    aplicacion.router.add_event_handler("shutdown", cerrar_almacen)
 
     @aplicacion.get("/", summary="Raiz de la API")
     def leer_raiz():

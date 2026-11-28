@@ -52,8 +52,8 @@ from app.services.auth_service import IdentidadAutenticada
 # de la 013, con la enmienda 26/Nov/2026 que restringe el retiro y el registro
 # manual de movimientos al Bodeguero, y sin las tres operaciones que la
 # enmienda 27/Nov/2026 de la 012 retira). Las operaciones de
-# 014/018/019/020/021 se transcriben en sus propios modulos; la igualdad viva
-# rutas-MATRIZ_PERMISOS se contrasta abajo con las 72 operaciones vigentes.
+# 014/018/019/020/021/028 se transcriben en sus propios modulos; la igualdad viva
+# rutas-MATRIZ_PERMISOS se contrasta abajo con las 73 operaciones vigentes.
 # ---------------------------------------------------------------------------
 
 _TODOS = {"Superadmin", "Administrador", "Bodeguero", "Solicitante"}

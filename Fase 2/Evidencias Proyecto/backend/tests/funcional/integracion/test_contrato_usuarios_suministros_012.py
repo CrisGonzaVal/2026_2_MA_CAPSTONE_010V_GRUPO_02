@@ -7,8 +7,8 @@ Seam bajo prueba: la **interfaz publica** del contrato.
   (D-12/AC-23); cuando viene, `ge=1` (0/negativo -> 422 para todos).
 * `/openapi.json`: la entrada publica el campo como `integer(min 1)` o `null`,
   conserva `extra="forbid"`, documenta el **422 por rol** y por «Suministros»,
-  y mantiene los conteos vigentes del Bloque B: **74** operaciones totales =
-  **72 v1 + `GET /` + `/health`**, con la matriz central en **72** (AC-35).
+  y mantiene los conteos vigentes del Bloque B: **75** operaciones totales =
+  **73 v1 + `GET /` + `/health`**, con la matriz central en **73** (AC-35).
 * Regresion del Bloque A: `PUT /organizacion/usuarios/{usuario_id}/sede`
   conserva el **409** a no-Bodeguero y `gestion_organizacional` sigue gateando
   sedes, departamentos y usuarios (AC-30).
@@ -121,7 +121,7 @@ def test_esquema_de_entrada_admite_entero_minimo_1_o_nulo():
 
 
 # ---------------------------------------------------------------------------
-# OpenAPI: 74 = 72 v1 + dos rutas tecnicas; matriz 72; sin encargados
+# OpenAPI: 75 = 73 v1 + dos rutas tecnicas; matriz 73; sin encargados
 # ---------------------------------------------------------------------------
 
 
@@ -132,19 +132,19 @@ def _operaciones(esquema: dict):
                 yield ruta, metodo.lower(), operacion
 
 
-def test_openapi_publica_74_operaciones_72_v1_y_matriz_72(cliente):
-    """AC-35: 74 totales = 72 v1 + `GET /` + `/health`; matriz 72."""
+def test_openapi_publica_75_operaciones_73_v1_y_matriz_73(cliente):
+    """AC-35: 75 totales = 73 v1 + `GET /` + `/health`; matriz 73."""
     esquema = cliente.get("/openapi.json").json()
 
     operaciones = list(_operaciones(esquema))
-    assert len(operaciones) == 74, len(operaciones)
+    assert len(operaciones) == 75, len(operaciones)
     v1 = [ruta for ruta, _, _ in operaciones if ruta.startswith("/api/v1")]
-    assert len(v1) == 72, len(v1)
+    assert len(v1) == 73, len(v1)
     assert sorted(ruta for ruta, _, _ in operaciones if not ruta.startswith("/api/v1")) == [
         "/",
         "/health",
     ]
-    assert len(permisos.MATRIZ_PERMISOS) == 72
+    assert len(permisos.MATRIZ_PERMISOS) == 73
 
 
 def test_openapi_y_matriz_no_publican_las_rutas_de_encargados(cliente):

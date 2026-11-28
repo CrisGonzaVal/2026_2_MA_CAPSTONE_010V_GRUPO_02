@@ -23,7 +23,7 @@ from app.schemas.compra_schema import (
     OrdenCompraActualizar,
     OrdenCompraCrear,
 )
-from app.services import inventario_service
+from app.services import evento_service, inventario_service
 from app.services.auth_service import IdentidadAutenticada
 
 from ._comun import (
@@ -90,6 +90,20 @@ def _validar_entrada_orden(
     items = _items_validados(db_tenant, datos.items, institucion_id)
     _replicar_proveedor(db_tenant, proveedor)
     return items
+
+
+def _tickets_del_plan(orden: OrdenCompra) -> list[int]:
+    """Pedidos con asignacion positiva del plan congelado (AC-30).
+
+    La emision solo persiste filas con `cantidad_asignada > 0`; el filtro
+    conserva esa regla si una fila historica llegara en cero y evita anunciar
+    `pedidos` sin un dueno real.
+    """
+    return [
+        fila.ticket_id
+        for fila in orden.plan
+        if fila.cantidad_asignada > 0
+    ]
 
 
 def listar_ordenes_compra(
@@ -247,7 +261,14 @@ def emitir_orden_compra(
     )
     orden.fecha_emision = instante
     _confirmar(db_tenant, "No se pudo emitir la orden de compra")
-    return _cargar_orden(db_tenant, orden_id, institucion_id)
+    orden = _cargar_orden(db_tenant, orden_id, institucion_id)
+    evento_service.publicar_compras(
+        institucion_id,
+        "emision_oc",
+        db=db_tenant,
+        ticket_ids=_tickets_del_plan(orden),
+    )
+    return orden
 
 
 def registrar_o_editar_factura(
@@ -295,8 +316,19 @@ def registrar_o_editar_factura(
         factura.monto_total = datos.monto_total
         factura.observaciones = datos.observaciones
 
+    estado_anterior = orden.estado
     orden.estado = _FACTURADA
     _confirmar(db_tenant, "El numero de factura ya fue registrado")
+    evento_service.publicar_compras(
+        institucion_id,
+        "facturacion_oc",
+        db=db_tenant,
+        ticket_ids=(
+            _tickets_del_plan(orden)
+            if estado_anterior == _EMITIDA
+            else None
+        ),
+    )
     db_tenant.refresh(factura)
     return factura
 
@@ -318,6 +350,7 @@ def cancelar_orden_compra(
     if not motivo:
         raise _no_procesable("El motivo de cancelacion es obligatorio")
 
+    estado_anterior = orden.estado
     orden.estado = _CANCELADA
     orden.motivo_cancelacion = motivo
     orden.fecha_cancelacion = datetime.utcnow()
@@ -327,4 +360,15 @@ def cancelar_orden_compra(
         else None
     )
     _confirmar(db_tenant, "No se pudo cancelar la orden de compra")
-    return _cargar_orden(db_tenant, orden_id, institucion_id)
+    orden = _cargar_orden(db_tenant, orden_id, institucion_id)
+    evento_service.publicar_compras(
+        institucion_id,
+        "cancelacion_oc",
+        db=db_tenant,
+        ticket_ids=(
+            _tickets_del_plan(orden)
+            if estado_anterior == _EMITIDA
+            else None
+        ),
+    )
+    return orden

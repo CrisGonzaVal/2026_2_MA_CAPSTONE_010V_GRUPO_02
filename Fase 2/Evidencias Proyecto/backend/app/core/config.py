@@ -90,6 +90,16 @@ class Settings(BaseSettings):
     LIMITE_TASA_VENTANA_SEGUNDOS: int = 60
     LIMITE_TASA_CONFIAR_PROXY: bool = False
 
+    # Feature 028 (D-14): canal de actualizacion en tiempo real. El interruptor
+    # permite retirar la funcion de un despliegue sin revertir la feature; el
+    # latido mantiene viva la conexion y nunca supera los 30 s que toleran los
+    # proxies; el margen cierra el flujo antes de que venza el token y la vida
+    # maxima acota la obsolescencia de capacidades e institucion.
+    TIEMPO_REAL_HABILITADO: bool = True
+    TIEMPO_REAL_LATIDO_SEGUNDOS: int = 25
+    MARGEN_RELOJ_SEGUNDOS: int = 10
+    VIDA_MAXIMA_CONEXION_SEGUNDOS: int = 300
+
     @field_validator("LIMITE_TASA_MAX_PETICIONES", "LIMITE_TASA_VENTANA_SEGUNDOS")
     @classmethod
     def validar_limite_positivo(cls, valor: int) -> int:
@@ -98,6 +108,27 @@ class Settings(BaseSettings):
             raise ValueError(
                 "LIMITE_TASA_MAX_PETICIONES y LIMITE_TASA_VENTANA_SEGUNDOS "
                 "deben ser enteros mayores o iguales a 1."
+            )
+        return valor
+
+    @field_validator("TIEMPO_REAL_LATIDO_SEGUNDOS")
+    @classmethod
+    def validar_latido_tiempo_real(cls, valor: int) -> int:
+        """Un latido fuera de 1-30 s no evita el corte del proxy o satura."""
+        if not 1 <= valor <= 30:
+            raise ValueError(
+                "TIEMPO_REAL_LATIDO_SEGUNDOS debe estar entre 1 y 30 segundos."
+            )
+        return valor
+
+    @field_validator("MARGEN_RELOJ_SEGUNDOS", "VIDA_MAXIMA_CONEXION_SEGUNDOS")
+    @classmethod
+    def validar_ventana_positiva_tiempo_real(cls, valor: int) -> int:
+        """Una ventana no positiva cerraria el flujo nada mas abrirlo."""
+        if valor < 1:
+            raise ValueError(
+                "MARGEN_RELOJ_SEGUNDOS y VIDA_MAXIMA_CONEXION_SEGUNDOS deben "
+                "ser enteros mayores o iguales a 1."
             )
         return valor
 

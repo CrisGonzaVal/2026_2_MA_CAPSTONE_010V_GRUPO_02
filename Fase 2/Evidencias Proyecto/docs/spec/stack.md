@@ -88,6 +88,84 @@ aplicación, con estado en Redis y **fail-open**. Norma desde la Feature 025:
   tocar el backend y la app limita 120/min por IP. El límite de la app no reemplaza al borde ni
   al revés; el texto del 429 es idéntico para que el cliente no distinga la capa.
 
+### 1.3 Actualización en tiempo real (Feature 028)
+
+Las vistas dejan de ser una fotografía: un canal **SSE** de una sola vía avisa de que un dato
+quedó obsoleto y el cliente relee por los GET existentes. Norma desde la Feature 028:
+
+- **Canal y endpoint.** `GET /api/v1/eventos/` (barra final canónica) mantiene el flujo abierto
+  con `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-store` y
+  `X-Accel-Buffering: no`; emite `listo` al confirmar la suscripción, `cambio` por mutación
+  confirmada, `estado` (`degradado`/`recuperado`) y el comentario `: latido` cada
+  `TIEMPO_REAL_LATIDO_SEGUNDOS` (25 s, rango 1–30). No emite `id:` ni `retry:` y el
+  `Last-Event-ID` entrante se ignora. Es la única operación de `/openapi.json` cuyo 200 es
+  `text/event-stream` y, por tanto, la única **sin `response_model` JSON** (excepción explícita de
+  `AGENTS.md` §6): el cuerpo es un flujo, y la excepción se documenta en la descripción y en la
+  respuesta 200.
+- **Evento de invalidación, no de datos.** El frame solo lleva `dominios`, `motivo` y `estado`;
+  nunca asunto, cantidades, stock, correo, institución ni identificadores de recurso o usuario.
+  El cliente relee `GET /tickets/`, `GET /tickets/{id}`, `GET /tickets/{id}/historial` y
+  `GET /dashboard/`, con refresco agrupado (250 ms de silencio, 1 s de espera máxima, un
+  refresco en vuelo y uno pendiente), silencioso y sin perder filtros, orden, búsqueda, scroll,
+  pestaña ni diálogo abierto.
+- **Sobre interno frente a frame.** El mensaje del bus (`SobreEvento`: institución, dominios de
+  origen, motivo y `usuario_ids` de los dueños) es metadato de enrutamiento y **nunca se
+  serializa**. El suscriptor construye el frame por conexión en el orden institución →
+  audiencia de dueño de `pedidos` → visibilidad por rol/capacidad → marca `dashboard`. Una
+  recepción que desbloquea N pedidos publica **un** sobre y cada conexión recibe como máximo un
+  frame por evento (fan-out por conexión, no un mensaje por dueño).
+- **Aislamiento.** La institución sale solo de la identidad (mapa de control); `?institucion_id`,
+  `?sede_id`, `?usuario_id` y `?dominios` no existen y se ignoran. Un evento de `pedidos` llega
+  a Administrador y Bodeguero de la institución y al Solicitante **dueño** del pedido; otro
+  Solicitante no lo recibe. `compras` solo llega a Administrador y Bodeguero. La matriz central
+  registra la operación para los tres roles institucionales (Superadmin **403**) y la
+  visibilidad de cada dominio se resuelve por evento: no se crea una octava capacidad.
+- **Marca `dashboard`.** Cuando un dominio de origen `pedidos` o `inventario` no es visible pero
+  la conexión tiene la capacidad `dashboard`, el servidor lo sustituye por la marca sintética
+  `dashboard` con `motivo: "cambio"`: el dashboard se refresca sin nombrar el dominio ni el
+  motivo ocultos. La marca solo invalida el dashboard, nunca el tablero ni el detalle.
+- **Bus Redis efímero.** El reparto entre procesos usa Pub/Sub del Redis de la 025 en el canal
+  `compustock:eventos:<institucion_id>`, con publicador síncrono y suscriptor
+  `redis.asyncio`. Un hub en memoria no es autoridad: con dos workers, una mutación en uno llega
+  a las conexiones del otro. No hay persistencia, `Last-Event-ID` ni reproducción; cada apertura
+  resincroniza por GET.
+- **Publicación después del commit, best-effort y fail-open.** Toda mutación confirmada de
+  negocio —ciclo de vida del pedido, movimiento manual de stock y emisión, facturación,
+  cancelación y recepción de OC— **intenta** publicar después del `commit`; una mutación
+  rechazada o revertida no publica. Las mutaciones de catálogo, administración y organización
+  quedan fuera. Pub/Sub no confirma entrega: un evento perdido se recupera
+  en la siguiente apertura, la vuelta a foco o la relectura. Un fallo del bus no cambia el
+  status, el cuerpo ni la transacción de la mutación, y `/ready` sigue midiendo solo la base.
+- **Cota de publicación.** El intento tiene una espera máxima de **0,5 s**
+  (`socket_timeout`), sin reintento; agotada, el evento se descarta y la respuesta confirmada
+  sigue su curso. La suscripción degradada mantiene el HTTP abierto con `estado: degradado` y
+  retroceso interno 1/2/4/8/10 s.
+- **Vida de la conexión.** Se cierra en
+  `min(exp - MARGEN_RELOJ_SEGUNDOS, ahora + VIDA_MAXIMA_CONEXION_SEGUNDOS)`: la expiración sale
+  del token de Clerk ya validado (10 s de margen) y la vida máxima es 300 s por defecto. El
+  cliente reabre con un token vigente, se reevalúan institución y capacidades y resincroniza; no
+  reintenta ante 401/403. La conexión no retiene una sesión del pool: el contexto es inmutable y
+  la sesión se cerró antes de la espera.
+- **Una conexión por pestaña.** `TiempoRealService` es un hub raíz que consume el flujo con
+  `fetch` + `ReadableStream` (no `EventSource`, que no admite el Bearer) y lo comparten tablero,
+  detalle y dashboard. Retroceso 1/2/4/8/16/30 s con jitter, mínimo de 30 s entre aperturas,
+  respeto de `Retry-After`; una pestaña oculta no refresca y al volver a foco resincroniza una
+  vez. El Bearer viaja solo en `Authorization`, nunca en URL, cookie ni `localStorage`.
+- **Límite de tasa y borde.** La apertura cuenta como **una petición** del límite de 120/min por
+  IP de la 025; reconectar no lo agota. nginx publica `location = /api/v1/eventos/` con
+  `proxy_buffering off`, `proxy_cache off`, timeouts de 3600 s y los mismos `limit_req`/
+  `limit_conn` de la 024; el proxy de desarrollo de Angular entrega el flujo sin búfer ni ajuste
+  adicional.
+- **Interruptor y observabilidad.** `TIEMPO_REAL_HABILITADO` (default `true`) apaga el canal:
+  responde **503** con `detail`, no abre flujo ni toca el bus, y la app sigue operando. La
+  evidencia es una línea JSON `compustock.tiempo_real` con `request_id`, `route`, `resultado`
+  (`abierta`, `cerrada`, `degradada`, `recuperada`) y `motivo`, sin PII; **no se añade una
+  familia de métricas** y `/metrics` no expone SSE (limitación aceptada).
+- **Sin DDL ni dependencias.** No hay tablas, columnas, entidades ni migraciones: token
+  **`026.1`**, **25** tablas en `control`, **22** por tenant y **21** entidades de dominio. Se
+  reutilizan `redis==8.1.0` (cliente) y `redis:7.2-alpine` (servidor) de la 025; el frontend usa
+  APIs nativas.
+
 ## 2. Estructura de Directorios (Definitiva)
 
 > **Nota de migración**: el código actual está en fase de migración a esta estructura, que es la normativa desde hoy (AGENTS.md describe la nueva estructura).

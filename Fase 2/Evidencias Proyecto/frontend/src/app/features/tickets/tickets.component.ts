@@ -4,6 +4,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  OnDestroy,
   computed,
   effect,
   inject,
@@ -12,10 +13,11 @@ import {
 } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 
 import { puedeCrearTicket } from '../../core/auth/roles';
 import { AutenticacionService } from '../../core/services/auth.service';
+import { TiempoRealService } from '../../core/services/tiempo-real.service';
 import {
   CatalogosTicket,
   DetalleTicketCrear,
@@ -27,6 +29,7 @@ import {
   TicketCrear,
 } from '../../shared/interfaces';
 import { etiquetaEstado } from '../../shared/utils/etiqueta-estado';
+import { crearRefrescoAgrupado } from '../../shared/utils/refresco-agrupado';
 import type { DetalleError422 } from '../../shared/utils/validacion-http';
 import {
   detallesDeValidacion,
@@ -211,7 +214,7 @@ const NOMBRE_PRIORIDAD_MEDIA = 'media';
   templateUrl: './tickets.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TicketsComponent {
+export class TicketsComponent implements OnDestroy {
   // --- Estado del tablero ---
 
   /** Tickets reales, tal como los devuelve `GET /tickets/` (orden ya explicito). */
@@ -451,6 +454,28 @@ export class TicketsComponent {
   private readonly servicioTickets = inject(TicketService);
   private readonly autenticacion = inject(AutenticacionService);
   private readonly fb = inject(NonNullableFormBuilder);
+  private readonly servicioTiempoReal = inject(TiempoRealService);
+
+  /**
+   * Refresco del tablero ante invalidaciones del hub (Feature 028, T17). Se
+   * agrupa la ráfaga y solo relee la lista, en silencio: no enciende
+   * `cargandoTablero` ni toca filtros, orden ni búsqueda (spec §5.4).
+   */
+  private readonly refrescoTablero = crearRefrescoAgrupado(() =>
+    this.cargarTablero({ silencioso: true }),
+  );
+
+  /** Los dos frames que invalidan el tablero: pedidos e inventario. */
+  private readonly cancelarSuscripcionCambios = this.servicioTiempoReal.alCambio(
+    ['pedidos', 'inventario'],
+    () => this.refrescoTablero.solicitar(),
+  );
+
+  /** `listo`, reapertura y vuelta a foco: resincroniza una vez por ventana. */
+  private readonly cancelarSuscripcionResincronizacion =
+    this.servicioTiempoReal.alResincronizar(() =>
+      this.refrescoTablero.solicitar(),
+    );
 
   // --- Estado del modal ---
 
@@ -511,7 +536,18 @@ export class TicketsComponent {
     });
 
     // El tablero se carga al construir: catalogos de estados + tickets.
-    this.cargarTablero();
+    void this.cargarTablero();
+  }
+
+  /**
+   * Cancela las suscripciones al hub y el agrupador al destruir la vista. Sin
+   * esto, un frame tardío podría disparar una relectura sobre un componente
+   * ya destruido.
+   */
+  ngOnDestroy(): void {
+    this.cancelarSuscripcionCambios();
+    this.cancelarSuscripcionResincronizacion();
+    this.refrescoTablero.cancelar();
   }
 
   // --- Formulario ---
@@ -630,45 +666,73 @@ export class TicketsComponent {
   // --- Carga del tablero ---
 
   /**
-   * Carga inicial del tablero: catalogo de estados y tickets en paralelo. Con
-   * los dos OK llena `catalogos()` y `tickets()`; si cualquiera falla —o si el
-   * catalogo de estados viene vacio, que dejaria columnas en blanco silenciosas
-   * (spec §7)— publica un error visible con mensaje propio. `reintentarTablero()`
-   * la repite.
+   * Carga del tablero. La carga inicial y el reintento manual piden catalogo y
+   * tickets, encienden `cargandoTablero` y publican el error visible si algo
+   * falla. El refresco silencioso (Feature 028, T17) solo relee la lista
+   * —spec §5.4: el tablero repite «Lista de pedidos»—, no toca el estado de
+   * carga ni el error global, conserva las tarjetas previas si falla y devuelve
+   * una promesa para que el agrupador sepa cuándo terminó.
    */
-  private cargarTablero(): void {
-    this.cargandoTablero.set(true);
-    this.errorTablero.set(null);
+  private cargarTablero({
+    silencioso = false,
+  }: { silencioso?: boolean } = {}): Promise<void> {
+    if (!silencioso) {
+      this.cargandoTablero.set(true);
+      this.errorTablero.set(null);
+    }
 
-    forkJoin({
-      catalogos: this.servicioTickets.obtenerCatalogos(),
-      tickets: this.servicioTickets.obtenerTickets(),
-    }).subscribe({
-      next: ({ catalogos, tickets }) => {
-        if (catalogos.estados.length === 0) {
-          this.cargandoTablero.set(false);
-          this.errorTablero.set(
-            'El catálogo de estados está vacío. El tablero no se puede mostrar.'
-          );
-          return;
-        }
-        this.catalogos.set(catalogos);
-        this.tickets.set(tickets);
-        this.aplicarValoresPorDefecto();
-        this.cargandoTablero.set(false);
-      },
-      error: () => {
-        this.cargandoTablero.set(false);
-        this.errorTablero.set(
-          'No se pudo cargar el tablero. Revisa la conexión e inténtalo de nuevo.'
-        );
-      },
+    if (silencioso) {
+      return new Promise<void>((resolver) => {
+        this.servicioTickets
+          .obtenerTickets()
+          .pipe(finalize(() => resolver()))
+          .subscribe({
+            next: (tickets) => {
+              // Reemplazo íntegro: si el `201` insertó una tarjeta de forma
+              // optimista, el listado del servidor la contiene una sola vez.
+              this.tickets.set(tickets);
+            },
+            // Un fallo del refresco no borra lo ya mostrado, no cierra la vista
+            // y no muestra el error global: la siguiente invalidación o la
+            // recarga manual convergen (AC-14, §5.4 regla 4).
+            error: () => undefined,
+          });
+      });
+    }
+
+    return new Promise<void>((resolver) => {
+      forkJoin({
+        catalogos: this.servicioTickets.obtenerCatalogos(),
+        tickets: this.servicioTickets.obtenerTickets(),
+      })
+        .pipe(finalize(() => resolver()))
+        .subscribe({
+          next: ({ catalogos, tickets }) => {
+            if (catalogos.estados.length === 0) {
+              this.cargandoTablero.set(false);
+              this.errorTablero.set(
+                'El catálogo de estados está vacío. El tablero no se puede mostrar.'
+              );
+              return;
+            }
+            this.catalogos.set(catalogos);
+            this.tickets.set(tickets);
+            this.aplicarValoresPorDefecto();
+            this.cargandoTablero.set(false);
+          },
+          error: () => {
+            this.cargandoTablero.set(false);
+            this.errorTablero.set(
+              'No se pudo cargar el tablero. Revisa la conexión e inténtalo de nuevo.'
+            );
+          },
+        });
     });
   }
 
   /** Reintenta la carga del tablero tras un error visible. */
   reintentarTablero() {
-    this.cargarTablero();
+    void this.cargarTablero();
   }
 
   // --- Acciones del modal ---

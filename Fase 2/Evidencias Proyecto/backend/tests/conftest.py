@@ -35,12 +35,21 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api import dependencies
+from app.core import eventos as bus_eventos
 from app.core.config import settings as configuracion
 
 # Feature 025: la suite heredada no debe abrir conexiones a Redis ni pagar
 # timeouts. El apagado se hace sobre el singleton y no con una variable de
 # entorno, para que `Settings()` siga exponiendo los defaults reales.
 configuracion.LIMITE_TASA_HABILITADO = False
+
+# Feature 028 (plan §9.1): la suite heredada publica a un no-op y no abre
+# Redis. `TIEMPO_REAL_HABILITADO=False` corta la publicacion antes de consultar
+# la audiencia o tocar el almacen; `AlmacenNulo` queda como almacen vigente para
+# que cualquier publicacion directa de un test sea inocua. Los tests del canal
+# encienden el interruptor y sustituyen el almacen por el bus falso.
+configuracion.TIEMPO_REAL_HABILITADO = False
+bus_eventos.configurar_almacen(bus_eventos.AlmacenNulo())
 
 from app.db.database import Base
 from app.main import app

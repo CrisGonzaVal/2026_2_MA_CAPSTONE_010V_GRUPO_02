@@ -4,8 +4,9 @@ Ampliacion 25/Nov/2026: la aprobacion del Administrador (T21) y la confirmacion
 de entrega del Solicitante (T22) sumaron **dos** operaciones v1 (73 -> 75; 75 -> 77
 entradas con `GET /` y `/health`), y el `PATCH /estado` de legado pasa a ser
 **solo** del Administrador. La enmienda 27/Nov/2026 de la 012 retira las tres
-operaciones de la tabla puente auxiliar, de modo que el recuento vigente es:
-la matriz tiene 72 operaciones y `/openapi.json` publica 72 v1 y 74 entradas.
+operaciones de la tabla puente auxiliar y la Feature 028 (T5) suma el canal de
+tiempo real, de modo que el recuento vigente es: la matriz tiene **73**
+operaciones y `/openapi.json` publica **73** v1 y **75** entradas.
 """
 
 from app.core import capacidades, permisos
@@ -31,13 +32,13 @@ def _operaciones(esquema: dict):
                 yield ruta, metodo.lower(), operacion
 
 
-def test_openapi_publica_74_operaciones(cliente):
+def test_openapi_publica_75_operaciones(cliente):
     esquema = cliente.get("/openapi.json").json()
 
     rutas = list(_operaciones(esquema))
-    assert len(rutas) == 74
+    assert len(rutas) == 75
     negocio = [ruta for ruta, _, _ in rutas if ruta.startswith("/api/v1")]
-    assert len(negocio) == 72
+    assert len(negocio) == 73
     assert sorted(ruta for ruta, _, _ in rutas if not ruta.startswith("/api/v1")) == [
         "/",
         "/health",
@@ -59,8 +60,8 @@ def test_health_sigue_documentado_sin_security(cliente):
     assert "responses" in operacion
 
 
-def test_matriz_conserva_72_operaciones_y_ninguna_ruta_operativa():
-    assert len(permisos.MATRIZ_PERMISOS) == 72
+def test_matriz_conserva_73_operaciones_y_ninguna_ruta_operativa():
+    assert len(permisos.MATRIZ_PERMISOS) == 73
     assert not any(
         ruta in ("/metrics", "/ready")
         for _, ruta in permisos.MATRIZ_PERMISOS

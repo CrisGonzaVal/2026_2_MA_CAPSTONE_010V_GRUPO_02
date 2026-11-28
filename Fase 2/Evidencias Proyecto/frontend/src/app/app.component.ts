@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import {
@@ -12,6 +19,7 @@ import {
   puedeVerTickets as rolPuedeVerTickets,
 } from './core/auth/roles';
 import { AutenticacionService } from './core/services/auth.service';
+import { TiempoRealService } from './core/services/tiempo-real.service';
 
 @Component({
   selector: 'app-root',
@@ -20,9 +28,23 @@ import { AutenticacionService } from './core/services/auth.service';
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AppComponent {
+export class AppComponent implements OnDestroy {
   readonly autenticacion = inject(AutenticacionService);
+  private readonly tiempoReal = inject(TiempoRealService);
   private readonly router = inject(Router);
+
+  constructor() {
+    // Feature 028, AC-19/AC-22: una sola conexión por pestaña. El hub es raíz e
+    // idempotente, así que navegar entre rutas no abre otra conexión; él mismo
+    // sigue la sesión (arranca al autenticarse y se cierra al cerrar sesión).
+    this.tiempoReal.iniciar();
+  }
+
+  ngOnDestroy(): void {
+    // Red de seguridad: si la shell se destruye con la sesión abierta, no
+    // quedan conexión, temporizadores ni reintentos pendientes.
+    this.tiempoReal.detener();
+  }
 
   readonly titulo = 'CompuStock';
 

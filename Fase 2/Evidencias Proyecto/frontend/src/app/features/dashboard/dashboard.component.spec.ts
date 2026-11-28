@@ -4,15 +4,84 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { WritableSignal, signal } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 
 import { AutenticacionService } from '../../core/services/auth.service';
+import { TiempoRealService } from '../../core/services/tiempo-real.service';
+import type {
+  CambioTiempoReal,
+  DominioTiempoReal,
+  MotivoTiempoReal,
+} from '../../core/services/tiempo-real.service';
 import { URL_API } from '../../shared/config/url-api';
 import {
   DashboardAnalitico,
   IdentidadAutenticada,
 } from '../../shared/interfaces';
 import { DashboardComponent } from './dashboard.component';
+
+/**
+ * Doble del hub de tiempo real (Feature 028, T15) para el dashboard. Registra
+ * las suscripciones —cambio y resincronización— y permite emitir frames a mano
+ * sin abrir `fetch` ni tocar la sesión de Clerk.
+ */
+class TiempoRealServiceFalso {
+  readonly dominiosSuscritos: Array<readonly DominioTiempoReal[]> = [];
+  /** Último frame de cambio entregado, para fijar que la marca es `dashboard`. */
+  ultimoCambio: CambioTiempoReal | null = null;
+
+  private readonly suscripcionesCambio: Array<{
+    readonly dominios: readonly DominioTiempoReal[];
+    readonly callback: (cambio: CambioTiempoReal) => void;
+  }> = [];
+
+  private readonly resincronizaciones = new Set<() => void>();
+
+  alCambio(
+    dominios: readonly DominioTiempoReal[],
+    callback: (cambio: CambioTiempoReal) => void,
+  ): () => void {
+    const suscripcion = { dominios, callback };
+    this.dominiosSuscritos.push(dominios);
+    this.suscripcionesCambio.push(suscripcion);
+    return () => {
+      const indice = this.suscripcionesCambio.indexOf(suscripcion);
+      if (indice >= 0) {
+        this.suscripcionesCambio.splice(indice, 1);
+      }
+    };
+  }
+
+  alResincronizar(callback: () => void): () => void {
+    this.resincronizaciones.add(callback);
+    return () => {
+      this.resincronizaciones.delete(callback);
+    };
+  }
+
+  /** Suscripciones vivas: una de cambio y una de resincronización por vista. */
+  get suscripcionesActivas(): number {
+    return this.suscripcionesCambio.length + this.resincronizaciones.size;
+  }
+
+  emitirCambio(
+    dominios: readonly DominioTiempoReal[],
+    motivo: MotivoTiempoReal = 'cambio',
+  ): void {
+    this.ultimoCambio = { dominios, motivo };
+    for (const suscripcion of [...this.suscripcionesCambio]) {
+      if (dominios.some((dominio) => suscripcion.dominios.includes(dominio))) {
+        suscripcion.callback({ dominios, motivo });
+      }
+    }
+  }
+
+  emitirResincronizacion(): void {
+    for (const callback of [...this.resincronizaciones]) {
+      callback();
+    }
+  }
+}
 
 /**
  * Feature 009 (T9): contrato de la vista del dashboard consolidado.
@@ -139,6 +208,45 @@ describe('DashboardComponent', () => {
     };
   }
 
+  /** Respuesta posterior a una mutación: KPI, alertas y actividad distintos. */
+  function crearDashboardActualizado(): DashboardAnalitico {
+    return {
+      kpi: {
+        unidades_en_stock: 9876,
+        tickets_activos: 54,
+        total_departamentos: 87,
+        total_alertas: 8,
+      },
+      alertas: [
+        {
+          sede_id: 99,
+          sede_nombre: 'Bodega Sur',
+          producto_id: 909,
+          producto_nombre: 'Grapas Grandes',
+          stock_actual: 0,
+          stock_minimo: 4,
+          institucion_id: 'INSTA',
+          institucion_nombre: 'Instituto Alfa',
+        },
+      ],
+      actividad_disponible: true,
+      actividad_movimientos: [
+        {
+          movimiento_id: 777,
+          tipo_movimiento: 'SALIDA',
+          cantidad: 3,
+          fecha_movimiento: '2026-04-02T09:00:00',
+          producto_id: 909,
+          producto_nombre: 'Grapas Grandes',
+          sede_id: 99,
+          sede_nombre: 'Bodega Sur',
+          institucion_id: 'INSTA',
+          institucion_nombre: 'Instituto Alfa',
+        },
+      ],
+    };
+  }
+
   function crearIdentidad(rol: string): IdentidadAutenticada {
     return {
       usuario_id: 7,
@@ -155,11 +263,13 @@ describe('DashboardComponent', () => {
 
   let fixture: ComponentFixture<DashboardComponent>;
   let httpMock: HttpTestingController;
+  let tiempoReal: TiempoRealServiceFalso;
   /** Identidad local (`/auth/me`) como señal: doble, sin arrancar Clerk. */
   let identidad: WritableSignal<IdentidadAutenticada | null>;
 
   beforeEach(async () => {
     identidad = signal<IdentidadAutenticada | null>(crearIdentidad('Superadmin'));
+    tiempoReal = new TiempoRealServiceFalso();
 
     await TestBed.configureTestingModule({
       imports: [DashboardComponent],
@@ -169,6 +279,9 @@ describe('DashboardComponent', () => {
         // La vista no decide ámbito ni autorización (lo hace el servidor); aun
         // así se inyecta la identidad en el formato de la casa para cubrir el rol.
         { provide: AutenticacionService, useValue: { identidad } },
+        // El hub real abriría `fetch` y dependería de Clerk; el doble permite
+        // emitir frames de la Feature 028 sin conexión.
+        { provide: TiempoRealService, useValue: tiempoReal },
       ],
     }).compileComponents();
 
@@ -382,5 +495,197 @@ describe('DashboardComponent', () => {
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]'),
     ).toBeNull();
+  });
+
+  /**
+   * Feature 028, T19: el dashboard se suscribe al hub y relee el DTO
+   * consolidado de forma silenciosa ante `pedidos`, `inventario` y la marca
+   * sintética `dashboard`. El refresco no enciende `cargando`, no muestra el
+   * placeholder inicial, conserva los datos previos si falla y no añade
+   * lecturas (spec §5.4, AC-12/AC-28).
+   */
+  describe('actualización en tiempo real (Feature 028, T19)', () => {
+    /** Indicador del placeholder de carga inicial, por su rol ARIA. */
+    function placeholder(): Element | null {
+      return (fixture.nativeElement as HTMLElement).querySelector(
+        '[role="status"]',
+      );
+    }
+
+    it('se suscribe una sola vez a pedidos, inventario y la marca dashboard', () => {
+      montar();
+
+      expect(tiempoReal.dominiosSuscritos).toEqual([
+        ['pedidos', 'inventario', 'dashboard'],
+      ]);
+      expect(tiempoReal.suscripcionesActivas).toBe(2);
+    });
+
+    it('un frame pedidos relee el dashboard una vez y actualiza KPI, alertas y actividad', fakeAsync(() => {
+      montar();
+      expect(texto()).toContain('4321');
+      httpMock.expectNone(RUTA_DASHBOARD);
+
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+
+      // La agrupación espera la ventana de silencio de 250 ms.
+      tick(249);
+      httpMock.expectNone(RUTA_DASHBOARD);
+
+      tick(1);
+      const peticiones = httpMock.match(RUTA_DASHBOARD);
+      expect(peticiones.length).toBe(1);
+
+      // En vuelo: ni placeholder ni pérdida de los KPI ya visibles.
+      fixture.detectChanges();
+      expect(fixture.componentInstance.cargando()).toBe(false);
+      expect(placeholder()).toBeNull();
+      expect(texto()).toContain('4321');
+
+      peticiones[0].flush(crearDashboardActualizado());
+      tick();
+      fixture.detectChanges();
+
+      // El DTO nuevo reemplaza KPI, alertas y actividad en una sola lectura.
+      expect(texto()).toContain('9876');
+      expect(texto()).toContain('Grapas Grandes');
+      expect(texto()).toContain('Bodega Sur');
+      expect(texto()).not.toContain('Papel Bond');
+      // El refresco no consulta el historial ni repite la lectura.
+      httpMock.expectNone(RUTA_MOVIMIENTOS);
+      httpMock.expectNone(RUTA_DASHBOARD);
+      expect(placeholder()).toBeNull();
+    }));
+
+    it('un frame inventario también refresca el dashboard una vez', fakeAsync(() => {
+      montar();
+
+      tiempoReal.emitirCambio(['inventario'], 'movimiento');
+      tick(250);
+
+      const peticiones = httpMock.match(RUTA_DASHBOARD);
+      expect(peticiones.length).toBe(1);
+
+      peticiones[0].flush(crearDashboardActualizado());
+      tick();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.kpi()?.unidades_en_stock).toBe(9876);
+      expect(texto()).toContain('9876');
+      httpMock.expectNone(RUTA_MOVIMIENTOS);
+    }));
+
+    it('un frame dashboard sintético refresca sin exponer el dominio oculto', fakeAsync(() => {
+      montar();
+
+      // La conexión solo conoce la marca: `pedidos`/`inventario` pueden estar
+      // ocultos por capacidad y el frame no los nombra (AC-28).
+      tiempoReal.emitirCambio(['dashboard'], 'cambio');
+      tick(250);
+
+      const peticiones = httpMock.match(RUTA_DASHBOARD);
+      expect(peticiones.length).toBe(1);
+      expect(tiempoReal.ultimoCambio).toEqual({
+        dominios: ['dashboard'],
+        motivo: 'cambio',
+      });
+
+      peticiones[0].flush(crearDashboardActualizado());
+      tick();
+      fixture.detectChanges();
+
+      expect(texto()).toContain('9876');
+      expect(texto()).toContain('Grapas Grandes');
+      // La marca solo invalida el dashboard: ninguna otra lectura (§5.4 regla 7).
+      httpMock.expectNone(RUTA_MOVIMIENTOS);
+      httpMock.expectNone(RUTA_DASHBOARD);
+    }));
+
+    it('una ráfaga de resincronización y cambio comparte el agrupador', fakeAsync(() => {
+      montar();
+
+      tiempoReal.emitirCambio(['pedidos'], 'aprobacion');
+      tiempoReal.emitirResincronizacion();
+      tick(250);
+
+      const peticiones = httpMock.match(RUTA_DASHBOARD);
+      expect(peticiones.length).toBe(1);
+
+      peticiones[0].flush(crearDashboardActualizado());
+      tick();
+    }));
+
+    it('no enciende cargando y un fallo conserva datos y KPI previos', fakeAsync(() => {
+      montar();
+      const previos = fixture.componentInstance.datos();
+
+      tiempoReal.emitirCambio(['pedidos'], 'retiro');
+      tick(250);
+
+      const peticion = httpMock.expectOne(RUTA_DASHBOARD);
+      // En vuelo: sin placeholder y con los KPI anteriores a la vista.
+      fixture.detectChanges();
+      expect(fixture.componentInstance.cargando()).toBe(false);
+      expect(placeholder()).toBeNull();
+      expect(texto()).toContain('4321');
+
+      peticion.flush(
+        { detail: 'boom' },
+        { status: 500, statusText: 'Server Error' },
+      );
+      tick();
+      fixture.detectChanges();
+
+      // Un fallo del refresco no borra lo mostrado ni publica error global.
+      expect(fixture.componentInstance.datos()).toBe(previos);
+      expect(fixture.componentInstance.cargando()).toBe(false);
+      expect(fixture.componentInstance.mensajeError()).toBeNull();
+      expect(texto()).toContain('4321');
+      expect(texto()).not.toContain('No se pudo cargar el dashboard');
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]'),
+      ).toBeNull();
+
+      // El agrupador quedó libre: una nueva invalidación vuelve a releer.
+      tiempoReal.emitirCambio(['pedidos'], 'edicion');
+      tick(250);
+      httpMock.expectOne(RUTA_DASHBOARD).flush(crearDashboardActualizado());
+      tick();
+      fixture.detectChanges();
+      expect(texto()).toContain('9876');
+    }));
+
+    it('el Solicitante sigue sin actividad y no consulta /inventario/movimientos', fakeAsync(() => {
+      identidad.set(crearIdentidad('Solicitante'));
+      montar(crearDashboardSolicitante());
+
+      tiempoReal.emitirCambio(['inventario'], 'movimiento');
+      tick(250);
+
+      httpMock.expectOne(RUTA_DASHBOARD).flush(crearDashboardSolicitante());
+      tick();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.actividadDisponible()).toBe(false);
+      expect(texto()).not.toContain('Actividad Reciente');
+      httpMock.expectNone(RUTA_MOVIMIENTOS);
+    }));
+
+    it('ngOnDestroy cancela las suscripciones y el agrupador', fakeAsync(() => {
+      montar();
+      expect(tiempoReal.suscripcionesActivas).toBe(2);
+
+      // Deja un refresco programado y destruye antes de que dispare.
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tick(100);
+      fixture.destroy();
+
+      expect(tiempoReal.suscripcionesActivas).toBe(0);
+
+      tiempoReal.emitirCambio(['pedidos'], 'alta');
+      tiempoReal.emitirResincronizacion();
+      tick(1_000);
+      httpMock.expectNone(RUTA_DASHBOARD);
+    }));
   });
 });

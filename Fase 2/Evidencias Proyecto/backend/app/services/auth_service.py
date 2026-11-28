@@ -43,6 +43,9 @@ class IdentidadAutenticada:
 
     usuario: Usuario
     sub: str
+    #: Expiracion del token que autentico la sesion (`exp`, epoch en segundos).
+    #: Los fixtures antiguos que no la exponen conservan `None` (Feature 028).
+    expira_en: int | None = None
 
 
 def correo_del_actor(identidad: IdentidadAutenticada | None) -> str:
@@ -179,7 +182,16 @@ def resolver_identidad(
     # La escritura condicional solo actua sobre `pendiente` + mapa activo; un
     # estado terminal o una carrera (0 filas) no alteran el login.
     aceptar_invitacion_en_primer_login(db, correo)
-    return IdentidadAutenticada(usuario=usuario, sub=sub)
+    # Feature 028 (T2): se copia el `exp` del token ya validado. No se revalida
+    # ni se consulta Clerk otra vez; PyJWT ya lo exige y verifica en produccion.
+    # Un doble de `validar_token` (o un fixture sin `exp`) deja `None`: el flujo
+    # usa entonces la vida maxima (plan §4.2).
+    expira_en = claims.get("exp")
+    return IdentidadAutenticada(
+        usuario=usuario,
+        sub=sub,
+        expira_en=int(expira_en) if expira_en is not None else None,
+    )
 
 
 def construir_identidad_autenticada(

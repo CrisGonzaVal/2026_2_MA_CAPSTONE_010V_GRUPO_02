@@ -136,16 +136,18 @@ def test_matriz_tiene_exactamente_60_operaciones_tras_014():
     compras (62 -> 72) y la Feature 021 (spec AC-2/AC-10, plan §3) suma
     `POST /api/v1/compras/cobertura/preview` (72 -> 73). La ampliacion
     25/Nov/2026 de la 013 suma la aprobacion del pedido (73 -> 74, T21) y la
-    confirmacion de entrega (74 -> 75, T22). Ninguna cambia una fila de la 014.
-    No es una reescritura silenciosa del contrato, es una ampliacion documentada.
+    confirmacion de entrega (74 -> 75, T22); la enmienda 27/Nov/2026 de la 012
+    retira tres (75 -> 72) y la Feature 028 (T5) suma el canal de tiempo real
+    (72 -> 73). Ninguna cambia una fila de la 014. No es una reescritura
+    silenciosa del contrato, es una ampliacion documentada.
     """
     total = len(permisos.MATRIZ_PERMISOS)
-    assert total == 72, (
-        "la matriz debe tener 72 operaciones (55 previas + 5 de la 014 + la de "
+    assert total == 73, (
+        "la matriz debe tener 73 operaciones (55 previas + 5 de la 014 + la de "
         f"ambito de la 018 + el detalle de producto de la 019 + las 10 de compras "
         f"de la 020 + el preview de la 021 + la aprobacion y la confirmacion de "
         f"entrega de la ampliacion de la 013, menos las tres que retira la "
-        f"enmienda 27/Nov/2026 de la 012); tiene {total}"
+        f"enmienda 27/Nov/2026 de la 012, mas el canal de la 028); tiene {total}"
     )
 
 
@@ -185,8 +187,9 @@ def test_openapi_tiene_60_operaciones_tras_014(cliente):
     (62 -> 72) y la Feature 021 (spec AC-2) publica el preview de cobertura
     (72 -> 73), sin alterar las cinco rutas de la 014. La ampliacion 25/Nov/2026
     de la 013 publica la aprobacion del pedido (73 -> 74, T21) y la confirmacion
-    de entrega (74 -> 75, T22). Ampliacion documentada, no reescritura
-    silenciosa.
+    de entrega (74 -> 75, T22); la enmienda 27/Nov/2026 de la 012 retira tres
+    (75 -> 72) y la Feature 028 (T5) publica el canal de tiempo real (72 -> 73).
+    Ampliacion documentada, no reescritura silenciosa.
     """
     contrato = cliente.get("/openapi.json").json()
     total = sum(
@@ -196,7 +199,7 @@ def test_openapi_tiene_60_operaciones_tras_014(cliente):
         for metodo in operaciones
         if metodo in _METODOS_OPENAPI
     )
-    assert total == 72, f"/openapi.json debe publicar 72 operaciones v1; publica {total}"
+    assert total == 73, f"/openapi.json debe publicar 73 operaciones v1; publica {total}"
 
 
 @pytest.mark.parametrize(

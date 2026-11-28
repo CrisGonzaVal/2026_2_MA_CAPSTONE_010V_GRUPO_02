@@ -4,6 +4,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  OnDestroy,
   computed,
   effect,
   inject,
@@ -12,7 +13,7 @@ import {
 } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
+import { finalize, forkJoin, of } from 'rxjs';
 
 import {
   puedeAnularTicket,
@@ -23,6 +24,7 @@ import {
   puedeRegistrarRetiro,
 } from '../../core/auth/roles';
 import { AutenticacionService } from '../../core/services/auth.service';
+import { TiempoRealService } from '../../core/services/tiempo-real.service';
 import {
   CatalogosTicket,
   DetalleTicket,
@@ -40,6 +42,7 @@ import {
   MensajesDeErrorHttp,
   mensajeDeErrorHttp,
 } from '../../shared/utils/errores-http';
+import { crearRefrescoAgrupado } from '../../shared/utils/refresco-agrupado';
 import { TicketService } from './services/ticket.service';
 
 /** Fila resuelta del historial para el template (sin ids que el template no conozca). */
@@ -136,11 +139,12 @@ export function mensajeDeErrorTickets(error: HttpErrorResponse): string {
   templateUrl: './ticket-detalle.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TicketDetalleComponent {
+export class TicketDetalleComponent implements OnDestroy {
   private readonly servicioTickets = inject(TicketService);
   private readonly autenticacion = inject(AutenticacionService);
   private readonly route = inject(ActivatedRoute);
   private readonly fb = inject(NonNullableFormBuilder);
+  private readonly servicioTiempoReal = inject(TiempoRealService);
 
   // --- Estado de la carga ---
 
@@ -639,6 +643,29 @@ export class TicketDetalleComponent {
     }
   });
 
+  // --- Actualización en tiempo real (Feature 028, T18) ---
+
+  /**
+   * Refresco silencioso de detalle + historial ante invalidaciones del hub.
+   * Comparte agrupador con la resincronización: una ráfaga de `listo` + `cambio`
+   * produce un solo par de lecturas (spec §5.4 regla 2).
+   */
+  private readonly refrescoDetalle = crearRefrescoAgrupado(() =>
+    this.cargar({ silencioso: true }),
+  );
+
+  /** Los dos frames que invalidan el detalle: pedidos e inventario. */
+  private readonly cancelarSuscripcionCambios = this.servicioTiempoReal.alCambio(
+    ['pedidos', 'inventario'],
+    () => this.refrescoDetalle.solicitar(),
+  );
+
+  /** `listo`, reapertura y vuelta a foco: resincroniza una vez por ventana. */
+  private readonly cancelarSuscripcionResincronizacion =
+    this.servicioTiempoReal.alResincronizar(() =>
+      this.refrescoDetalle.solicitar(),
+    );
+
   constructor() {
     // El `<dialog>` nativo da foco atrapado, `Esc` y fondo atenuado sin código de
     // foco propio (mismo patrón que el modal del tablero). Los diálogos viven
@@ -673,23 +700,72 @@ export class TicketDetalleComponent {
     });
   }
 
+  /**
+   * Cancela las suscripciones al hub y el agrupador al destruir la vista. Sin
+   * esto, un frame tardío podría disparar una relectura sobre un componente ya
+   * destruido.
+   */
+  ngOnDestroy(): void {
+    this.cancelarSuscripcionCambios();
+    this.cancelarSuscripcionResincronizacion();
+    this.refrescoDetalle.cancelar();
+  }
+
   // --- Carga ---
 
-  /** Carga inicial y visible: detalle + historial + catálogos (los catálogos solo si faltan). */
-  private cargar(): void {
-    if (this.ticketId() === null) {
-      this.cargando.set(false);
-      this.errorCarga.set('El identificador del pedido no es válido.');
+  /**
+   * Carga del detalle. La carga inicial, el reintento y el cambio de ruta
+   * piden detalle + historial + catálogos (estos solo si faltan), encienden
+   * `cargando` y publican el error visible. El refresco silencioso (Feature
+   * 028, T18) solo relee detalle e historial —spec §5.4: el detalle repite
+   * «Detalle e historial»—, no toca `cargando`, el error global, el diálogo,
+   * los formularios ni el motivo escrito, conserva los datos previos si falla
+   * y devuelve una promesa para que el agrupador sepa cuándo terminó.
+   */
+  private cargar({
+    silencioso = false,
+  }: {
+    silencioso?: boolean;
+  } = {}): void | Promise<void> {
+    const id = this.ticketId();
+    if (id === null) {
+      if (!silencioso) {
+        this.cargando.set(false);
+        this.errorCarga.set('El identificador del pedido no es válido.');
+      }
       return;
     }
+
+    if (silencioso) {
+      return new Promise<void>((resolver) => {
+        forkJoin({
+          detalle: this.servicioTickets.obtenerDetalleTicket(id),
+          historial: this.servicioTickets.obtenerHistorial(id),
+        })
+          .pipe(finalize(() => resolver()))
+          .subscribe({
+            next: ({ detalle, historial }) => {
+              // Solo los datos del servidor: `confirmando`, `motivoForm`,
+              // `editando` y la pestaña no se tocan (reglas 3 y 6 de §5.4).
+              this.ticket.set(detalle);
+              this.historial.set(historial);
+            },
+            // Un fallo del refresco no borra lo ya mostrado, no cierra la vista
+            // y no muestra el error global: la siguiente invalidación o la
+            // recarga manual convergen (AC-14, §5.4 regla 4).
+            error: () => undefined,
+          });
+      });
+    }
+
     this.cargando.set(true);
     this.errorCarga.set(null);
     this.errorAccion.set(null);
     this.mensajeExito.set(null);
 
     forkJoin({
-      detalle: this.servicioTickets.obtenerDetalleTicket(this.ticketId()!),
-      historial: this.servicioTickets.obtenerHistorial(this.ticketId()!),
+      detalle: this.servicioTickets.obtenerDetalleTicket(id),
+      historial: this.servicioTickets.obtenerHistorial(id),
       catalogos:
         this.catalogos() === null
           ? this.servicioTickets.obtenerCatalogos()
@@ -718,26 +794,12 @@ export class TicketDetalleComponent {
   /**
    * Reconsulta silenciosa de detalle e historial: la verdad del servidor tras
    * una mutación aceptada o rechazada (AC-24), sin esconder la vista tras un
-   * spinner global. Si la reconsulta falla, el aviso de la operación ya visible
-   * manda y aquí no se duplica el error.
+   * spinner global. Comparte la ruta silenciosa de `cargar`, de modo que la
+   * relectura sea una sola implementación. Si la reconsulta falla, el aviso de
+   * la operación ya visible manda y aquí no se duplica el error.
    */
   private reconsultar(): void {
-    const id = this.ticketId();
-    if (id === null) {
-      return;
-    }
-    forkJoin({
-      detalle: this.servicioTickets.obtenerDetalleTicket(id),
-      historial: this.servicioTickets.obtenerHistorial(id),
-    }).subscribe({
-      next: ({ detalle, historial }) => {
-        this.ticket.set(detalle);
-        this.historial.set(historial);
-      },
-      error: () => {
-        /* silencioso: el error de la operación ya está publicado */
-      },
-    });
+    void this.cargar({ silencioso: true });
   }
 
   // --- Aprobación (AC-32: un clic, sin motivo ni diálogo) ---

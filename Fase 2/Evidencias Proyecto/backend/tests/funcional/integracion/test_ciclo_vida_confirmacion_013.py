@@ -453,9 +453,10 @@ def test_matriz_declara_la_confirmacion_solo_para_el_solicitante_ac_44():
         "MATRIZ_PERMISOS debe declarar la operacion de confirmacion de entrega"
     )
     assert set(confirmacion) == {"Solicitante"}
-    assert len(permisos.MATRIZ_PERMISOS) == 72, (
-        "la matriz suma una operacion en esta tarea (74 -> 75) y la enmienda "
-        "27/Nov/2026 de la 012 la deja en 72"
+    assert len(permisos.MATRIZ_PERMISOS) == 73, (
+        "la matriz suma una operacion en esta tarea (74 -> 75), la enmienda "
+        "27/Nov/2026 de la 012 la deja en 72 y la Feature 028 (T5) suma el "
+        "canal de tiempo real"
     )
     # El resto de operaciones del flujo conserva sus roles (T21 intacta).
     assert set(permisos.MATRIZ_PERMISOS[("POST", RUTA_APROBACION)]) == {
